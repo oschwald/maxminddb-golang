@@ -4,6 +4,12 @@
 
 This is alpha code. Use at your own risk. This is not an official MaxMind API.
 
+## Description ##
+
+This is a Go reader for the MaxMind DB format. This can be used to read
+[GeoLite2](http://dev.maxmind.com/geoip/geoip2/geolite2/) and
+[GeoIP2](http://www.maxmind.com/en/geolocation_landing) databases.
+
 ## Status ##
 
 This API is functional, but still needs quite a bit of work to be ready for
