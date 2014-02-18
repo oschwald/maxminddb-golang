@@ -27,7 +27,6 @@ production use. Here are some things that need to be done:
 * Although IPv4 addresses work, the code to speed up IPv4 lookups is not
   working as ParseIP always seems to return 16 bytes.
 * Error handling should be improved.
-* Travis needs to be set up for testing.
 
 ## Example ##
 
