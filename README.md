@@ -19,9 +19,6 @@ production use. Here are some things that need to be done:
   `interface{}`. In the future, there will be functionality to deserialize
   the data to a specified struct value, similar to the decoding in
   `encoding/json`.
-* Add support for uint128.
-* There are currently only tests for the decoder code, not for the reader
-  code.
 * The metadata needs to be put into a struct. The current type assertions
   are gross.
 * Docs need to be written.
