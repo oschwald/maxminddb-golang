@@ -67,7 +67,7 @@ func (s *MySuite) TestIpv6inIpv4(c *C) {
 		c.Log("nil record from lookup expected")
 		c.Fail()
 	}
-	expected := errors.New("Error looking up 2001::. You attempted to look up an IPv6 address in an IPv4-only database.")
+	expected := errors.New("error looking up '2001::': you attempted to look up an IPv6 address in an IPv4-only database")
 	c.Assert(err, DeepEquals, expected)
 	reader.Close()
 
@@ -99,7 +99,7 @@ func (s *MySuite) TestNonDatabase(c *C) {
 		c.Log("received reader when doing lookups on DB that doesn't exist")
 		c.Fail()
 	}
-	c.Assert(err.Error(), Equals, "Error opening database file (README.md). Is this a valid MaxMind DB file?")
+	c.Assert(err.Error(), Equals, "error opening database file (README.md): invalid MaxMind DB file")
 }
 
 func checkMetadata(c *C, reader *Reader, ipVersion uint, recordSize uint) {

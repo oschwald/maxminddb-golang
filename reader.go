@@ -11,7 +11,7 @@ import (
 
 const dataSectionSeparatorSize = 16
 
-var metadataStartMarker []byte = []byte("\xAB\xCD\xEFMaxMind.com")
+var metadataStartMarker = []byte("\xAB\xCD\xEFMaxMind.com")
 
 type Reader struct {
 	file      *os.File
@@ -43,8 +43,8 @@ func Open(file string) (*Reader, error) {
 	if metadataStart == -1 {
 		syscall.Munmap(mmap)
 		mapFile.Close()
-		errStr := fmt.Sprintf("Error opening database file (%s). Is this a valid MaxMind DB file?", file)
-		return nil, errors.New(errStr)
+
+		return nil, fmt.Errorf("error opening database file (%s): invalid MaxMind DB file", file)
 	}
 
 	metadataStart += len(metadataStartMarker)
@@ -61,7 +61,7 @@ func Open(file string) (*Reader, error) {
 
 func (r *Reader) Lookup(ipAddress net.IP) (interface{}, error) {
 	if len(ipAddress) == 16 && r.metadata["ip_version"].(uint) == 4 {
-		return nil, errors.New(fmt.Sprintf("Error looking up %s. You attempted to look up an IPv6 address in an IPv4-only database.", ipAddress.String()))
+		return nil, fmt.Errorf("error looking up '%s': you attempted to look up an IPv6 address in an IPv4-only database", ipAddress.String())
 	}
 
 	pointer, err := r.findAddressInTree(ipAddress)
@@ -89,7 +89,7 @@ func (r *Reader) findAddressInTree(ipAddress net.IP) (uint, error) {
 		return node, nil
 	}
 
-	return 0, errors.New("Invalid node in search tree")
+	return 0, errors.New("invalid node in search tree")
 }
 
 func (r *Reader) startNode(length uint) uint {
@@ -135,7 +135,7 @@ func (r *Reader) readNode(nodeNumber uint, index uint) uint {
 		offset := baseOffset + index*4
 		nodeBytes = r.buffer[offset : offset+4]
 	default:
-		panic(fmt.Sprintf("Unknown record size: %d", recordSize))
+		panic(fmt.Sprintf("unknown record size: %d", recordSize))
 	}
 	return uintFromBytes(nodeBytes)
 }
@@ -148,7 +148,7 @@ func (r *Reader) resolveDataPointer(pointer uint) interface{} {
 
 	if resolved > uint(len(r.buffer)) {
 		panic(
-			"The MaxMind DB file's search tree is corrupt")
+			"the MaxMind DB file's search tree is corrupt")
 	}
 
 	data, _ := r.decoder.decode(resolved)

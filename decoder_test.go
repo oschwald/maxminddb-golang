@@ -86,7 +86,7 @@ func TestMap(t *testing.T) {
 	validateDecoding(t, maps)
 }
 
-var testStrings map[string]interface{} = makeTestStrings()
+var testStrings = makeTestStrings()
 
 func makeTestStrings() map[string]interface{} {
 	str := map[string]interface{}{
@@ -198,13 +198,13 @@ func powBigInt(bi *big.Int, pow uint) *big.Int {
 }
 
 func validateDecoding(t *testing.T, tests map[string]interface{}) {
-	for input_str, expected := range tests {
-		input_bytes, _ := hex.DecodeString(input_str)
-		d := decoder{input_bytes, 0}
+	for inputStr, expected := range tests {
+		inputBytes, _ := hex.DecodeString(inputStr)
+		d := decoder{inputBytes, 0}
 		output, _ := d.decode(0)
 		if !reflect.DeepEqual(output, expected) {
 			// A big case statement would produce nicer errors
-			t.Errorf("Output was incorrect: %s  %s", input_str, expected)
+			t.Errorf("Output was incorrect: %s  %s", inputStr, expected)
 		}
 	}
 }

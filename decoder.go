@@ -71,7 +71,7 @@ func (d *decoder) decodeMap(size uint, offset uint) (map[string]interface{}, uin
 	return container, offset
 }
 
-var pointerValueOffset map[uint]uint = map[uint]uint{
+var pointerValueOffset = map[uint]uint{
 	1: 0,
 	2: 2048,
 	3: 526336,
@@ -91,8 +91,6 @@ func (d *decoder) decodePointer(size uint, offset uint) (interface{}, uint) {
 	unpacked := uintFromBytes(packed)
 
 	pointer := unpacked + d.pointerBase + pointerValueOffset[pointerSize]
-	// if self._pointer_test:
-	//     return pointer, new_offset
 	value, _ := d.decode(pointer)
 	return value, newOffset
 }
@@ -113,7 +111,7 @@ func (d *decoder) decodeUint128(size uint, offset uint) (*big.Int, uint) {
 }
 
 func uintFromBytes(uintBytes []byte) uint {
-	var val uint = 0
+	var val uint
 	for _, b := range uintBytes {
 		val = (val << 8) | uint(b)
 	}
@@ -121,8 +119,8 @@ func uintFromBytes(uintBytes []byte) uint {
 }
 
 func (d *decoder) decodeString(size uint, offset uint) (string, uint) {
-	new_offset := offset + size
-	return string(d.buffer[offset:new_offset]), new_offset
+	newOffset := offset + size
+	return string(d.buffer[offset:newOffset]), newOffset
 }
 
 func (d *decoder) decode(offset uint) (interface{}, uint) {
@@ -144,48 +142,48 @@ func (d *decoder) decode(offset uint) (interface{}, uint) {
 type dataType int
 
 const (
-	EXTENDED dataType = iota
-	POINTER
-	STRING
-	FLOAT64
-	BYTES
-	UINT16
-	UINT32
-	MAP
-	INT32
-	UINT64
-	UINT128
-	ARRAY
-	CONTAINER
-	MARKER
-	BOOL
-	FLOAT32
+	_Extended dataType = iota
+	_Pointer
+	_String
+	_Float64
+	_Bytes
+	_Uint16
+	_Uint32
+	_Map
+	_Int32
+	_Uint64
+	_Uint128
+	_Array
+	_Container
+	_Marker
+	_Bool
+	_Float32
 )
 
 func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint) (interface{}, uint) {
 	var value interface{}
 	switch dtype {
-	case POINTER:
+	case _Pointer:
 		value, offset = d.decodePointer(size, offset)
-	case BOOL:
+	case _Bool:
 		value, offset = d.decodeBool(size, offset)
-	case INT32:
+	case _Int32:
 		value, offset = d.decodeInt(size, offset)
-	case UINT16, UINT32, UINT64:
+	case _Uint16, _Uint32, _Uint64:
 		value, offset = d.decodeUint(size, offset)
-	case UINT128:
+	case _Uint128:
 		value, offset = d.decodeUint128(size, offset)
-	case FLOAT32:
+	case _Float32:
 		value, offset = d.decodeFloat32(size, offset)
-	case FLOAT64:
+	case _Float64:
 		value, offset = d.decodeFloat64(size, offset)
-	case STRING:
+	case _String:
 		value, offset = d.decodeString(size, offset)
-	case BYTES:
+	case _Bytes:
 		value, offset = d.decodeBytes(size, offset)
-	case ARRAY:
+	case _Array:
 		value, offset = d.decodeArray(size, offset)
-	case MAP:
+	case _Map:
 		value, offset = d.decodeMap(size, offset)
 	default:
 		panic(fmt.Sprintf("Unknown type: %d", dtype))
@@ -199,7 +197,7 @@ func (d *decoder) sizeFromCtrlByte(ctrlByte byte, offset uint, typeNum dataType)
 		return size, offset
 	}
 
-	var bytesToRead uint = 0
+	var bytesToRead uint
 	if size > 28 {
 		bytesToRead = size - 28
 	}
