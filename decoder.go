@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"math/big"
 )
 
 type decoder struct {
@@ -103,6 +104,14 @@ func (d *decoder) decodeUint(size uint, offset uint) (uint, uint) {
 	return val, newOffset
 }
 
+func (d *decoder) decodeUint128(size uint, offset uint) (*big.Int, uint) {
+	newOffset := offset + size
+	val := new(big.Int)
+	val.SetBytes(d.buffer[offset:newOffset])
+
+	return val, newOffset
+}
+
 func uintFromBytes(uintBytes []byte) uint {
 	var val uint = 0
 	for _, b := range uintBytes {
@@ -165,7 +174,7 @@ func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint) (interf
 	case UINT16, UINT32, UINT64:
 		value, offset = d.decodeUint(size, offset)
 	case UINT128:
-		panic("not implemented")
+		value, offset = d.decodeUint128(size, offset)
 	case FLOAT32:
 		value, offset = d.decodeFloat32(size, offset)
 	case FLOAT64:

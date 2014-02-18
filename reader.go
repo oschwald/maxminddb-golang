@@ -21,28 +21,30 @@ type Reader struct {
 	ipv4Start uint
 }
 
-func Open(file string) (Reader, error) {
+func Open(file string) (*Reader, error) {
 	mapFile, err := os.Open(file)
 	if err != nil {
-		return Reader{}, err
+		return nil, err
 	}
 	stats, err := mapFile.Stat()
 	if err != nil {
-		return Reader{}, err
+		return nil, err
 	}
 
 	fileSize := int(stats.Size())
 	mmap, err := syscall.Mmap(int(mapFile.Fd()), 0, fileSize, syscall.PROT_READ, syscall.MAP_SHARED)
 	if err != nil {
-		return Reader{}, err
+		return nil, err
 
 	}
 
 	metadataStart := bytes.LastIndex(mmap, metadataStartMarker)
 
 	if metadataStart == -1 {
+		syscall.Munmap(mmap)
+		mapFile.Close()
 		errStr := fmt.Sprintf("Error opening database file (%s). Is this a valid MaxMind DB file?", file)
-		return Reader{}, errors.New(errStr)
+		return nil, errors.New(errStr)
 	}
 
 	metadataStart += len(metadataStartMarker)
@@ -54,18 +56,18 @@ func Open(file string) (Reader, error) {
 	searchTreeSize := metadata["node_count"].(uint) * metadata["record_size"].(uint) / 4
 	decoder := decoder{mmap, searchTreeSize + dataSectionSeparatorSize}
 
-	return Reader{mapFile, mmap, decoder, metadata, 0}, nil
+	return &Reader{mapFile, mmap, decoder, metadata, 0}, nil
 }
 
 func (r *Reader) Lookup(ipAddress net.IP) (interface{}, error) {
-	if len(ipAddress) == 6 && r.metadata["ip_version"].(uint) == 4 {
+	if len(ipAddress) == 16 && r.metadata["ip_version"].(uint) == 4 {
 		return nil, errors.New(fmt.Sprintf("Error looking up %s. You attempted to look up an IPv6 address in an IPv4-only database.", ipAddress.String()))
 	}
 
 	pointer, err := r.findAddressInTree(ipAddress)
 
 	if pointer == 0 {
-		return 0, err
+		return nil, err
 	}
 	return r.resolveDataPointer(pointer), nil
 }

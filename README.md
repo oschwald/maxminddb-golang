@@ -39,6 +39,7 @@ production use. Here are some things that need to be done:
 package main
 
 import (
+    "fmt"
     "log"
     "maxminddb"
     "net"
@@ -54,6 +55,7 @@ func main() {
     if err != nil {
         log.Fatal(err)
     }
+    fmt.Println(record)
     db.Close()
 }
 

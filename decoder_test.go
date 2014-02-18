@@ -2,6 +2,7 @@ package maxminddb
 
 import (
 	"encoding/hex"
+	"math/big"
 	"os"
 	"reflect"
 	"strings"
@@ -146,11 +147,9 @@ func TestUint32(t *testing.T) {
 	validateDecoding(t, uint32)
 }
 
-func generateLargeUint(bits uint) map[string]interface{} {
-	ctrlByte := "03"
-	if bits == 64 {
-		ctrlByte = "02"
-	}
+func TestUint64(t *testing.T) {
+	ctrlByte := "02"
+	bits := uint(64)
 
 	uints := map[string]interface{}{
 		"00" + ctrlByte:          uint(0),
@@ -159,18 +158,43 @@ func generateLargeUint(bits uint) map[string]interface{} {
 	}
 	for i := uint(0); i <= bits/8; i++ {
 		expected := uint((1 << (8 * i)) - 1)
+
 		input := hex.EncodeToString([]byte{byte(i)}) + ctrlByte + strings.Repeat("ff", int(i))
 		uints[input] = expected
 	}
-	return uints
+
+	validateDecoding(t, uints)
 }
 
-func TestUint64(t *testing.T) {
-	validateDecoding(t, generateLargeUint(64))
-}
-
+// Dedup with above somehow
 func TestUint128(t *testing.T) {
-	t.Skip("NOT IMPLEMENTED")
+	ctrlByte := "03"
+	bits := uint(128)
+
+	uints := map[string]interface{}{
+		"00" + ctrlByte:          big.NewInt(0),
+		"02" + ctrlByte + "01f4": big.NewInt(500),
+		"02" + ctrlByte + "2a78": big.NewInt(10872),
+	}
+	for i := uint(1); i <= bits/8; i++ {
+		expected := powBigInt(big.NewInt(2), 8*i)
+		expected = expected.Sub(expected, big.NewInt(1))
+		input := hex.EncodeToString([]byte{byte(i)}) + ctrlByte + strings.Repeat("ff", int(i))
+
+		uints[input] = expected
+	}
+
+	validateDecoding(t, uints)
+}
+
+// No pow or bit shifting for big int, apparently :-(
+// This is _not_ meant to be a comprehensive power function
+func powBigInt(bi *big.Int, pow uint) *big.Int {
+	newInt := big.NewInt(1)
+	for i := uint(0); i < pow; i++ {
+		newInt.Mul(newInt, bi)
+	}
+	return newInt
 }
 
 func validateDecoding(t *testing.T, tests map[string]interface{}) {
@@ -180,7 +204,7 @@ func validateDecoding(t *testing.T, tests map[string]interface{}) {
 		output, _ := d.decode(0)
 		if !reflect.DeepEqual(output, expected) {
 			// A big case statement would produce nicer errors
-			t.Errorf("Output was incorrect: %s", input_str)
+			t.Errorf("Output was incorrect: %s  %s", input_str, expected)
 		}
 	}
 }
