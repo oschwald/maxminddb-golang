@@ -5,5 +5,8 @@ go:
  - release
  - tip
 
+install:
+ - go get launchpad.net/gocheck
+
 script:
  - go test -v ./...
