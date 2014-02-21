@@ -193,7 +193,7 @@ func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint) (interf
 
 func (d *decoder) sizeFromCtrlByte(ctrlByte byte, offset uint, typeNum dataType) (uint, uint) {
 	size := uint(ctrlByte & 0x1f)
-	if typeNum == 1 {
+	if typeNum == _Extended {
 		return size, offset
 	}
 

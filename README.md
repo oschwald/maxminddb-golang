@@ -37,7 +37,7 @@ package main
 import (
     "fmt"
     "log"
-    "maxminddb"
+    "github.com/oschwald/maxminddb-golang"
     "net"
 )
 
