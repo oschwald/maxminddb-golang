@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/mitchellh/mapstructure"
 	"net"
 	"os"
 	"syscall"
@@ -70,6 +71,23 @@ func (r *Reader) Lookup(ipAddress net.IP) (interface{}, error) {
 		return nil, err
 	}
 	return r.resolveDataPointer(pointer), nil
+}
+
+func (r *Reader) Unmarshal(ipAddress net.IP, result interface{}) error {
+	config := &mapstructure.DecoderConfig{
+		TagName: "maxminddb",
+		Result:  result,
+	}
+	mapDecoder, err := mapstructure.NewDecoder(config)
+	if err != nil {
+		return err
+	}
+
+	rawValue, err := r.Lookup(ipAddress)
+	if err != nil {
+		return err
+	}
+	return mapDecoder.Decode(rawValue)
 }
 
 func (r *Reader) findAddressInTree(ipAddress net.IP) (uint, error) {

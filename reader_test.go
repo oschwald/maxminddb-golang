@@ -57,6 +57,48 @@ func (s *MySuite) TestDecoder(c *C) {
 	bigInt := new(big.Int)
 	bigInt.SetString("1329227995784915872903807060280344576", 10)
 	c.Assert(record["uint128"], DeepEquals, bigInt)
+
+	type TestType struct {
+		Array   []uint
+		Boolean bool
+		Bytes   []byte
+		Double  float64
+		Float   float32
+		Int32   int32
+		Map     map[string]interface{}
+		Uint16  uint16
+		Uint32  uint32
+		Uint64  uint64
+		// Uint128 big.Int
+		Utf8String string `maxminddb:"utf8_string"`
+	}
+
+	var result TestType
+	err := reader.Unmarshal(net.ParseIP("::1.1.1.0"), &result)
+	if err != nil {
+		c.Log(err)
+		c.Fail()
+	}
+
+	c.Assert(result.Array, DeepEquals, []uint{uint(1), uint(2), uint(3)})
+	c.Assert(result.Boolean, Equals, true)
+	c.Assert(result.Bytes, DeepEquals, []byte{0x00, 0x00, 0x00, 0x2a})
+	c.Assert(result.Double, Equals, 42.123456)
+	c.Assert(result.Float, Equals, float32(1.1))
+	c.Assert(result.Int32, Equals, int32(-268435456))
+	c.Assert(result.Map, DeepEquals,
+		map[string]interface{}{
+			"mapX": map[string]interface{}{
+				"arrayX":       []interface{}{uint(7), uint(8), uint(9)},
+				"utf8_stringX": "hello",
+			}})
+
+	c.Assert(result.Uint16, Equals, uint16(100))
+	c.Assert(result.Uint32, Equals, uint32(268435456))
+	c.Assert(result.Uint64, Equals, uint64(1152921504606846976))
+	c.Assert(result.Utf8String, Equals, "unicode! ☯ - ♫")
+	// c.Assert(result.Uint128, DeepEquals, bigInt)
+
 	reader.Close()
 }
 

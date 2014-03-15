@@ -15,10 +15,7 @@ This is a Go reader for the MaxMind DB format. This can be used to read
 This API is functional, but still needs quite a bit of work to be ready for
 production use. Here are some things that need to be done:
 
-* Currently this API provides a `Lookup` method that just returns an
-  `interface{}`. In the future, there will be functionality to deserialize
-  the data to a specified struct value, similar to the decoding in
-  `encoding/json`.
+* `Unmarshal` does not currently work with `uint128` data from the database.
 * The metadata needs to be put into a struct. The current type assertions
   are gross.
 * Docs need to be written.
@@ -28,7 +25,39 @@ production use. Here are some things that need to be done:
   working as ParseIP always seems to return 16 bytes.
 * Error handling should be improved.
 
-## Example ##
+## Unmarshal Example ##
+
+```go
+
+package main
+
+import (
+    "fmt"
+    "log"
+    "github.com/oschwald/maxminddb-golang"
+    "geoip2"
+    "net"
+)
+
+func main() {
+    db, err := maxminddb.Open("GeoLite2-City.mmdb")
+    if err != nil {
+        log.Fatal(err)
+    }
+    ip := net.ParseIP("1.1.1.1")
+
+    var record geoip2.City // Or any appropriate struct
+    err := db.Unmarshal(ip, record)
+    if err != nil {
+        log.Fatal(err)
+    }
+    fmt.Println(record)
+    db.Close()
+}
+
+```
+
+## Lookup Example ##
 
 ```go
 
