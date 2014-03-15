@@ -201,7 +201,10 @@ func validateDecoding(t *testing.T, tests map[string]interface{}) {
 	for inputStr, expected := range tests {
 		inputBytes, _ := hex.DecodeString(inputStr)
 		d := decoder{inputBytes, 0}
-		output, _ := d.decode(0)
+		output, _, err := d.decode(0)
+		if err != nil {
+			t.Error(err)
+		}
 		if !reflect.DeepEqual(output, expected) {
 			// A big case statement would produce nicer errors
 			t.Errorf("Output was incorrect: %s  %s", inputStr, expected)
@@ -212,16 +215,16 @@ func validateDecoding(t *testing.T, tests map[string]interface{}) {
 func TestPointers(t *testing.T) {
 	mapFile, err := os.Open("test-data/test-data/maps-with-pointers.raw")
 	if err != nil {
-		panic(err)
+		t.Error(err)
 	}
 	stats, err := mapFile.Stat()
 	if err != nil {
-		panic(err)
+		t.Error(err)
 	}
 
 	mmap, err := syscall.Mmap(int(mapFile.Fd()), 0, int(stats.Size()), syscall.PROT_READ, syscall.MAP_SHARED)
 	if err != nil {
-		panic(err)
+		t.Error(err)
 
 	}
 	d := decoder{mmap, 0}
@@ -236,7 +239,10 @@ func TestPointers(t *testing.T) {
 	}
 
 	for offset, expectedValue := range expected {
-		actual, _ := d.decode(offset)
+		actual, _, err := d.decode(offset)
+		if err != nil {
+			t.Error(err)
+		}
 		if !reflect.DeepEqual(actual, expectedValue) {
 			t.Errorf("Decode for pointer at %d failed", offset)
 		}

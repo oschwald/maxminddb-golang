@@ -63,7 +63,10 @@ func Open(file string) (*Reader, error) {
 	metadataStart += len(metadataStartMarker)
 	metadataDecoder := decoder{mmap, uint(metadataStart)}
 
-	metadataInterface, _ := metadataDecoder.decode(uint(metadataStart))
+	metadataInterface, _, err := metadataDecoder.decode(uint(metadataStart))
+	if err != nil {
+		return nil, err
+	}
 	var metadata Metadata
 	config := &mapstructure.DecoderConfig{
 		TagName: "maxminddb",
@@ -95,7 +98,7 @@ func (r *Reader) Lookup(ipAddress net.IP) (interface{}, error) {
 	if pointer == 0 {
 		return nil, err
 	}
-	return r.resolveDataPointer(pointer), nil
+	return r.resolveDataPointer(pointer)
 }
 
 func (r *Reader) Unmarshal(ipAddress net.IP, result interface{}) error {
@@ -117,13 +120,20 @@ func (r *Reader) Unmarshal(ipAddress net.IP, result interface{}) error {
 
 func (r *Reader) findAddressInTree(ipAddress net.IP) (uint, error) {
 	bitCount := uint(len(ipAddress) * 8)
-	node := r.startNode(bitCount)
+	node, err := r.startNode(bitCount)
+	if err != nil {
+		return 0, err
+	}
 	NodeCount := r.Metadata.NodeCount
 
 	for i := uint(0); i < bitCount && node < NodeCount; i++ {
 		bit := uint(1) & (uint(ipAddress[i>>3]) >> (7 - (i % 8)))
 
-		node = r.readNode(node, bit)
+		var err error
+		node, err = r.readNode(node, bit)
+		if err != nil {
+			return 0, err
+		}
 	}
 	if node == NodeCount {
 		// Record is empty
@@ -135,27 +145,28 @@ func (r *Reader) findAddressInTree(ipAddress net.IP) (uint, error) {
 	return 0, errors.New("invalid node in search tree")
 }
 
-func (r *Reader) startNode(length uint) uint {
+func (r *Reader) startNode(length uint) (uint, error) {
 	if r.Metadata.IPVersion != 6 || length == 128 {
-		return 0
+		return 0, nil
 	}
 
 	// We are looking up an IPv4 address in an IPv6 tree. Skip over the
 	// first 96 nodes.
 	if r.ipv4Start != 0 {
-		return r.ipv4Start
+		return r.ipv4Start, nil
 	}
 	NodeCount := r.Metadata.NodeCount
 
 	node := uint(0)
 	for i := 0; i < 96 && node < NodeCount; i++ {
 	}
-	node = r.readNode(node, 0)
+	var err error
+	node, err = r.readNode(node, 0)
 	r.ipv4Start = node
-	return node
+	return node, err
 }
 
-func (r *Reader) readNode(nodeNumber uint, index uint) uint {
+func (r *Reader) readNode(nodeNumber uint, index uint) (uint, error) {
 	RecordSize := r.Metadata.RecordSize
 
 	baseOffset := nodeNumber * RecordSize / 4
@@ -178,24 +189,23 @@ func (r *Reader) readNode(nodeNumber uint, index uint) uint {
 		offset := baseOffset + index*4
 		nodeBytes = r.buffer[offset : offset+4]
 	default:
-		panic(fmt.Sprintf("unknown record size: %d", RecordSize))
+		return 0, fmt.Errorf("unknown record size: %d", RecordSize)
 	}
-	return uintFromBytes(nodeBytes)
+	return uintFromBytes(nodeBytes), nil
 }
 
-func (r *Reader) resolveDataPointer(pointer uint) interface{} {
+func (r *Reader) resolveDataPointer(pointer uint) (interface{}, error) {
 	NodeCount := r.Metadata.NodeCount
 	searchTreeSize := r.Metadata.RecordSize * NodeCount / 4
 
 	resolved := pointer - NodeCount + searchTreeSize
 
 	if resolved > uint(len(r.buffer)) {
-		panic(
-			"the MaxMind DB file's search tree is corrupt")
+		return nil, errors.New("the MaxMind DB file's search tree is corrupt")
 	}
 
-	data, _ := r.decoder.decode(resolved)
-	return data
+	data, _, err := r.decoder.decode(resolved)
+	return data, err
 }
 
 func (r *Reader) Close() {

@@ -12,40 +12,44 @@ type decoder struct {
 	pointerBase uint
 }
 
-func (d *decoder) decodeArray(size uint, offset uint) ([]interface{}, uint) {
+func (d *decoder) decodeArray(size uint, offset uint) ([]interface{}, uint, error) {
 	array := make([]interface{}, size)
 	for i := range array {
 		var value interface{}
-		value, offset = d.decode(offset)
+		var err error
+		value, offset, err = d.decode(offset)
+		if err != nil {
+			return nil, 0, err
+		}
 		array[i] = value
 	}
-	return array, offset
+	return array, offset, nil
 }
 
-func (d *decoder) decodeBool(size uint, offset uint) (bool, uint) {
-	return size != 0, offset
+func (d *decoder) decodeBool(size uint, offset uint) (bool, uint, error) {
+	return size != 0, offset, nil
 }
 
-func (d *decoder) decodeBytes(size uint, offset uint) ([]byte, uint) {
+func (d *decoder) decodeBytes(size uint, offset uint) ([]byte, uint, error) {
 	newOffset := offset + size
-	return d.buffer[offset:newOffset], newOffset
+	return d.buffer[offset:newOffset], newOffset, nil
 }
 
-func (d *decoder) decodeFloat64(size uint, offset uint) (float64, uint) {
+func (d *decoder) decodeFloat64(size uint, offset uint) (float64, uint, error) {
 	newOffset := offset + size
 	var dbl float64
 	binary.Read(bytes.NewBuffer(d.buffer[offset:newOffset]), binary.BigEndian, &dbl)
-	return dbl, newOffset
+	return dbl, newOffset, nil
 }
 
-func (d *decoder) decodeFloat32(size uint, offset uint) (float32, uint) {
+func (d *decoder) decodeFloat32(size uint, offset uint) (float32, uint, error) {
 	newOffset := offset + size
 	var flt float32
 	binary.Read(bytes.NewBuffer(d.buffer[offset:newOffset]), binary.BigEndian, &flt)
-	return flt, newOffset
+	return flt, newOffset, nil
 }
 
-func (d *decoder) decodeInt(size uint, offset uint) (int, uint) {
+func (d *decoder) decodeInt(size uint, offset uint) (int, uint, error) {
 	newOffset := offset + size
 	intBytes := d.buffer[offset:newOffset]
 	if size != 4 {
@@ -56,19 +60,26 @@ func (d *decoder) decodeInt(size uint, offset uint) (int, uint) {
 	var val int32
 	binary.Read(bytes.NewBuffer(intBytes), binary.BigEndian, &val)
 
-	return int(val), newOffset
+	return int(val), newOffset, nil
 }
 
-func (d *decoder) decodeMap(size uint, offset uint) (map[string]interface{}, uint) {
+func (d *decoder) decodeMap(size uint, offset uint) (map[string]interface{}, uint, error) {
 	container := make(map[string]interface{})
 	for i := uint(0); i < size; i++ {
 		var key interface{}
 		var value interface{}
-		key, offset = d.decode(offset)
-		value, offset = d.decode(offset)
+		var err error
+		key, offset, err = d.decode(offset)
+		if err != nil {
+			return nil, 0, err
+		}
+		value, offset, err = d.decode(offset)
+		if err != nil {
+			return nil, 0, err
+		}
 		container[key.(string)] = value
 	}
-	return container, offset
+	return container, offset, nil
 }
 
 var pointerValueOffset = map[uint]uint{
@@ -78,7 +89,7 @@ var pointerValueOffset = map[uint]uint{
 	4: 0,
 }
 
-func (d *decoder) decodePointer(size uint, offset uint) (interface{}, uint) {
+func (d *decoder) decodePointer(size uint, offset uint) (interface{}, uint, error) {
 	pointerSize := ((size >> 3) & 0x3) + 1
 	newOffset := offset + pointerSize
 	pointerBytes := d.buffer[offset:newOffset]
@@ -91,23 +102,23 @@ func (d *decoder) decodePointer(size uint, offset uint) (interface{}, uint) {
 	unpacked := uintFromBytes(packed)
 
 	pointer := unpacked + d.pointerBase + pointerValueOffset[pointerSize]
-	value, _ := d.decode(pointer)
-	return value, newOffset
+	value, _, err := d.decode(pointer)
+	return value, newOffset, err
 }
 
-func (d *decoder) decodeUint(size uint, offset uint) (uint, uint) {
+func (d *decoder) decodeUint(size uint, offset uint) (uint, uint, error) {
 	newOffset := offset + size
 	val := uintFromBytes(d.buffer[offset:newOffset])
 
-	return val, newOffset
+	return val, newOffset, nil
 }
 
-func (d *decoder) decodeUint128(size uint, offset uint) (*big.Int, uint) {
+func (d *decoder) decodeUint128(size uint, offset uint) (*big.Int, uint, error) {
 	newOffset := offset + size
 	val := new(big.Int)
 	val.SetBytes(d.buffer[offset:newOffset])
 
-	return val, newOffset
+	return val, newOffset, nil
 }
 
 func uintFromBytes(uintBytes []byte) uint {
@@ -118,12 +129,12 @@ func uintFromBytes(uintBytes []byte) uint {
 	return val
 }
 
-func (d *decoder) decodeString(size uint, offset uint) (string, uint) {
+func (d *decoder) decodeString(size uint, offset uint) (string, uint, error) {
 	newOffset := offset + size
-	return string(d.buffer[offset:newOffset]), newOffset
+	return string(d.buffer[offset:newOffset]), newOffset, nil
 }
 
-func (d *decoder) decode(offset uint) (interface{}, uint) {
+func (d *decoder) decode(offset uint) (interface{}, uint, error) {
 	newOffset := offset + 1
 	ctrlByte := d.buffer[offset]
 
@@ -160,35 +171,33 @@ const (
 	_Float32
 )
 
-func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint) (interface{}, uint) {
-	var value interface{}
+func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint) (interface{}, uint, error) {
 	switch dtype {
 	case _Pointer:
-		value, offset = d.decodePointer(size, offset)
+		return d.decodePointer(size, offset)
 	case _Bool:
-		value, offset = d.decodeBool(size, offset)
+		return d.decodeBool(size, offset)
 	case _Int32:
-		value, offset = d.decodeInt(size, offset)
+		return d.decodeInt(size, offset)
 	case _Uint16, _Uint32, _Uint64:
-		value, offset = d.decodeUint(size, offset)
+		return d.decodeUint(size, offset)
 	case _Uint128:
-		value, offset = d.decodeUint128(size, offset)
+		return d.decodeUint128(size, offset)
 	case _Float32:
-		value, offset = d.decodeFloat32(size, offset)
+		return d.decodeFloat32(size, offset)
 	case _Float64:
-		value, offset = d.decodeFloat64(size, offset)
+		return d.decodeFloat64(size, offset)
 	case _String:
-		value, offset = d.decodeString(size, offset)
+		return d.decodeString(size, offset)
 	case _Bytes:
-		value, offset = d.decodeBytes(size, offset)
+		return d.decodeBytes(size, offset)
 	case _Array:
-		value, offset = d.decodeArray(size, offset)
+		return d.decodeArray(size, offset)
 	case _Map:
-		value, offset = d.decodeMap(size, offset)
+		return d.decodeMap(size, offset)
 	default:
-		panic(fmt.Sprintf("Unknown type: %d", dtype))
+		return nil, 0, fmt.Errorf("unknown type: %d", dtype)
 	}
-	return value, offset
 }
 
 func (d *decoder) sizeFromCtrlByte(ctrlByte byte, offset uint, typeNum dataType) (uint, uint) {
