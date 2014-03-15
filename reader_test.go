@@ -145,29 +145,29 @@ func (s *MySuite) TestNonDatabase(c *C) {
 }
 
 func checkMetadata(c *C, reader *Reader, ipVersion uint, recordSize uint) {
-	metadata := reader.metadata
+	metadata := reader.Metadata
 
-	c.Assert(metadata["binary_format_major_version"], Equals, uint(2))
+	c.Assert(metadata.BinaryFormatMajorVersion, Equals, uint(2))
 
-	c.Assert(metadata["binary_format_minor_version"], Equals, uint(0))
-	c.Assert(metadata["build_epoch"], FitsTypeOf, uint(0))
-	c.Assert(metadata["database_type"], Equals, "Test")
+	c.Assert(metadata.BinaryFormatMinorVersion, Equals, uint(0))
+	c.Assert(metadata.BuildEpoch, FitsTypeOf, uint(0))
+	c.Assert(metadata.DatabaseType, Equals, "Test")
 
-	c.Assert(metadata["description"], DeepEquals,
-		map[string]interface{}{
+	c.Assert(metadata.Description, DeepEquals,
+		map[string]string{
 			"en": "Test Database",
 			"zh": "Test Database Chinese",
 		})
-	c.Assert(metadata["ip_version"], Equals, ipVersion)
-	c.Assert(metadata["languages"], DeepEquals, []interface{}{"en", "zh"})
+	c.Assert(metadata.IPVersion, Equals, ipVersion)
+	c.Assert(metadata.Languages, DeepEquals, []string{"en", "zh"})
 
 	if ipVersion == 4 {
-		c.Assert(metadata["node_count"], Equals, uint(37))
+		c.Assert(metadata.NodeCount, Equals, uint(37))
 	} else {
-		c.Assert(metadata["node_count"], Equals, uint(188))
+		c.Assert(metadata.NodeCount, Equals, uint(188))
 	}
 
-	c.Assert(metadata["record_size"], Equals, recordSize)
+	c.Assert(metadata.RecordSize, Equals, recordSize)
 }
 
 func checkIpv4(c *C, reader *Reader) {

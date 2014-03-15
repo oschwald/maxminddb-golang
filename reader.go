@@ -18,8 +18,20 @@ type Reader struct {
 	file      *os.File
 	buffer    []byte
 	decoder   decoder
-	metadata  map[string]interface{}
+	Metadata  Metadata
 	ipv4Start uint
+}
+
+type Metadata struct {
+	BinaryFormatMajorVersion uint   `maxminddb:"binary_format_major_version"`
+	BinaryFormatMinorVersion uint   `maxminddb:"binary_format_minor_version"`
+	BuildEpoch               uint   `maxminddb:"build_epoch"`
+	DatabaseType             string `maxminddb:"database_type"`
+	Description              map[string]string
+	IPVersion                uint `maxminddb:"ip_version"`
+	Languages                []string
+	NodeCount                uint `maxminddb:"node_count"`
+	RecordSize               uint `maxminddb:"record_size"`
 }
 
 func Open(file string) (*Reader, error) {
@@ -52,16 +64,29 @@ func Open(file string) (*Reader, error) {
 	metadataDecoder := decoder{mmap, uint(metadataStart)}
 
 	metadataInterface, _ := metadataDecoder.decode(uint(metadataStart))
-	metadata := metadataInterface.(map[string]interface{})
+	var metadata Metadata
+	config := &mapstructure.DecoderConfig{
+		TagName: "maxminddb",
+		Result:  &metadata,
+	}
+	metadataUnmarshaler, err := mapstructure.NewDecoder(config)
+	if err != nil {
+		return nil, err
+	}
 
-	searchTreeSize := metadata["node_count"].(uint) * metadata["record_size"].(uint) / 4
+	err = metadataUnmarshaler.Decode(metadataInterface)
+	if err != nil {
+		return nil, err
+	}
+
+	searchTreeSize := metadata.NodeCount * metadata.RecordSize / 4
 	decoder := decoder{mmap, searchTreeSize + dataSectionSeparatorSize}
 
 	return &Reader{mapFile, mmap, decoder, metadata, 0}, nil
 }
 
 func (r *Reader) Lookup(ipAddress net.IP) (interface{}, error) {
-	if len(ipAddress) == 16 && r.metadata["ip_version"].(uint) == 4 {
+	if len(ipAddress) == 16 && r.Metadata.IPVersion == 4 {
 		return nil, fmt.Errorf("error looking up '%s': you attempted to look up an IPv6 address in an IPv4-only database", ipAddress.String())
 	}
 
@@ -93,17 +118,17 @@ func (r *Reader) Unmarshal(ipAddress net.IP, result interface{}) error {
 func (r *Reader) findAddressInTree(ipAddress net.IP) (uint, error) {
 	bitCount := uint(len(ipAddress) * 8)
 	node := r.startNode(bitCount)
-	nodeCount := r.metadata["node_count"].(uint)
+	NodeCount := r.Metadata.NodeCount
 
-	for i := uint(0); i < bitCount && node < nodeCount; i++ {
+	for i := uint(0); i < bitCount && node < NodeCount; i++ {
 		bit := uint(1) & (uint(ipAddress[i>>3]) >> (7 - (i % 8)))
 
 		node = r.readNode(node, bit)
 	}
-	if node == nodeCount {
+	if node == NodeCount {
 		// Record is empty
 		return 0, nil
-	} else if node > nodeCount {
+	} else if node > NodeCount {
 		return node, nil
 	}
 
@@ -111,7 +136,7 @@ func (r *Reader) findAddressInTree(ipAddress net.IP) (uint, error) {
 }
 
 func (r *Reader) startNode(length uint) uint {
-	if r.metadata["ip_version"].(uint) != 6 || length == 128 {
+	if r.Metadata.IPVersion != 6 || length == 128 {
 		return 0
 	}
 
@@ -120,10 +145,10 @@ func (r *Reader) startNode(length uint) uint {
 	if r.ipv4Start != 0 {
 		return r.ipv4Start
 	}
-	nodeCount := r.metadata["node_count"].(uint)
+	NodeCount := r.Metadata.NodeCount
 
 	node := uint(0)
-	for i := 0; i < 96 && node < nodeCount; i++ {
+	for i := 0; i < 96 && node < NodeCount; i++ {
 	}
 	node = r.readNode(node, 0)
 	r.ipv4Start = node
@@ -131,12 +156,12 @@ func (r *Reader) startNode(length uint) uint {
 }
 
 func (r *Reader) readNode(nodeNumber uint, index uint) uint {
-	recordSize := r.metadata["record_size"].(uint)
+	RecordSize := r.Metadata.RecordSize
 
-	baseOffset := nodeNumber * recordSize / 4
+	baseOffset := nodeNumber * RecordSize / 4
 
 	var nodeBytes []byte
-	switch recordSize {
+	switch RecordSize {
 	case 24:
 		offset := baseOffset + index*3
 		nodeBytes = r.buffer[offset : offset+3]
@@ -153,16 +178,16 @@ func (r *Reader) readNode(nodeNumber uint, index uint) uint {
 		offset := baseOffset + index*4
 		nodeBytes = r.buffer[offset : offset+4]
 	default:
-		panic(fmt.Sprintf("unknown record size: %d", recordSize))
+		panic(fmt.Sprintf("unknown record size: %d", RecordSize))
 	}
 	return uintFromBytes(nodeBytes)
 }
 
 func (r *Reader) resolveDataPointer(pointer uint) interface{} {
-	nodeCount := r.metadata["node_count"].(uint)
-	searchTreeSize := r.metadata["record_size"].(uint) * nodeCount / 4
+	NodeCount := r.Metadata.NodeCount
+	searchTreeSize := r.Metadata.RecordSize * NodeCount / 4
 
-	resolved := pointer - nodeCount + searchTreeSize
+	resolved := pointer - NodeCount + searchTreeSize
 
 	if resolved > uint(len(r.buffer)) {
 		panic(
