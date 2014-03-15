@@ -7,6 +7,7 @@ go:
 
 install:
  - go get launchpad.net/gocheck
+ - go get github.com/mitchellh/mapstructure
 
 script:
  - go test -v ./...
