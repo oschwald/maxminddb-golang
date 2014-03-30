@@ -40,7 +40,7 @@ func (s *MySuite) TestReaderBytes(c *C) {
 		for _, ipVersion := range []uint{4, 6} {
 			fileName := fmt.Sprintf("test-data/test-data/MaxMind-DB-test-ipv%d-%d.mmdb", ipVersion, recordSize)
 			bytes, _ := ioutil.ReadFile(fileName)
-			reader, _ := OpenBytes(bytes)
+			reader, _ := FromBytes(bytes)
 
 			checkMetadata(c, reader, ipVersion, recordSize)
 
@@ -162,7 +162,7 @@ func (s *MySuite) TestNonDatabase(c *C) {
 		c.Log("received reader when doing lookups on DB that doesn't exist")
 		c.Fail()
 	}
-	c.Assert(err.Error(), Equals, "error opening database file (README.md): invalid MaxMind DB file")
+	c.Assert(err.Error(), Equals, "error opening database file: invalid MaxMind DB file")
 }
 
 func checkMetadata(c *C, reader *Reader, ipVersion uint, recordSize uint) {
