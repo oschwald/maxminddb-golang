@@ -3,6 +3,7 @@ package maxminddb
 import (
 	"errors"
 	"fmt"
+	"io/ioutil"
 	. "launchpad.net/gocheck"
 	"math/big"
 	"math/rand"
@@ -22,6 +23,24 @@ func (s *MySuite) TestReader(c *C) {
 		for _, ipVersion := range []uint{4, 6} {
 			fileName := fmt.Sprintf("test-data/test-data/MaxMind-DB-test-ipv%d-%d.mmdb", ipVersion, recordSize)
 			reader, _ := Open(fileName)
+
+			checkMetadata(c, reader, ipVersion, recordSize)
+
+			if ipVersion == 4 {
+				checkIpv4(c, reader)
+			} else {
+				checkIpv6(c, reader)
+			}
+		}
+	}
+}
+
+func (s *MySuite) TestReaderBytes(c *C) {
+	for _, recordSize := range []uint{24, 28, 32} {
+		for _, ipVersion := range []uint{4, 6} {
+			fileName := fmt.Sprintf("test-data/test-data/MaxMind-DB-test-ipv%d-%d.mmdb", ipVersion, recordSize)
+			bytes, _ := ioutil.ReadFile(fileName)
+			reader, _ := OpenBytes(bytes)
 
 			checkMetadata(c, reader, ipVersion, recordSize)
 
