@@ -48,16 +48,24 @@ func Open(file string) (*Reader, error) {
 	mmap, err := syscall.Mmap(int(mapFile.Fd()), 0, fileSize, syscall.PROT_READ, syscall.MAP_SHARED)
 	if err != nil {
 		return nil, err
-
 	}
 
+	reader, err := OpenBytes(mmap)
+	if err != nil {
+		syscall.Munmap(mmap)
+		mapFile.Close()
+		return nil, err
+	}
+
+	reader.file = mapFile
+	return reader, nil
+}
+
+func OpenBytes(mmap []byte) (*Reader, error) {
 	metadataStart := bytes.LastIndex(mmap, metadataStartMarker)
 
 	if metadataStart == -1 {
-		syscall.Munmap(mmap)
-		mapFile.Close()
-
-		return nil, fmt.Errorf("error opening database file (%s): invalid MaxMind DB file", file)
+		return nil, fmt.Errorf("error opening database file: invalid MaxMind DB file")
 	}
 
 	metadataStart += len(metadataStartMarker)
@@ -85,7 +93,7 @@ func Open(file string) (*Reader, error) {
 	searchTreeSize := metadata.NodeCount * metadata.RecordSize / 4
 	decoder := decoder{mmap, searchTreeSize + dataSectionSeparatorSize}
 
-	return &Reader{mapFile, mmap, decoder, metadata, 0}, nil
+	return &Reader{buffer: mmap, decoder: decoder, Metadata: metadata, ipv4Start: 0}, nil
 }
 
 func (r *Reader) Lookup(ipAddress net.IP) (interface{}, error) {
@@ -209,6 +217,8 @@ func (r *Reader) resolveDataPointer(pointer uint) (interface{}, error) {
 }
 
 func (r *Reader) Close() {
-	syscall.Munmap(r.buffer)
-	r.file.Close()
+	if r.file != nil {
+		syscall.Munmap(r.buffer)
+		r.file.Close()
+	}
 }
