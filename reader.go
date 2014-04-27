@@ -132,9 +132,9 @@ func (r *Reader) findAddressInTree(ipAddress net.IP) (uint, error) {
 	if err != nil {
 		return 0, err
 	}
-	NodeCount := r.Metadata.NodeCount
+	nodeCount := r.Metadata.NodeCount
 
-	for i := uint(0); i < bitCount && node < NodeCount; i++ {
+	for i := uint(0); i < bitCount && node < nodeCount; i++ {
 		bit := uint(1) & (uint(ipAddress[i>>3]) >> (7 - (i % 8)))
 
 		var err error
@@ -143,10 +143,10 @@ func (r *Reader) findAddressInTree(ipAddress net.IP) (uint, error) {
 			return 0, err
 		}
 	}
-	if node == NodeCount {
+	if node == nodeCount {
 		// Record is empty
 		return 0, nil
-	} else if node > NodeCount {
+	} else if node > nodeCount {
 		return node, nil
 	}
 
@@ -163,10 +163,10 @@ func (r *Reader) startNode(length uint) (uint, error) {
 	if r.ipv4Start != 0 {
 		return r.ipv4Start, nil
 	}
-	NodeCount := r.Metadata.NodeCount
+	nodeCount := r.Metadata.NodeCount
 
 	node := uint(0)
-	for i := 0; i < 96 && node < NodeCount; i++ {
+	for i := 0; i < 96 && node < nodeCount; i++ {
 	}
 	var err error
 	node, err = r.readNode(node, 0)
@@ -203,10 +203,10 @@ func (r *Reader) readNode(nodeNumber uint, index uint) (uint, error) {
 }
 
 func (r *Reader) resolveDataPointer(pointer uint) (interface{}, error) {
-	NodeCount := r.Metadata.NodeCount
-	searchTreeSize := r.Metadata.RecordSize * NodeCount / 4
+	nodeCount := r.Metadata.NodeCount
+	searchTreeSize := r.Metadata.RecordSize * nodeCount / 4
 
-	resolved := pointer - NodeCount + searchTreeSize
+	resolved := pointer - nodeCount + searchTreeSize
 
 	if resolved > uint(len(r.buffer)) {
 		return nil, errors.New("the MaxMind DB file's search tree is corrupt")
