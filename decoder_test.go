@@ -10,15 +10,6 @@ import (
 	"testing"
 )
 
-func TestArray(t *testing.T) {
-	arrays := map[string]interface{}{
-		"0004":                 []interface{}{},
-		"010443466f6f":         []interface{}{"Foo"},
-		"020443466f6f43e4baba": []interface{}{"Foo", "人"},
-	}
-	validateDecoding(t, arrays)
-}
-
 func TestBool(t *testing.T) {
 	bools := map[string]interface{}{
 		"0007": false,
@@ -84,6 +75,15 @@ func TestMap(t *testing.T) {
 		"e1496c616e677561676573020442656e427a68":     map[string]interface{}{"languages": []interface{}{"en", "zh"}},
 	}
 	validateDecoding(t, maps)
+}
+
+func TestSlice(t *testing.T) {
+	slice := map[string]interface{}{
+		"0004":                 []interface{}{},
+		"010443466f6f":         []interface{}{"Foo"},
+		"020443466f6f43e4baba": []interface{}{"Foo", "人"},
+	}
+	validateDecoding(t, slice)
 }
 
 var testStrings = makeTestStrings()

@@ -12,18 +12,18 @@ type decoder struct {
 	pointerBase uint
 }
 
-func (d *decoder) decodeArray(size uint, offset uint) ([]interface{}, uint, error) {
-	array := make([]interface{}, size)
-	for i := range array {
+func (d *decoder) decodeSlice(size uint, offset uint) ([]interface{}, uint, error) {
+	slice := make([]interface{}, size)
+	for i := range slice {
 		var value interface{}
 		var err error
 		value, offset, err = d.decode(offset)
 		if err != nil {
 			return nil, 0, err
 		}
-		array[i] = value
+		slice[i] = value
 	}
-	return array, offset, nil
+	return slice, offset, nil
 }
 
 func (d *decoder) decodeBool(size uint, offset uint) (bool, uint, error) {
@@ -164,7 +164,7 @@ const (
 	_Int32
 	_Uint64
 	_Uint128
-	_Array
+	_Slice
 	_Container
 	_Marker
 	_Bool
@@ -191,8 +191,8 @@ func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint) (interf
 		return d.decodeString(size, offset)
 	case _Bytes:
 		return d.decodeBytes(size, offset)
-	case _Array:
-		return d.decodeArray(size, offset)
+	case _Slice:
+		return d.decodeSlice(size, offset)
 	case _Map:
 		return d.decodeMap(size, offset)
 	default:
