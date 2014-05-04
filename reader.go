@@ -7,6 +7,7 @@ import (
 	"github.com/mitchellh/mapstructure"
 	"net"
 	"os"
+	"reflect"
 	"syscall"
 )
 
@@ -23,12 +24,12 @@ type Reader struct {
 }
 
 type Metadata struct {
-	BinaryFormatMajorVersion uint   `maxminddb:"binary_format_major_version"`
-	BinaryFormatMinorVersion uint   `maxminddb:"binary_format_minor_version"`
-	BuildEpoch               uint   `maxminddb:"build_epoch"`
-	DatabaseType             string `maxminddb:"database_type"`
-	Description              map[string]string
-	IPVersion                uint `maxminddb:"ip_version"`
+	BinaryFormatMajorVersion uint              `maxminddb:"binary_format_major_version"`
+	BinaryFormatMinorVersion uint              `maxminddb:"binary_format_minor_version"`
+	BuildEpoch               uint              `maxminddb:"build_epoch"`
+	DatabaseType             string            `maxminddb:"database_type"`
+	Description              map[string]string `maxminddb:"description"`
+	IPVersion                uint              `maxminddb:"ip_version"`
 	Languages                []string
 	NodeCount                uint `maxminddb:"node_count"`
 	RecordSize               uint `maxminddb:"record_size"`
@@ -71,24 +72,16 @@ func FromBytes(buffer []byte) (*Reader, error) {
 	metadataStart += len(metadataStartMarker)
 	metadataDecoder := decoder{buffer, uint(metadataStart)}
 
-	metadataInterface, _, err := metadataDecoder.decode(uint(metadataStart))
-	if err != nil {
-		return nil, err
-	}
 	var metadata Metadata
-	config := &mapstructure.DecoderConfig{
-		TagName: "maxminddb",
-		Result:  &metadata,
-	}
-	metadataUnmarshaler, err := mapstructure.NewDecoder(config)
+	fmt.Println(metadata)
+
+	rvMetdata := reflect.ValueOf(&metadata)
+	_, err := metadataDecoder.decode(uint(metadataStart), rvMetdata)
 	if err != nil {
 		return nil, err
 	}
 
-	err = metadataUnmarshaler.Decode(metadataInterface)
-	if err != nil {
-		return nil, err
-	}
+	fmt.Println(metadata)
 
 	searchTreeSize := metadata.NodeCount * metadata.RecordSize / 4
 	decoder := decoder{buffer, searchTreeSize + dataSectionSeparatorSize}
@@ -199,7 +192,7 @@ func (r *Reader) readNode(nodeNumber uint, index uint) (uint, error) {
 	default:
 		return 0, fmt.Errorf("unknown record size: %d", RecordSize)
 	}
-	return uintFromBytes(nodeBytes), nil
+	return uint(uintFromBytes(nodeBytes)), nil
 }
 
 func (r *Reader) resolveDataPointer(pointer uint) (interface{}, error) {
@@ -212,8 +205,9 @@ func (r *Reader) resolveDataPointer(pointer uint) (interface{}, error) {
 		return nil, errors.New("the MaxMind DB file's search tree is corrupt")
 	}
 
-	data, _, err := r.decoder.decode(resolved)
-	return data, err
+	return nil, nil
+	// data, _, err := r.decoder.decode(resolved)
+	// return data, err
 }
 
 func (r *Reader) Close() {
