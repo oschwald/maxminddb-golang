@@ -72,15 +72,12 @@ func FromBytes(buffer []byte) (*Reader, error) {
 	metadataDecoder := decoder{buffer, uint(metadataStart)}
 
 	var metadata Metadata
-	fmt.Println(metadata)
 
 	rvMetdata := reflect.ValueOf(&metadata)
 	_, err := metadataDecoder.decode(uint(metadataStart), rvMetdata)
 	if err != nil {
 		return nil, err
 	}
-
-	fmt.Println(metadata)
 
 	searchTreeSize := metadata.NodeCount * metadata.RecordSize / 4
 	decoder := decoder{buffer, searchTreeSize + dataSectionSeparatorSize}

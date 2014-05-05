@@ -90,7 +90,6 @@ func (d *decoder) decodeMap(size uint, offset uint, result reflect.Value) (uint,
 func (d *decoder) decodeStruct(size uint, offset uint, result reflect.Value) (uint, error) {
 
 	resultType := result.Type()
-	fmt.Println("decode struct: ", resultType.Kind())
 	numFields := resultType.NumField()
 
 	fields := make(map[string]reflect.Value)
@@ -224,8 +223,6 @@ func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint, result 
 		result = reflect.Indirect(result)
 	}
 
-	fmt.Println(result.Kind())
-
 	switch dtype {
 	case _Pointer:
 		return d.decodePointer(size, offset, result)
@@ -296,7 +293,6 @@ func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint, result 
 		}
 	case _String:
 		value, newOffset, err := d.decodeString(size, offset)
-		fmt.Println(value)
 
 		if err != nil {
 			return 0, err
