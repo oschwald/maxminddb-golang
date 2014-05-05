@@ -6,10 +6,10 @@ import (
 	"io/ioutil"
 	. "launchpad.net/gocheck"
 	"math/big"
-	"math/rand"
+	// "math/rand"
 	"net"
 	"testing"
-	"time"
+	// "time"
 )
 
 func TestMaxMindDbReader(t *testing.T) { TestingT(t) }
@@ -53,12 +53,14 @@ func (s *MySuite) TestReaderBytes(c *C) {
 	}
 }
 
-func (s *MySuite) TestDecoder(c *C) {
+func (s *MySuite) TestDecodingToInterface(c *C) {
 	reader, _ := Open("test-data/test-data/MaxMind-DB-test-decoder.mmdb")
-	recordInterface, _ := reader.Lookup(net.ParseIP("::1.1.1.0"))
+
+	var recordInterface interface{}
+	reader.Lookup(net.ParseIP("::1.1.1.0"), &recordInterface)
 	record := recordInterface.(map[string]interface{})
 
-	c.Assert(record["array"], DeepEquals, []interface{}{uint(1), uint(2), uint(3)})
+	c.Assert(record["array"], DeepEquals, []interface{}{uint64(1), uint64(2), uint64(3)})
 	c.Assert(record["boolean"], Equals, true)
 	c.Assert(record["bytes"], DeepEquals, []byte{0x00, 0x00, 0x00, 0x2a})
 	c.Assert(record["double"], Equals, 42.123456)
@@ -67,32 +69,36 @@ func (s *MySuite) TestDecoder(c *C) {
 	c.Assert(record["map"], DeepEquals,
 		map[string]interface{}{
 			"mapX": map[string]interface{}{
-				"arrayX":       []interface{}{uint(7), uint(8), uint(9)},
+				"arrayX":       []interface{}{uint64(7), uint64(8), uint64(9)},
 				"utf8_stringX": "hello",
 			}})
 
-	c.Assert(record["uint16"], Equals, uint(100))
-	c.Assert(record["uint32"], Equals, uint(268435456))
-	c.Assert(record["uint64"], Equals, uint(1152921504606846976))
+	c.Assert(record["uint16"], Equals, uint64(100))
+	c.Assert(record["uint32"], Equals, uint64(268435456))
+	c.Assert(record["uint64"], Equals, uint64(1152921504606846976))
 	c.Assert(record["utf8_string"], Equals, "unicode! ☯ - ♫")
 	bigInt := new(big.Int)
 	bigInt.SetString("1329227995784915872903807060280344576", 10)
 	c.Assert(record["uint128"], DeepEquals, bigInt)
+}
 
-	type TestType struct {
-		Array   []uint
-		Boolean bool
-		Bytes   []byte
-		Double  float64
-		Float   float32
-		Int32   int32
-		Map     map[string]interface{}
-		Uint16  uint16
-		Uint32  uint32
-		Uint64  uint64
-		// Uint128 big.Int
-		Utf8String string `maxminddb:"utf8_string"`
-	}
+type TestType struct {
+	Array      []uint                 `maxminddb:"array"`
+	Boolean    bool                   `maxminddb:"boolean"`
+	Bytes      []byte                 `maxminddb:"bytes"`
+	Double     float64                `maxminddb:"double"`
+	Float      float32                `maxminddb:"float"`
+	Int32      int32                  `maxminddb:"int32"`
+	Map        map[string]interface{} `maxminddb:"map"`
+	Uint16     uint16                 `maxminddb:"uint16"`
+	Uint32     uint32                 `maxminddb:"uint32"`
+	Uint64     uint64                 `maxminddb:"uint64"`
+	Uint128    big.Int                `maxminddb:"uint128"`
+	Utf8String string                 `maxminddb:"utf8_string"`
+}
+
+func (s *MySuite) TestDecoder(c *C) {
+	reader, _ := Open("test-data/test-data/MaxMind-DB-test-decoder.mmdb")
 
 	var result TestType
 	err := reader.Unmarshal(net.ParseIP("::1.1.1.0"), &result)
@@ -107,10 +113,13 @@ func (s *MySuite) TestDecoder(c *C) {
 	c.Assert(result.Double, Equals, 42.123456)
 	c.Assert(result.Float, Equals, float32(1.1))
 	c.Assert(result.Int32, Equals, int32(-268435456))
+
+	// XXX - we need to allow decoding to an interface before this
+	// would be supported
 	c.Assert(result.Map, DeepEquals,
 		map[string]interface{}{
 			"mapX": map[string]interface{}{
-				"arrayX":       []interface{}{uint(7), uint(8), uint(9)},
+				"arrayX":       []interface{}{uint64(7), uint64(8), uint64(9)},
 				"utf8_stringX": "hello",
 			}})
 
@@ -118,18 +127,22 @@ func (s *MySuite) TestDecoder(c *C) {
 	c.Assert(result.Uint32, Equals, uint32(268435456))
 	c.Assert(result.Uint64, Equals, uint64(1152921504606846976))
 	c.Assert(result.Utf8String, Equals, "unicode! ☯ - ♫")
-	// c.Assert(result.Uint128, DeepEquals, bigInt)
+	bigInt := new(big.Int)
+	bigInt.SetString("1329227995784915872903807060280344576", 10)
+	c.Assert(&result.Uint128, DeepEquals, bigInt)
 
 	reader.Close()
 }
 
 func (s *MySuite) TestIpv6inIpv4(c *C) {
 	reader, _ := Open("test-data/test-data/MaxMind-DB-test-ipv4-24.mmdb")
-	record, err := reader.Lookup(net.ParseIP("2001::"))
-	if record != nil {
-		c.Log("nil record from lookup expected")
-		c.Fail()
-	}
+
+	var result TestType
+	err := reader.Lookup(net.ParseIP("2001::"), &result)
+	// if result != nil {
+	// 	c.Log("nil record from lookup expected")
+	// 	c.Fail()
+	// }
 	expected := errors.New("error looking up '2001::': you attempted to look up an IPv6 address in an IPv4-only database")
 	c.Assert(err, DeepEquals, expected)
 	reader.Close()
@@ -142,7 +155,9 @@ func (s *MySuite) TestBrokenDatabase(c *C) {
 	// // Should return an error like: "The MaxMind DB file's data "
 	// //                              "section contains bad data (unknown data "
 	// //                              "type or corrupt data)"
-	reader.Lookup(net.ParseIP("2001:220::"))
+
+	var result TestType
+	reader.Lookup(net.ParseIP("2001:220::"), &result)
 	reader.Close()
 
 }
@@ -199,8 +214,9 @@ func checkIpv4(c *C, reader *Reader) {
 
 		// XXX - Figure out why ParseIP always returns 16 byte address.
 		// Maybe update reader to accommodated
-		record, _ := reader.Lookup(ip[12:])
-		c.Assert(record, DeepEquals, map[string]interface{}{
+		var result map[string]string
+		reader.Lookup(ip[12:], &result)
+		c.Assert(result, DeepEquals, map[string]string{
 			"ip": address})
 	}
 	pairs := map[string]string{
@@ -214,19 +230,21 @@ func checkIpv4(c *C, reader *Reader) {
 	}
 
 	for keyAddress, valueAddress := range pairs {
-		data := map[string]interface{}{"ip": valueAddress}
+		data := map[string]string{"ip": valueAddress}
 
 		ip := net.ParseIP(keyAddress)
 
-		record, _ := reader.Lookup(ip[12:])
-		c.Assert(record, DeepEquals, data)
+		var result map[string]string
+		reader.Lookup(ip[12:], &result)
+		c.Assert(result, DeepEquals, data)
 	}
 
 	for _, address := range []string{"1.1.1.33", "255.254.253.123"} {
 		ip := net.ParseIP(address)
 
-		record, _ := reader.Lookup(ip[12:])
-		c.Assert(record, IsNil)
+		var result map[string]string
+		reader.Lookup(ip[12:], &result)
+		c.Assert(result, IsNil)
 	}
 }
 
@@ -236,8 +254,9 @@ func checkIpv6(c *C, reader *Reader) {
 		"::2:0:40", "::2:0:50", "::2:0:58"}
 
 	for _, address := range subnets {
-		record, _ := reader.Lookup(net.ParseIP(address))
-		c.Assert(record, DeepEquals, map[string]interface{}{"ip": address})
+		var result map[string]string
+		reader.Lookup(net.ParseIP(address), &result)
+		c.Assert(result, DeepEquals, map[string]string{"ip": address})
 	}
 
 	pairs := map[string]string{
@@ -252,33 +271,35 @@ func checkIpv6(c *C, reader *Reader) {
 	}
 
 	for keyAddress, valueAddress := range pairs {
-		data := map[string]interface{}{"ip": valueAddress}
-		record, _ := reader.Lookup(net.ParseIP(keyAddress))
-		c.Assert(record, DeepEquals, data)
+		data := map[string]string{"ip": valueAddress}
+		var result map[string]string
+		reader.Lookup(net.ParseIP(keyAddress), &result)
+		c.Assert(result, DeepEquals, data)
 	}
 
 	for _, address := range []string{"1.1.1.33", "255.254.253.123", "89fa::"} {
-		record, _ := reader.Lookup(net.ParseIP(address))
-		c.Assert(record, IsNil)
+		var result map[string]string
+		reader.Lookup(net.ParseIP(address), &result)
+		c.Assert(result, IsNil)
 	}
 }
 
-func BenchmarkMaxMindDB(b *testing.B) {
-	db, err := Open("GeoLite2-City.mmdb")
-	if err != nil {
-		b.Fatal(err)
-	}
+// func BenchmarkMaxMindDB(b *testing.B) {
+// 	db, err := Open("GeoLite2-City.mmdb")
+// 	if err != nil {
+// 		b.Fatal(err)
+// 	}
 
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+// 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-	for i := 0; i < b.N; i++ {
-		num := r.Uint32()
-		ip := net.ParseIP(fmt.Sprintf("%d.%d.%d.%d", (0xFF000000&num)>>24,
-			(0x00FF0000&num)>>16, (0x0000FF00&num)>>8, 0x000000F&num))
-		_, err := db.Lookup(ip)
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-	db.Close()
-}
+// 	for i := 0; i < b.N; i++ {
+// 		num := r.Uint32()
+// 		ip := net.ParseIP(fmt.Sprintf("%d.%d.%d.%d", (0xFF000000&num)>>24,
+// 			(0x00FF0000&num)>>16, (0x0000FF00&num)>>8, 0x000000F&num))
+// 		_, err := db.Lookup(ip)
+// 		if err != nil {
+// 			b.Fatal(err)
+// 		}
+// 	}
+// 	db.Close()
+// }

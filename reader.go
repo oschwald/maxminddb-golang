@@ -98,7 +98,7 @@ func (r *Reader) Lookup(ipAddress net.IP, result interface{}) error {
 
 	rv := reflect.ValueOf(result)
 	if rv.Kind() != reflect.Ptr || rv.IsNil() {
-		return fmt.Errorf("Cannot decode to %v", rv.Type())
+		return fmt.Errorf("cannot decode to %v", rv.Type())
 	}
 	return r.resolveDataPointer(pointer, rv)
 }

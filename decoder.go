@@ -237,6 +237,9 @@ func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint, result 
 		case reflect.Bool:
 			result.SetBool(value)
 			return newOffset, nil
+		case reflect.Interface:
+			result.Set(reflect.ValueOf(value))
+			return newOffset, nil
 		}
 	case _Int32:
 		value, newOffset, err := d.decodeInt(size, offset)
@@ -249,6 +252,9 @@ func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint, result 
 			return newOffset, fmt.Errorf("trying to unmarshal %v into %v", value, result.Type())
 		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 			result.SetInt(int64(value))
+			return newOffset, nil
+		case reflect.Interface:
+			result.Set(reflect.ValueOf(value))
 			return newOffset, nil
 		}
 	case _Uint16, _Uint32, _Uint64:
@@ -263,9 +269,28 @@ func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint, result 
 		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
 			result.SetUint(value)
 			return newOffset, nil
+		case reflect.Interface:
+			result.Set(reflect.ValueOf(value))
+			return newOffset, nil
 		}
-	// case _Uint128:
-	// 	return d.decodeUint128(size, offset)
+	case _Uint128:
+		value, newOffset, err := d.decodeUint128(size, offset)
+		if err != nil {
+			return 0, err
+		}
+
+		// XXX - this should allow *big.Int rather than just bigInt
+		// Currently this is reported as invalid
+		switch result.Kind() {
+		default:
+			return newOffset, fmt.Errorf("trying to unmarshal %v into %v", value, result.Type())
+		case reflect.Struct:
+			result.Set(reflect.ValueOf(*value))
+			return newOffset, nil
+		case reflect.Interface, reflect.Ptr:
+			result.Set(reflect.ValueOf(value))
+			return newOffset, nil
+		}
 	case _Float32:
 		value, newOffset, err := d.decodeFloat32(size, offset)
 		if err != nil {
@@ -278,6 +303,9 @@ func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint, result 
 		case reflect.Float32, reflect.Float64:
 			result.SetFloat(float64(value))
 			return newOffset, nil
+		case reflect.Interface:
+			result.Set(reflect.ValueOf(value))
+			return newOffset, nil
 		}
 	case _Float64:
 		value, newOffset, err := d.decodeFloat64(size, offset)
@@ -289,6 +317,9 @@ func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint, result 
 			return newOffset, fmt.Errorf("trying to unmarshal %v into %v", value, result.Type())
 		case reflect.Float32, reflect.Float64:
 			result.SetFloat(value)
+			return newOffset, nil
+		case reflect.Interface:
+			result.Set(reflect.ValueOf(value))
 			return newOffset, nil
 		}
 	case _String:
@@ -303,6 +334,9 @@ func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint, result 
 		case reflect.String:
 			result.SetString(value)
 			return newOffset, nil
+		case reflect.Interface:
+			result.Set(reflect.ValueOf(value))
+			return newOffset, nil
 		}
 	case _Bytes:
 		value, newOffset, err := d.decodeBytes(size, offset)
@@ -312,12 +346,26 @@ func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint, result 
 		switch result.Kind() {
 		default:
 			return newOffset, fmt.Errorf("trying to unmarshal %v into %v", value, result.Type())
-		case reflect.Float32, reflect.Float64:
+		case reflect.Slice:
 			result.SetBytes(value)
+			return newOffset, nil
+		case reflect.Interface:
+			result.Set(reflect.ValueOf(value))
 			return newOffset, nil
 		}
 	case _Slice:
-		return d.decodeSlice(size, offset, result)
+		switch result.Kind() {
+		default:
+			return 0, fmt.Errorf("trying to unmarshal an array into %v", result.Type())
+		case reflect.Slice:
+			return d.decodeSlice(size, offset, result)
+		case reflect.Interface:
+			a := []interface{}{}
+			rv := reflect.ValueOf(&a).Elem()
+			newOffset, err := d.decodeSlice(size, offset, rv)
+			result.Set(rv)
+			return newOffset, err
+		}
 	case _Map:
 		switch result.Kind() {
 		default:
@@ -326,6 +374,11 @@ func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint, result 
 			return d.decodeStruct(size, offset, result)
 		case reflect.Map:
 			return d.decodeMap(size, offset, result)
+		case reflect.Interface:
+			rv := reflect.ValueOf(make(map[string]interface{}))
+			newOffset, err := d.decodeMap(size, offset, rv)
+			result.Set(rv)
+			return newOffset, err
 		}
 	default:
 		return 0, fmt.Errorf("unknown type: %d", dtype)
