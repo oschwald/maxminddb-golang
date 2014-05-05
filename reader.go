@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/mitchellh/mapstructure"
 	"net"
 	"os"
 	"reflect"
@@ -30,9 +29,9 @@ type Metadata struct {
 	DatabaseType             string            `maxminddb:"database_type"`
 	Description              map[string]string `maxminddb:"description"`
 	IPVersion                uint              `maxminddb:"ip_version"`
-	Languages                []string
-	NodeCount                uint `maxminddb:"node_count"`
-	RecordSize               uint `maxminddb:"record_size"`
+	Languages                []string          `maxminddb:"languages"`
+	NodeCount                uint              `maxminddb:"node_count"`
+	RecordSize               uint              `maxminddb:"record_size"`
 }
 
 func Open(file string) (*Reader, error) {
@@ -89,34 +88,27 @@ func FromBytes(buffer []byte) (*Reader, error) {
 	return &Reader{buffer: buffer, decoder: decoder, Metadata: metadata, ipv4Start: 0}, nil
 }
 
-func (r *Reader) Lookup(ipAddress net.IP) (interface{}, error) {
+func (r *Reader) Lookup(ipAddress net.IP, result interface{}) error {
 	if len(ipAddress) == 16 && r.Metadata.IPVersion == 4 {
-		return nil, fmt.Errorf("error looking up '%s': you attempted to look up an IPv6 address in an IPv4-only database", ipAddress.String())
+		return fmt.Errorf("error looking up '%s': you attempted to look up an IPv6 address in an IPv4-only database", ipAddress.String())
 	}
 
 	pointer, err := r.findAddressInTree(ipAddress)
 
 	if pointer == 0 {
-		return nil, err
+		return err
 	}
-	return r.resolveDataPointer(pointer)
+
+	rv := reflect.ValueOf(result)
+	if rv.Kind() != reflect.Ptr || rv.IsNil() {
+		return fmt.Errorf("Cannot decode to %v", rv.Type())
+	}
+	return r.resolveDataPointer(pointer, rv)
 }
 
+// XXX - temp for compat
 func (r *Reader) Unmarshal(ipAddress net.IP, result interface{}) error {
-	config := &mapstructure.DecoderConfig{
-		TagName: "maxminddb",
-		Result:  result,
-	}
-	mapDecoder, err := mapstructure.NewDecoder(config)
-	if err != nil {
-		return err
-	}
-
-	rawValue, err := r.Lookup(ipAddress)
-	if err != nil {
-		return err
-	}
-	return mapDecoder.Decode(rawValue)
+	return r.Lookup(ipAddress, result)
 }
 
 func (r *Reader) findAddressInTree(ipAddress net.IP) (uint, error) {
@@ -195,19 +187,18 @@ func (r *Reader) readNode(nodeNumber uint, index uint) (uint, error) {
 	return uint(uintFromBytes(nodeBytes)), nil
 }
 
-func (r *Reader) resolveDataPointer(pointer uint) (interface{}, error) {
+func (r *Reader) resolveDataPointer(pointer uint, result reflect.Value) error {
 	nodeCount := r.Metadata.NodeCount
 	searchTreeSize := r.Metadata.RecordSize * nodeCount / 4
 
 	resolved := pointer - nodeCount + searchTreeSize
 
 	if resolved > uint(len(r.buffer)) {
-		return nil, errors.New("the MaxMind DB file's search tree is corrupt")
+		return errors.New("the MaxMind DB file's search tree is corrupt")
 	}
 
-	return nil, nil
-	// data, _, err := r.decoder.decode(resolved)
-	// return data, err
+	_, err := r.decoder.decode(resolved, result)
+	return err
 }
 
 func (r *Reader) Close() {

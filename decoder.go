@@ -14,6 +14,7 @@ type decoder struct {
 }
 
 func (d *decoder) decodeSlice(size uint, offset uint, result reflect.Value) (uint, error) {
+	result.Set(reflect.MakeSlice(result.Type(), int(size), int(size)))
 	result.SetCap(int(size))
 	for i := 0; i < int(size); i++ {
 		var err error
@@ -62,29 +63,29 @@ func (d *decoder) decodeInt(size uint, offset uint) (int, uint, error) {
 	return int(val), newOffset, nil
 }
 
-// func (d *decoder) decodeMap(size uint, offset uint, result reflect.Value) (uint, error) {
-// 	if result.IsNil() {
-// 		result.Set(reflect.MakeMap(result.Type()))
-// 	}
+func (d *decoder) decodeMap(size uint, offset uint, result reflect.Value) (uint, error) {
+	if result.IsNil() {
+		result.Set(reflect.MakeMap(result.Type()))
+	}
 
-// 	for i := uint(0); i < size; i++ {
-// 		key := reflect.New(result.Type().Key())
+	for i := uint(0); i < size; i++ {
+		key := reflect.New(result.Type().Key())
 
-// 		var err error
-// 		offset, err = d.decode(offset, key)
-// 		if err != nil {
-// 			return 0, err
-// 		}
+		var err error
+		offset, err = d.decode(offset, key)
+		if err != nil {
+			return 0, err
+		}
 
-// 		value := reflect.New(result.Type().Elem())
-// 		offset, err = d.decode(offset, value)
-// 		if err != nil {
-// 			return 0, err
-// 		}
-// 		result.SetMapIndex(key, value)
-// 	}
-// 	return offset, nil
-// }
+		value := reflect.New(result.Type().Elem())
+		offset, err = d.decode(offset, value)
+		if err != nil {
+			return 0, err
+		}
+		result.SetMapIndex(key.Elem(), value.Elem())
+	}
+	return offset, nil
+}
 
 func (d *decoder) decodeStruct(size uint, offset uint, result reflect.Value) (uint, error) {
 
@@ -322,7 +323,14 @@ func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint, result 
 	case _Slice:
 		return d.decodeSlice(size, offset, result)
 	case _Map:
-		return d.decodeStruct(size, offset, result)
+		switch result.Kind() {
+		default:
+			return 0, fmt.Errorf("trying to unmarshal a map into %v", result.Type())
+		case reflect.Struct:
+			return d.decodeStruct(size, offset, result)
+		case reflect.Map:
+			return d.decodeMap(size, offset, result)
+		}
 	default:
 		return 0, fmt.Errorf("unknown type: %d", dtype)
 	}
