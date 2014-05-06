@@ -15,7 +15,6 @@ type decoder struct {
 
 func (d *decoder) decodeSlice(size uint, offset uint, result reflect.Value) (uint, error) {
 	result.Set(reflect.MakeSlice(result.Type(), int(size), int(size)))
-	result.SetCap(int(size))
 	for i := 0; i < int(size); i++ {
 		var err error
 		offset, err = d.decode(offset, result.Index(i))
