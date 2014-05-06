@@ -10,20 +10,22 @@ This is not an official MaxMind API.
 
 ## Status ##
 
-This API is functional, but still needs quite a bit of work to be ready for
-production use. Here are some things that need to be done:
+This API should be functional, particularly when used with the
+[geoip2 API](https://github.com/oschwald/geoip2-golang). That said, the
+following work remains to be done:
 
-* `Unmarshal` does not currently work with `uint128` data from the database.
-* The metadata needs to be put into a struct. The current type assertions
-  are gross.
 * Docs need to be written.
 * The code should be made idiomatic.
-* Verify that arrays/slices are being passed around correctly.
 * Although IPv4 addresses work, the code to speed up IPv4 lookups is not
   working as ParseIP always seems to return 16 bytes.
-* Error handling should be improved.
+* The error handling, particularly related to reflection, should be improved.
+* The speed of the API could be improved. On my computer, I get about 20,000
+  lookups per second with this API as compared to 50,000 lookups per second
+  with the Java API.
 
-## Unmarshal Example ##
+Pull requests and patches are encouraged.
+
+## Example Decoding to a Struct ##
 
 ```go
 
@@ -45,7 +47,7 @@ func main() {
     ip := net.ParseIP("1.1.1.1")
 
     var record geoip2.City // Or any appropriate struct
-    err := db.Unmarshal(ip, record)
+    err := db.Lookup(ip, &record)
     if err != nil {
         log.Fatal(err)
     }
@@ -55,7 +57,7 @@ func main() {
 
 ```
 
-## Lookup Example ##
+## Example Decoding to an Interface ##
 
 ```go
 
@@ -74,7 +76,9 @@ func main() {
         log.Fatal(err)
     }
     ip := net.ParseIP("1.1.1.1")
-    record, err := db.Lookup(ip)
+
+    var record interface{}
+    err := db.Lookup(ip, &record)
     if err != nil {
         log.Fatal(err)
     }
