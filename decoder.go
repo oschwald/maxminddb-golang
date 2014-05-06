@@ -116,9 +116,12 @@ func (d *decoder) decodeStruct(size uint, offset uint, result reflect.Value) (ui
 		}
 		field, ok := fields[key]
 		if !ok {
-			fmt.Println("skipping map key: ", key)
-			panic("We need to explicitly update offset for this to work")
-			// continue
+			// XXX - Ideally we should not bother decoding values we skip.
+			// This doesn't matter for the geoip2 reader as we want to decode
+			// everything, but it may matter for other use cases that just
+			// want one or two values quickly.
+			var skip interface{}
+			field = reflect.ValueOf(&skip)
 		}
 		offset, err = d.decode(offset, field)
 		if err != nil {

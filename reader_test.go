@@ -101,7 +101,7 @@ func (s *MySuite) TestDecoder(c *C) {
 	reader, _ := Open("test-data/test-data/MaxMind-DB-test-decoder.mmdb")
 
 	var result TestType
-	err := reader.Unmarshal(net.ParseIP("::1.1.1.0"), &result)
+	err := reader.Lookup(net.ParseIP("::1.1.1.0"), &result)
 	if err != nil {
 		c.Log(err)
 		c.Fail()
@@ -114,8 +114,6 @@ func (s *MySuite) TestDecoder(c *C) {
 	c.Assert(result.Float, Equals, float32(1.1))
 	c.Assert(result.Int32, Equals, int32(-268435456))
 
-	// XXX - we need to allow decoding to an interface before this
-	// would be supported
 	c.Assert(result.Map, DeepEquals,
 		map[string]interface{}{
 			"mapX": map[string]interface{}{

@@ -103,11 +103,6 @@ func (r *Reader) Lookup(ipAddress net.IP, result interface{}) error {
 	return r.resolveDataPointer(pointer, rv)
 }
 
-// XXX - temp for compat
-func (r *Reader) Unmarshal(ipAddress net.IP, result interface{}) error {
-	return r.Lookup(ipAddress, result)
-}
-
 func (r *Reader) findAddressInTree(ipAddress net.IP) (uint, error) {
 	bitCount := uint(len(ipAddress) * 8)
 	node, err := r.startNode(bitCount)
