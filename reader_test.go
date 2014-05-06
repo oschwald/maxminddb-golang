@@ -198,7 +198,7 @@ func checkMetadata(c *C, reader *Reader, ipVersion uint, recordSize uint) {
 	if ipVersion == 4 {
 		c.Assert(metadata.NodeCount, Equals, uint(37))
 	} else {
-		c.Assert(metadata.NodeCount, Equals, uint(188))
+		c.Assert(metadata.NodeCount, Equals, uint(160))
 	}
 
 	c.Assert(metadata.RecordSize, Equals, recordSize)
