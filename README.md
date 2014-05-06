@@ -16,8 +16,6 @@ following work remains to be done:
 
 * Docs need to be written.
 * The code should be made idiomatic.
-* Although IPv4 addresses work, the code to speed up IPv4 lookups is not
-  working as ParseIP always seems to return 16 bytes.
 * The error handling, particularly related to reflection, should be improved.
 * The speed of the API could be improved. On my computer, I get about 20,000
   lookups per second with this API as compared to 50,000 lookups per second

@@ -104,6 +104,11 @@ func (r *Reader) Lookup(ipAddress net.IP, result interface{}) error {
 }
 
 func (r *Reader) findAddressInTree(ipAddress net.IP) (uint, error) {
+	ipV4Address := ipAddress.To4()
+	if ipV4Address != nil {
+		ipAddress = ipV4Address
+	}
+
 	bitCount := uint(len(ipAddress) * 8)
 	node, err := r.startNode(bitCount)
 	if err != nil {
@@ -140,13 +145,17 @@ func (r *Reader) startNode(length uint) (uint, error) {
 	if r.ipv4Start != 0 {
 		return r.ipv4Start, nil
 	}
+
 	nodeCount := r.Metadata.NodeCount
 
 	node := uint(0)
-	for i := 0; i < 96 && node < nodeCount; i++ {
-	}
 	var err error
-	node, err = r.readNode(node, 0)
+	for i := 0; i < 96 && node < nodeCount; i++ {
+		node, err = r.readNode(node, 0)
+		if err != nil {
+			return 0, err
+		}
+	}
 	r.ipv4Start = node
 	return node, err
 }
