@@ -6,10 +6,10 @@ import (
 	"io/ioutil"
 	. "launchpad.net/gocheck"
 	"math/big"
-	// "math/rand"
+	"math/rand"
 	"net"
 	"testing"
-	// "time"
+	"time"
 )
 
 func TestMaxMindDbReader(t *testing.T) { TestingT(t) }
@@ -284,22 +284,23 @@ func checkIpv6(c *C, reader *Reader) {
 	}
 }
 
-// func BenchmarkMaxMindDB(b *testing.B) {
-// 	db, err := Open("GeoLite2-City.mmdb")
-// 	if err != nil {
-// 		b.Fatal(err)
-// 	}
+func BenchmarkMaxMindDB(b *testing.B) {
+	db, err := Open("GeoLite2-City.mmdb")
+	if err != nil {
+		b.Fatal(err)
+	}
 
-// 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	var result interface{}
 
-// 	for i := 0; i < b.N; i++ {
-// 		num := r.Uint32()
-// 		ip := net.ParseIP(fmt.Sprintf("%d.%d.%d.%d", (0xFF000000&num)>>24,
-// 			(0x00FF0000&num)>>16, (0x0000FF00&num)>>8, 0x000000F&num))
-// 		_, err := db.Lookup(ip)
-// 		if err != nil {
-// 			b.Fatal(err)
-// 		}
-// 	}
-// 	db.Close()
-// }
+	for i := 0; i < b.N; i++ {
+		num := r.Uint32()
+		ip := net.ParseIP(fmt.Sprintf("%d.%d.%d.%d", (0xFF000000&num)>>24,
+			(0x00FF0000&num)>>16, (0x0000FF00&num)>>8, 0x000000F&num))
+		err := db.Lookup(ip, &result)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+	db.Close()
+}
