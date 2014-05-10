@@ -68,10 +68,10 @@ func (d *decoder) decodeMap(size uint, offset uint, result reflect.Value) (uint,
 	}
 
 	for i := uint(0); i < size; i++ {
-		key := reflect.New(result.Type().Key())
-
+		var key string
 		var err error
-		offset, err = d.decode(offset, key)
+		key, offset, err = d.decodeKeyString(offset)
+
 		if err != nil {
 			return 0, err
 		}
@@ -81,7 +81,7 @@ func (d *decoder) decodeMap(size uint, offset uint, result reflect.Value) (uint,
 		if err != nil {
 			return 0, err
 		}
-		result.SetMapIndex(key.Elem(), value.Elem())
+		result.SetMapIndex(reflect.ValueOf(key), value.Elem())
 	}
 	return offset, nil
 }
@@ -106,10 +106,9 @@ func (d *decoder) decodeStruct(size uint, offset uint, result reflect.Value) (ui
 	for i := uint(0); i < size; i++ {
 
 		var key string
-		keyValue := reflect.ValueOf(&key)
-
 		var err error
-		offset, err = d.decode(offset, keyValue)
+		key, offset, err = d.decodeKeyString(offset)
+
 		if err != nil {
 			return 0, err
 		}
@@ -137,7 +136,7 @@ var pointerValueOffset = map[uint]uint{
 	4: 0,
 }
 
-func (d *decoder) decodePointer(size uint, offset uint, result reflect.Value) (uint, error) {
+func (d *decoder) decodePointer(size uint, offset uint) (uint, uint) {
 	pointerSize := ((size >> 3) & 0x3) + 1
 	newOffset := offset + pointerSize
 	pointerBytes := d.buffer[offset:newOffset]
@@ -150,8 +149,8 @@ func (d *decoder) decodePointer(size uint, offset uint, result reflect.Value) (u
 	unpacked := uint(uintFromBytes(prefix, pointerBytes))
 
 	pointer := unpacked + d.pointerBase + pointerValueOffset[pointerSize]
-	_, err := d.decode(pointer, result)
-	return newOffset, err
+
+	return pointer, newOffset
 }
 
 func (d *decoder) decodeUint(size uint, offset uint) (uint64, uint, error) {
@@ -183,6 +182,11 @@ func (d *decoder) decodeString(size uint, offset uint) (string, uint, error) {
 }
 
 func (d *decoder) decode(offset uint, result reflect.Value) (uint, error) {
+	typeNum, size, newOffset := d.decodeCtrlData(offset)
+	return d.decodeFromType(typeNum, size, newOffset, result)
+}
+
+func (d *decoder) decodeCtrlData(offset uint) (dataType, uint, uint) {
 	newOffset := offset + 1
 	ctrlByte := d.buffer[offset]
 
@@ -195,7 +199,20 @@ func (d *decoder) decode(offset uint, result reflect.Value) (uint, error) {
 
 	var size uint
 	size, newOffset = d.sizeFromCtrlByte(ctrlByte, newOffset, typeNum)
-	return d.decodeFromType(typeNum, size, newOffset, result)
+	return typeNum, size, newOffset
+}
+
+func (d *decoder) decodeKeyString(offset uint) (string, uint, error) {
+	typeNum, size, newOffset := d.decodeCtrlData(offset)
+	if typeNum == _Pointer {
+		pointer, ptrOffset := d.decodePointer(size, newOffset)
+		key, _, err := d.decodeKeyString(pointer)
+		return key, ptrOffset, err
+	}
+	if typeNum != _String {
+		return "", 0, fmt.Errorf("unexpected type when decoding string: %v", typeNum)
+	}
+	return d.decodeString(size, newOffset)
 }
 
 type dataType int
@@ -227,7 +244,9 @@ func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint, result 
 
 	switch dtype {
 	case _Pointer:
-		return d.decodePointer(size, offset, result)
+		pointer, newOffset := d.decodePointer(size, offset)
+		_, err := d.decode(pointer, result)
+		return newOffset, err
 	case _Bool:
 		value, newOffset, err := d.decodeBool(size, offset)
 		if err != nil {
