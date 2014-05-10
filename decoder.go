@@ -141,13 +141,13 @@ func (d *decoder) decodePointer(size uint, offset uint, result reflect.Value) (u
 	pointerSize := ((size >> 3) & 0x3) + 1
 	newOffset := offset + pointerSize
 	pointerBytes := d.buffer[offset:newOffset]
-	var packed []byte
+	var prefix uint64
 	if pointerSize == 4 {
-		packed = pointerBytes
+		prefix = 0
 	} else {
-		packed = append([]byte{byte(size & 0x7)}, pointerBytes...)
+		prefix = uint64(size & 0x7)
 	}
-	unpacked := uint(uintFromBytes(packed))
+	unpacked := uint(uintFromBytes(prefix, pointerBytes))
 
 	pointer := unpacked + d.pointerBase + pointerValueOffset[pointerSize]
 	_, err := d.decode(pointer, result)
@@ -156,7 +156,7 @@ func (d *decoder) decodePointer(size uint, offset uint, result reflect.Value) (u
 
 func (d *decoder) decodeUint(size uint, offset uint) (uint64, uint, error) {
 	newOffset := offset + size
-	val := uintFromBytes(d.buffer[offset:newOffset])
+	val := uintFromBytes(0, d.buffer[offset:newOffset])
 
 	return val, newOffset, nil
 }
@@ -169,8 +169,8 @@ func (d *decoder) decodeUint128(size uint, offset uint) (*big.Int, uint, error) 
 	return val, newOffset, nil
 }
 
-func uintFromBytes(uintBytes []byte) uint64 {
-	var val uint64
+func uintFromBytes(prefix uint64, uintBytes []byte) uint64 {
+	val := prefix
 	for _, b := range uintBytes {
 		val = (val << 8) | uint64(b)
 	}
@@ -405,9 +405,9 @@ func (d *decoder) sizeFromCtrlByte(ctrlByte byte, offset uint, typeNum dataType)
 	case size == 29:
 		size = 29 + uint(sizeBytes[0])
 	case size == 30:
-		size = 285 + uint(uintFromBytes(sizeBytes))
+		size = 285 + uint(uintFromBytes(0, sizeBytes))
 	case size > 30:
-		size = uint(uintFromBytes(sizeBytes)) + 65821
+		size = uint(uintFromBytes(0, sizeBytes)) + 65821
 	}
 	return size, newOffset
 }

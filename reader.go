@@ -166,26 +166,27 @@ func (r *Reader) readNode(nodeNumber uint, index uint) (uint, error) {
 	baseOffset := nodeNumber * RecordSize / 4
 
 	var nodeBytes []byte
+	var prefix uint64
 	switch RecordSize {
 	case 24:
 		offset := baseOffset + index*3
 		nodeBytes = r.buffer[offset : offset+3]
 	case 28:
-		middle := r.buffer[baseOffset+3]
+		prefix = uint64(r.buffer[baseOffset+3])
 		if index != 0 {
-			middle &= 0x0F
+			prefix &= 0x0F
 		} else {
-			middle = (0xF0 & middle) >> 4
+			prefix = (0xF0 & prefix) >> 4
 		}
 		offset := baseOffset + index*4
-		nodeBytes = append([]byte{middle}, r.buffer[offset:offset+3]...)
+		nodeBytes = r.buffer[offset : offset+3]
 	case 32:
 		offset := baseOffset + index*4
 		nodeBytes = r.buffer[offset : offset+4]
 	default:
 		return 0, fmt.Errorf("unknown record size: %d", RecordSize)
 	}
-	return uint(uintFromBytes(nodeBytes)), nil
+	return uint(uintFromBytes(prefix, nodeBytes)), nil
 }
 
 func (r *Reader) resolveDataPointer(pointer uint, result reflect.Value) error {
