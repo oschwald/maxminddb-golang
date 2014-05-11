@@ -108,18 +108,13 @@ func (d *decoder) decodeStruct(size uint, offset uint, result reflect.Value) (ui
 		var key string
 		var err error
 		key, offset, err = d.decodeKeyString(offset)
-
 		if err != nil {
 			return 0, err
 		}
 		field, ok := fields[key]
 		if !ok {
-			// XXX - Ideally we should not bother decoding values we skip.
-			// This doesn't matter for the geoip2 reader as we want to decode
-			// everything, but it may matter for other use cases that just
-			// want one or two values quickly.
-			var skip interface{}
-			field = reflect.ValueOf(&skip)
+			offset = d.nextValueOffset(offset, 1)
+			continue
 		}
 		offset, err = d.decode(offset, field)
 		if err != nil {
@@ -213,6 +208,25 @@ func (d *decoder) decodeKeyString(offset uint) (string, uint, error) {
 		return "", 0, fmt.Errorf("unexpected type when decoding string: %v", typeNum)
 	}
 	return d.decodeString(size, newOffset)
+}
+
+func (d *decoder) nextValueOffset(offset uint, numberToSkip uint) uint {
+	if numberToSkip == 0 {
+		return offset
+	}
+	typeNum, size, offset := d.decodeCtrlData(offset)
+	switch typeNum {
+	case _Pointer:
+		_, offset = d.decodePointer(size, offset)
+	case _Map:
+		numberToSkip += 2 * size
+	case _Slice:
+		numberToSkip += size
+	case _Bool:
+	default:
+		offset += size
+	}
+	return d.nextValueOffset(offset, numberToSkip-1)
 }
 
 type dataType int

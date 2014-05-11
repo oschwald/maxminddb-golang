@@ -294,7 +294,34 @@ func BenchmarkMaxMindDB(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		num := r.Uint32()
 		ip := net.ParseIP(fmt.Sprintf("%d.%d.%d.%d", (0xFF000000&num)>>24,
-			(0x00FF0000&num)>>16, (0x0000FF00&num)>>8, 0x000000F&num))
+			(0x00FF0000&num)>>16, (0x0000FF00&num)>>8, 0x000000FF&num))
+		err := db.Lookup(ip, &result)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+	db.Close()
+}
+
+func BenchmarkCountryCode(b *testing.B) {
+	db, err := Open("GeoLite2-City.mmdb")
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	type MinCountry struct {
+		Country struct {
+			IsoCode string `maxminddb:"iso_code"`
+		} `maxminddb:"country"`
+	}
+
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	var result MinCountry
+
+	for i := 0; i < b.N; i++ {
+		num := r.Uint32()
+		ip := net.ParseIP(fmt.Sprintf("%d.%d.%d.%d", (0xFF000000&num)>>24,
+			(0x00FF0000&num)>>16, (0x0000FF00&num)>>8, 0x000000FF&num))
 		err := db.Lookup(ip, &result)
 		if err != nil {
 			b.Fatal(err)
