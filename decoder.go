@@ -210,6 +210,9 @@ func (d *decoder) decodeKeyString(offset uint) (string, uint, error) {
 	return d.decodeString(size, newOffset)
 }
 
+// This function is used to skip ahead to the next value without decoding
+// the one at the offset passed in. The size bits have different meanings for
+// different data types
 func (d *decoder) nextValueOffset(offset uint, numberToSkip uint) uint {
 	if numberToSkip == 0 {
 		return offset

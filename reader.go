@@ -14,6 +14,8 @@ const dataSectionSeparatorSize = 16
 
 var metadataStartMarker = []byte("\xAB\xCD\xEFMaxMind.com")
 
+// Reader holds the data corresponding to the MaxMind DB file. Its only public
+// field is Metadata, which contains the metadata from the MaxMind DB file.
 type Reader struct {
 	file      *os.File
 	buffer    []byte
@@ -22,6 +24,10 @@ type Reader struct {
 	ipv4Start uint
 }
 
+// Metadata holds the metadata decoded from the MaxMind DB file. In particular
+// in has the format version, the build time as Unix epoch time, the database
+// type and description, the IP version supported, and a slice of the natural
+// languages included.
 type Metadata struct {
 	BinaryFormatMajorVersion uint              `maxminddb:"binary_format_major_version"`
 	BinaryFormatMinorVersion uint              `maxminddb:"binary_format_minor_version"`
@@ -34,6 +40,10 @@ type Metadata struct {
 	RecordSize               uint              `maxminddb:"record_size"`
 }
 
+// Open takes a string path to a MaxMind DB file and returns a Reader
+// structure or an error. The database file is opened using a memory map. Use
+// the Close method on the Reader object to return the resources to the
+// system.
 func Open(file string) (*Reader, error) {
 	mapFile, err := os.Open(file)
 	if err != nil {
@@ -61,6 +71,8 @@ func Open(file string) (*Reader, error) {
 	return reader, nil
 }
 
+// FromBytes takes a byte slice corresponding to a MaxMind DB file and returns
+// a Reader structure or an error.
 func FromBytes(buffer []byte) (*Reader, error) {
 	metadataStart := bytes.LastIndex(buffer, metadataStartMarker)
 
@@ -85,6 +97,20 @@ func FromBytes(buffer []byte) (*Reader, error) {
 	return &Reader{buffer: buffer, decoder: decoder, Metadata: metadata, ipv4Start: 0}, nil
 }
 
+// Lookup takes an IP address as a net.IP structure and a pointer to the
+// result value to decode into. The result value pointed to must be a data
+// value that corresponds to a record in the database. This may include a
+// struct representation of the data, a map capable of holding the data or an
+// empty interface{} value.
+//
+// If result is a pointer to a struct, the struct need not include a field
+// for every value that may be in the database. If a field is not present in
+// the structure, the decoder will not decode that field, reducing the time
+// required to decode the record.
+//
+// Currently the decoder expect most data types to correspond exactly (e.g.,
+// a uint64 database type must be decoded into a uint64 Go type). In the
+// future, this may be made more flexible.
 func (r *Reader) Lookup(ipAddress net.IP, result interface{}) error {
 	if len(ipAddress) == 16 && r.Metadata.IPVersion == 4 {
 		return fmt.Errorf("error looking up '%s': you attempted to look up an IPv6 address in an IPv4-only database", ipAddress.String())
@@ -203,6 +229,9 @@ func (r *Reader) resolveDataPointer(pointer uint, result reflect.Value) error {
 	return err
 }
 
+// Close unmaps the database file from virtual memory and returns the
+// resources to the system. If called on a Reader opened using FromBytes,
+// this method does nothing.
 func (r *Reader) Close() {
 	if r.file != nil {
 		syscall.Munmap(r.buffer)
