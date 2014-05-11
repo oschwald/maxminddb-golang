@@ -157,7 +157,6 @@ func (s *MySuite) TestBrokenDatabase(c *C) {
 	var result TestType
 	reader.Lookup(net.ParseIP("2001:220::"), &result)
 	reader.Close()
-
 }
 
 func (s *MySuite) TestMissingDatabase(c *C) {
@@ -176,6 +175,15 @@ func (s *MySuite) TestNonDatabase(c *C) {
 		c.Fail()
 	}
 	c.Assert(err.Error(), Equals, "error opening database file: invalid MaxMind DB file")
+}
+
+func (s *MySuite) TestDecodingToNonPointer(c *C) {
+	reader, _ := Open("test-data/test-data/MaxMind-DB-test-decoder.mmdb")
+
+	var recordInterface interface{}
+	err := reader.Lookup(net.ParseIP("::1.1.1.0"), recordInterface)
+	c.Assert(err.Error(), Equals, "result param for Lookup must be a pointer")
+	reader.Close()
 }
 
 func checkMetadata(c *C, reader *Reader, ipVersion uint, recordSize uint) {
