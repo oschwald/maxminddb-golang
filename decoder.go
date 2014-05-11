@@ -226,7 +226,7 @@ func (d *decoder) unmarshalMap(size uint, offset uint, result reflect.Value) (ui
 	case reflect.Map:
 		return d.decodeMap(size, offset, result)
 	case reflect.Interface:
-		rv := reflect.ValueOf(make(map[string]interface{}))
+		rv := reflect.ValueOf(make(map[string]interface{}, size))
 		newOffset, err := d.decodeMap(size, offset, rv)
 		result.Set(rv)
 		return newOffset, err
@@ -430,7 +430,7 @@ func (d *decoder) decodeStruct(size uint, offset uint, result reflect.Value) (ui
 	resultType := result.Type()
 	numFields := resultType.NumField()
 
-	fields := make(map[string]reflect.Value)
+	fields := make(map[string]reflect.Value, numFields)
 	for i := 0; i < numFields; i++ {
 		fieldType := resultType.Field(i)
 
