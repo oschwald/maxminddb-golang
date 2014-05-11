@@ -44,8 +44,7 @@ func (d *decoder) decodeCtrlData(offset uint) (dataType, uint, uint) {
 	ctrlByte := d.buffer[offset]
 
 	typeNum := dataType(ctrlByte >> 5)
-	// Extended type
-	if typeNum == 0 {
+	if typeNum == _Extended {
 		typeNum = dataType(d.buffer[newOffset] + 7)
 		newOffset++
 	}
