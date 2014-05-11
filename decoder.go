@@ -325,7 +325,9 @@ func (d *decoder) decodeBool(size uint, offset uint) (bool, uint, error) {
 
 func (d *decoder) decodeBytes(size uint, offset uint) ([]byte, uint, error) {
 	newOffset := offset + size
-	return d.buffer[offset:newOffset], newOffset, nil
+	bytes := make([]byte, size)
+	copy(bytes, d.buffer[offset:newOffset])
+	return bytes, newOffset, nil
 }
 
 func (d *decoder) decodeFloat64(size uint, offset uint) (float64, uint, error) {
