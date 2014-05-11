@@ -13,16 +13,311 @@ type decoder struct {
 	pointerBase uint
 }
 
-func (d *decoder) decodeSlice(size uint, offset uint, result reflect.Value) (uint, error) {
-	result.Set(reflect.MakeSlice(result.Type(), int(size), int(size)))
-	for i := 0; i < int(size); i++ {
-		var err error
-		offset, err = d.decode(offset, result.Index(i))
-		if err != nil {
-			return 0, err
-		}
+type dataType int
+
+const (
+	_Extended dataType = iota
+	_Pointer
+	_String
+	_Float64
+	_Bytes
+	_Uint16
+	_Uint32
+	_Map
+	_Int32
+	_Uint64
+	_Uint128
+	_Slice
+	_Container
+	_Marker
+	_Bool
+	_Float32
+)
+
+func (d *decoder) decode(offset uint, result reflect.Value) (uint, error) {
+	typeNum, size, newOffset := d.decodeCtrlData(offset)
+	return d.decodeFromType(typeNum, size, newOffset, result)
+}
+
+func (d *decoder) decodeCtrlData(offset uint) (dataType, uint, uint) {
+	newOffset := offset + 1
+	ctrlByte := d.buffer[offset]
+
+	typeNum := dataType(ctrlByte >> 5)
+	// Extended type
+	if typeNum == 0 {
+		typeNum = dataType(d.buffer[newOffset] + 7)
+		newOffset++
 	}
-	return offset, nil
+
+	var size uint
+	size, newOffset = d.sizeFromCtrlByte(ctrlByte, newOffset, typeNum)
+	return typeNum, size, newOffset
+}
+
+func (d *decoder) sizeFromCtrlByte(ctrlByte byte, offset uint, typeNum dataType) (uint, uint) {
+	size := uint(ctrlByte & 0x1f)
+	if typeNum == _Extended {
+		return size, offset
+	}
+
+	var bytesToRead uint
+	if size > 28 {
+		bytesToRead = size - 28
+	}
+
+	newOffset := offset + bytesToRead
+	sizeBytes := d.buffer[offset:newOffset]
+
+	switch {
+	case size == 29:
+		size = 29 + uint(sizeBytes[0])
+	case size == 30:
+		size = 285 + uint(uintFromBytes(0, sizeBytes))
+	case size > 30:
+		size = uint(uintFromBytes(0, sizeBytes)) + 65821
+	}
+	return size, newOffset
+}
+
+func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint, result reflect.Value) (uint, error) {
+	if result.Kind() == reflect.Ptr {
+		result = reflect.Indirect(result)
+	}
+
+	switch dtype {
+	case _Bool:
+		return d.unmarshalBool(size, offset, result)
+	case _Bytes:
+		return d.unmarshalBytes(size, offset, result)
+	case _Float32:
+		return d.unmarshalFloat32(size, offset, result)
+	case _Float64:
+		return d.unmarshalFloat64(size, offset, result)
+	case _Int32:
+		return d.unmarshalInt32(size, offset, result)
+	case _Map:
+		return d.unmarshalMap(size, offset, result)
+	case _Pointer:
+		return d.unmarshalPointer(size, offset, result)
+	case _Slice:
+		return d.unmarshalSlice(size, offset, result)
+	case _String:
+		return d.unmarshalString(size, offset, result)
+	case _Uint16:
+		return d.unmarshalUint(size, offset, result, 16)
+	case _Uint32:
+		return d.unmarshalUint(size, offset, result, 32)
+	case _Uint64:
+		return d.unmarshalUint(size, offset, result, 64)
+	case _Uint128:
+		return d.unmarshalUint128(size, offset, result)
+	default:
+		return 0, fmt.Errorf("unknown type: %d", dtype)
+	}
+}
+
+func (d *decoder) unmarshalBool(size uint, offset uint, result reflect.Value) (uint, error) {
+	if size > 1 {
+		return 0, fmt.Errorf("the MaxMind DB file's data section contains bad data (bool size of %v)", size)
+	}
+	value, newOffset, err := d.decodeBool(size, offset)
+	if err != nil {
+		return 0, err
+	}
+	switch result.Kind() {
+	default:
+		return newOffset, fmt.Errorf("trying to unmarshal %v into %v", value, result.Type())
+	case reflect.Bool:
+		result.SetBool(value)
+		return newOffset, nil
+	case reflect.Interface:
+		result.Set(reflect.ValueOf(value))
+		return newOffset, nil
+	}
+}
+
+func (d *decoder) unmarshalBytes(size uint, offset uint, result reflect.Value) (uint, error) {
+
+	value, newOffset, err := d.decodeBytes(size, offset)
+	if err != nil {
+		return 0, err
+	}
+	switch result.Kind() {
+	default:
+		return newOffset, fmt.Errorf("trying to unmarshal %v into %v", value, result.Type())
+	case reflect.Slice:
+		result.SetBytes(value)
+		return newOffset, nil
+	case reflect.Interface:
+		result.Set(reflect.ValueOf(value))
+		return newOffset, nil
+	}
+}
+
+func (d *decoder) unmarshalFloat32(size uint, offset uint, result reflect.Value) (uint, error) {
+	if size != 4 {
+		return 0, fmt.Errorf("the MaxMind DB file's data section contains bad data (float32 size of %v)", size)
+	}
+	value, newOffset, err := d.decodeFloat32(size, offset)
+	if err != nil {
+		return 0, err
+	}
+
+	switch result.Kind() {
+	default:
+		return newOffset, fmt.Errorf("trying to unmarshal %v into %v", value, result.Type())
+	case reflect.Float32, reflect.Float64:
+		result.SetFloat(float64(value))
+		return newOffset, nil
+	case reflect.Interface:
+		result.Set(reflect.ValueOf(value))
+		return newOffset, nil
+	}
+}
+
+func (d *decoder) unmarshalFloat64(size uint, offset uint, result reflect.Value) (uint, error) {
+
+	if size != 8 {
+		return 0, fmt.Errorf("the MaxMind DB file's data section contains bad data (float 64 size of %v)", size)
+	}
+	value, newOffset, err := d.decodeFloat64(size, offset)
+	if err != nil {
+		return 0, err
+	}
+	switch result.Kind() {
+	default:
+		return newOffset, fmt.Errorf("trying to unmarshal %v into %v", value, result.Type())
+	case reflect.Float32, reflect.Float64:
+		result.SetFloat(value)
+		return newOffset, nil
+	case reflect.Interface:
+		result.Set(reflect.ValueOf(value))
+		return newOffset, nil
+	}
+}
+
+func (d *decoder) unmarshalInt32(size uint, offset uint, result reflect.Value) (uint, error) {
+	if size > 4 {
+		return 0, fmt.Errorf("the MaxMind DB file's data section contains bad data (int32 size of %v)", size)
+	}
+	value, newOffset, err := d.decodeInt(size, offset)
+	if err != nil {
+		return 0, err
+	}
+
+	switch result.Kind() {
+	default:
+		return newOffset, fmt.Errorf("trying to unmarshal %v into %v", value, result.Type())
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		result.SetInt(int64(value))
+		return newOffset, nil
+	case reflect.Interface:
+		result.Set(reflect.ValueOf(value))
+		return newOffset, nil
+	}
+}
+
+func (d *decoder) unmarshalMap(size uint, offset uint, result reflect.Value) (uint, error) {
+	switch result.Kind() {
+	default:
+		return 0, fmt.Errorf("trying to unmarshal a map into %v", result.Type())
+	case reflect.Struct:
+		return d.decodeStruct(size, offset, result)
+	case reflect.Map:
+		return d.decodeMap(size, offset, result)
+	case reflect.Interface:
+		rv := reflect.ValueOf(make(map[string]interface{}))
+		newOffset, err := d.decodeMap(size, offset, rv)
+		result.Set(rv)
+		return newOffset, err
+	}
+}
+
+func (d *decoder) unmarshalPointer(size uint, offset uint, result reflect.Value) (uint, error) {
+	pointer, newOffset := d.decodePointer(size, offset)
+	_, err := d.decode(pointer, result)
+	return newOffset, err
+}
+
+func (d *decoder) unmarshalSlice(size uint, offset uint, result reflect.Value) (uint, error) {
+
+	switch result.Kind() {
+	default:
+		return 0, fmt.Errorf("trying to unmarshal an array into %v", result.Type())
+	case reflect.Slice:
+		return d.decodeSlice(size, offset, result)
+	case reflect.Interface:
+		a := []interface{}{}
+		rv := reflect.ValueOf(&a).Elem()
+		newOffset, err := d.decodeSlice(size, offset, rv)
+		result.Set(rv)
+		return newOffset, err
+	}
+}
+
+func (d *decoder) unmarshalString(size uint, offset uint, result reflect.Value) (uint, error) {
+
+	value, newOffset, err := d.decodeString(size, offset)
+
+	if err != nil {
+		return 0, err
+	}
+	switch result.Kind() {
+	default:
+		return newOffset, fmt.Errorf("trying to unmarshal %v into %v", value, result.Type())
+	case reflect.String:
+		result.SetString(value)
+		return newOffset, nil
+	case reflect.Interface:
+		result.Set(reflect.ValueOf(value))
+		return newOffset, nil
+	}
+}
+
+func (d *decoder) unmarshalUint(size uint, offset uint, result reflect.Value, uintType uint) (uint, error) {
+	if size > uintType/8 {
+		return 0, fmt.Errorf("the MaxMind DB file's data section contains bad data (uint%v size of %v)", uintType, size)
+	}
+
+	value, newOffset, err := d.decodeUint(size, offset)
+	if err != nil {
+		return 0, err
+	}
+
+	switch result.Kind() {
+	default:
+		return newOffset, fmt.Errorf("trying to unmarshal %v into %v", value, result.Type())
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		result.SetUint(value)
+		return newOffset, nil
+	case reflect.Interface:
+		result.Set(reflect.ValueOf(value))
+		return newOffset, nil
+	}
+}
+
+func (d *decoder) unmarshalUint128(size uint, offset uint, result reflect.Value) (uint, error) {
+	if size > 16 {
+		return 0, fmt.Errorf("the MaxMind DB file's data section contains bad data (uint128 size of %v)", size)
+	}
+	value, newOffset, err := d.decodeUint128(size, offset)
+	if err != nil {
+		return 0, err
+	}
+
+	// XXX - this should allow *big.Int rather than just bigInt
+	// Currently this is reported as invalid
+	switch result.Kind() {
+	default:
+		return newOffset, fmt.Errorf("trying to unmarshal %v into %v", value, result.Type())
+	case reflect.Struct:
+		result.Set(reflect.ValueOf(*value))
+		return newOffset, nil
+	case reflect.Interface, reflect.Ptr:
+		result.Set(reflect.ValueOf(value))
+		return newOffset, nil
+	}
 }
 
 func (d *decoder) decodeBool(size uint, offset uint) (bool, uint, error) {
@@ -86,8 +381,53 @@ func (d *decoder) decodeMap(size uint, offset uint, result reflect.Value) (uint,
 	return offset, nil
 }
 
-func (d *decoder) decodeStruct(size uint, offset uint, result reflect.Value) (uint, error) {
+func (d *decoder) decodePointer(size uint, offset uint) (uint, uint) {
+	pointerSize := ((size >> 3) & 0x3) + 1
+	newOffset := offset + pointerSize
+	pointerBytes := d.buffer[offset:newOffset]
+	var prefix uint64
+	if pointerSize == 4 {
+		prefix = 0
+	} else {
+		prefix = uint64(size & 0x7)
+	}
+	unpacked := uint(uintFromBytes(prefix, pointerBytes))
 
+	var pointerValueOffset uint
+	switch pointerSize {
+	case 1:
+		pointerValueOffset = 0
+	case 2:
+		pointerValueOffset = 2048
+	case 3:
+		pointerValueOffset = 526336
+	case 4:
+		pointerValueOffset = 0
+	}
+
+	pointer := unpacked + d.pointerBase + pointerValueOffset
+
+	return pointer, newOffset
+}
+
+func (d *decoder) decodeSlice(size uint, offset uint, result reflect.Value) (uint, error) {
+	result.Set(reflect.MakeSlice(result.Type(), int(size), int(size)))
+	for i := 0; i < int(size); i++ {
+		var err error
+		offset, err = d.decode(offset, result.Index(i))
+		if err != nil {
+			return 0, err
+		}
+	}
+	return offset, nil
+}
+
+func (d *decoder) decodeString(size uint, offset uint) (string, uint, error) {
+	newOffset := offset + size
+	return string(d.buffer[offset:newOffset]), newOffset, nil
+}
+
+func (d *decoder) decodeStruct(size uint, offset uint, result reflect.Value) (uint, error) {
 	resultType := result.Type()
 	numFields := resultType.NumField()
 
@@ -124,30 +464,6 @@ func (d *decoder) decodeStruct(size uint, offset uint, result reflect.Value) (ui
 	return offset, nil
 }
 
-var pointerValueOffset = map[uint]uint{
-	1: 0,
-	2: 2048,
-	3: 526336,
-	4: 0,
-}
-
-func (d *decoder) decodePointer(size uint, offset uint) (uint, uint) {
-	pointerSize := ((size >> 3) & 0x3) + 1
-	newOffset := offset + pointerSize
-	pointerBytes := d.buffer[offset:newOffset]
-	var prefix uint64
-	if pointerSize == 4 {
-		prefix = 0
-	} else {
-		prefix = uint64(size & 0x7)
-	}
-	unpacked := uint(uintFromBytes(prefix, pointerBytes))
-
-	pointer := unpacked + d.pointerBase + pointerValueOffset[pointerSize]
-
-	return pointer, newOffset
-}
-
 func (d *decoder) decodeUint(size uint, offset uint) (uint64, uint, error) {
 	newOffset := offset + size
 	val := uintFromBytes(0, d.buffer[offset:newOffset])
@@ -169,32 +485,6 @@ func uintFromBytes(prefix uint64, uintBytes []byte) uint64 {
 		val = (val << 8) | uint64(b)
 	}
 	return val
-}
-
-func (d *decoder) decodeString(size uint, offset uint) (string, uint, error) {
-	newOffset := offset + size
-	return string(d.buffer[offset:newOffset]), newOffset, nil
-}
-
-func (d *decoder) decode(offset uint, result reflect.Value) (uint, error) {
-	typeNum, size, newOffset := d.decodeCtrlData(offset)
-	return d.decodeFromType(typeNum, size, newOffset, result)
-}
-
-func (d *decoder) decodeCtrlData(offset uint) (dataType, uint, uint) {
-	newOffset := offset + 1
-	ctrlByte := d.buffer[offset]
-
-	typeNum := dataType(ctrlByte >> 5)
-	// Extended type
-	if typeNum == 0 {
-		typeNum = dataType(d.buffer[newOffset] + 7)
-		newOffset++
-	}
-
-	var size uint
-	size, newOffset = d.sizeFromCtrlByte(ctrlByte, newOffset, typeNum)
-	return typeNum, size, newOffset
 }
 
 func (d *decoder) decodeKeyString(offset uint) (string, uint, error) {
@@ -230,249 +520,4 @@ func (d *decoder) nextValueOffset(offset uint, numberToSkip uint) uint {
 		offset += size
 	}
 	return d.nextValueOffset(offset, numberToSkip-1)
-}
-
-type dataType int
-
-const (
-	_Extended dataType = iota
-	_Pointer
-	_String
-	_Float64
-	_Bytes
-	_Uint16
-	_Uint32
-	_Map
-	_Int32
-	_Uint64
-	_Uint128
-	_Slice
-	_Container
-	_Marker
-	_Bool
-	_Float32
-)
-
-func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint, result reflect.Value) (uint, error) {
-
-	if result.Kind() == reflect.Ptr {
-		result = reflect.Indirect(result)
-	}
-
-	switch dtype {
-	case _Pointer:
-		pointer, newOffset := d.decodePointer(size, offset)
-		_, err := d.decode(pointer, result)
-		return newOffset, err
-	case _Bool:
-		if size > 1 {
-			return 0, fmt.Errorf("the MaxMind DB file's data section contains bad data (bool size of %v)", size)
-		}
-		value, newOffset, err := d.decodeBool(size, offset)
-		if err != nil {
-			return 0, err
-		}
-		switch result.Kind() {
-		default:
-			return newOffset, fmt.Errorf("trying to unmarshal %v into %v", value, result.Type())
-		case reflect.Bool:
-			result.SetBool(value)
-			return newOffset, nil
-		case reflect.Interface:
-			result.Set(reflect.ValueOf(value))
-			return newOffset, nil
-		}
-	case _Int32:
-		if size > 4 {
-			return 0, fmt.Errorf("the MaxMind DB file's data section contains bad data (int32 size of %v)", size)
-		}
-		value, newOffset, err := d.decodeInt(size, offset)
-		if err != nil {
-			return 0, err
-		}
-
-		switch result.Kind() {
-		default:
-			return newOffset, fmt.Errorf("trying to unmarshal %v into %v", value, result.Type())
-		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			result.SetInt(int64(value))
-			return newOffset, nil
-		case reflect.Interface:
-			result.Set(reflect.ValueOf(value))
-			return newOffset, nil
-		}
-	case _Uint16:
-		if size > 2 {
-			return 0, fmt.Errorf("the MaxMind DB file's data section contains bad data (uint16 size of %v)", size)
-		}
-		fallthrough
-	case _Uint32:
-		if size > 4 {
-			return 0, fmt.Errorf("the MaxMind DB file's data section contains bad data (uint32 size of %v)", size)
-		}
-		fallthrough
-	case _Uint64:
-		if size > 8 {
-			return 0, fmt.Errorf("the MaxMind DB file's data section contains bad data (uint64 size of %v)", size)
-		}
-
-		value, newOffset, err := d.decodeUint(size, offset)
-		if err != nil {
-			return 0, err
-		}
-
-		switch result.Kind() {
-		default:
-			return newOffset, fmt.Errorf("trying to unmarshal %v into %v", value, result.Type())
-		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
-			result.SetUint(value)
-			return newOffset, nil
-		case reflect.Interface:
-			result.Set(reflect.ValueOf(value))
-			return newOffset, nil
-		}
-	case _Uint128:
-		if size > 16 {
-			return 0, fmt.Errorf("the MaxMind DB file's data section contains bad data (uint128 size of %v)", size)
-		}
-		value, newOffset, err := d.decodeUint128(size, offset)
-		if err != nil {
-			return 0, err
-		}
-
-		// XXX - this should allow *big.Int rather than just bigInt
-		// Currently this is reported as invalid
-		switch result.Kind() {
-		default:
-			return newOffset, fmt.Errorf("trying to unmarshal %v into %v", value, result.Type())
-		case reflect.Struct:
-			result.Set(reflect.ValueOf(*value))
-			return newOffset, nil
-		case reflect.Interface, reflect.Ptr:
-			result.Set(reflect.ValueOf(value))
-			return newOffset, nil
-		}
-	case _Float32:
-		if size != 4 {
-			return 0, fmt.Errorf("the MaxMind DB file's data section contains bad data (float32 size of %v)", size)
-		}
-		value, newOffset, err := d.decodeFloat32(size, offset)
-		if err != nil {
-			return 0, err
-		}
-
-		switch result.Kind() {
-		default:
-			return newOffset, fmt.Errorf("trying to unmarshal %v into %v", value, result.Type())
-		case reflect.Float32, reflect.Float64:
-			result.SetFloat(float64(value))
-			return newOffset, nil
-		case reflect.Interface:
-			result.Set(reflect.ValueOf(value))
-			return newOffset, nil
-		}
-	case _Float64:
-		if size != 8 {
-			return 0, fmt.Errorf("the MaxMind DB file's data section contains bad data (float 64 size of %v)", size)
-		}
-		value, newOffset, err := d.decodeFloat64(size, offset)
-		if err != nil {
-			return 0, err
-		}
-		switch result.Kind() {
-		default:
-			return newOffset, fmt.Errorf("trying to unmarshal %v into %v", value, result.Type())
-		case reflect.Float32, reflect.Float64:
-			result.SetFloat(value)
-			return newOffset, nil
-		case reflect.Interface:
-			result.Set(reflect.ValueOf(value))
-			return newOffset, nil
-		}
-	case _String:
-		value, newOffset, err := d.decodeString(size, offset)
-
-		if err != nil {
-			return 0, err
-		}
-		switch result.Kind() {
-		default:
-			return newOffset, fmt.Errorf("trying to unmarshal %v into %v", value, result.Type())
-		case reflect.String:
-			result.SetString(value)
-			return newOffset, nil
-		case reflect.Interface:
-			result.Set(reflect.ValueOf(value))
-			return newOffset, nil
-		}
-	case _Bytes:
-		value, newOffset, err := d.decodeBytes(size, offset)
-		if err != nil {
-			return 0, err
-		}
-		switch result.Kind() {
-		default:
-			return newOffset, fmt.Errorf("trying to unmarshal %v into %v", value, result.Type())
-		case reflect.Slice:
-			result.SetBytes(value)
-			return newOffset, nil
-		case reflect.Interface:
-			result.Set(reflect.ValueOf(value))
-			return newOffset, nil
-		}
-	case _Slice:
-		switch result.Kind() {
-		default:
-			return 0, fmt.Errorf("trying to unmarshal an array into %v", result.Type())
-		case reflect.Slice:
-			return d.decodeSlice(size, offset, result)
-		case reflect.Interface:
-			a := []interface{}{}
-			rv := reflect.ValueOf(&a).Elem()
-			newOffset, err := d.decodeSlice(size, offset, rv)
-			result.Set(rv)
-			return newOffset, err
-		}
-	case _Map:
-		switch result.Kind() {
-		default:
-			return 0, fmt.Errorf("trying to unmarshal a map into %v", result.Type())
-		case reflect.Struct:
-			return d.decodeStruct(size, offset, result)
-		case reflect.Map:
-			return d.decodeMap(size, offset, result)
-		case reflect.Interface:
-			rv := reflect.ValueOf(make(map[string]interface{}))
-			newOffset, err := d.decodeMap(size, offset, rv)
-			result.Set(rv)
-			return newOffset, err
-		}
-	default:
-		return 0, fmt.Errorf("unknown type: %d", dtype)
-	}
-}
-
-func (d *decoder) sizeFromCtrlByte(ctrlByte byte, offset uint, typeNum dataType) (uint, uint) {
-	size := uint(ctrlByte & 0x1f)
-	if typeNum == _Extended {
-		return size, offset
-	}
-
-	var bytesToRead uint
-	if size > 28 {
-		bytesToRead = size - 28
-	}
-
-	newOffset := offset + bytesToRead
-	sizeBytes := d.buffer[offset:newOffset]
-
-	switch {
-	case size == 29:
-		size = 29 + uint(sizeBytes[0])
-	case size == 30:
-		size = 285 + uint(uintFromBytes(0, sizeBytes))
-	case size > 30:
-		size = uint(uintFromBytes(0, sizeBytes)) + 65821
-	}
-	return size, newOffset
 }
