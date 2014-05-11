@@ -265,6 +265,9 @@ func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint, result 
 		_, err := d.decode(pointer, result)
 		return newOffset, err
 	case _Bool:
+		if size > 1 {
+			return 0, fmt.Errorf("the MaxMind DB file's data section contains bad data (bool size of %v)", size)
+		}
 		value, newOffset, err := d.decodeBool(size, offset)
 		if err != nil {
 			return 0, err
@@ -280,6 +283,9 @@ func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint, result 
 			return newOffset, nil
 		}
 	case _Int32:
+		if size > 4 {
+			return 0, fmt.Errorf("the MaxMind DB file's data section contains bad data (int32 size of %v)", size)
+		}
 		value, newOffset, err := d.decodeInt(size, offset)
 		if err != nil {
 			return 0, err
@@ -295,7 +301,21 @@ func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint, result 
 			result.Set(reflect.ValueOf(value))
 			return newOffset, nil
 		}
-	case _Uint16, _Uint32, _Uint64:
+	case _Uint16:
+		if size > 2 {
+			return 0, fmt.Errorf("the MaxMind DB file's data section contains bad data (uint16 size of %v)", size)
+		}
+		fallthrough
+	case _Uint32:
+		if size > 4 {
+			return 0, fmt.Errorf("the MaxMind DB file's data section contains bad data (uint32 size of %v)", size)
+		}
+		fallthrough
+	case _Uint64:
+		if size > 8 {
+			return 0, fmt.Errorf("the MaxMind DB file's data section contains bad data (uint64 size of %v)", size)
+		}
+
 		value, newOffset, err := d.decodeUint(size, offset)
 		if err != nil {
 			return 0, err
@@ -312,6 +332,9 @@ func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint, result 
 			return newOffset, nil
 		}
 	case _Uint128:
+		if size > 16 {
+			return 0, fmt.Errorf("the MaxMind DB file's data section contains bad data (uint128 size of %v)", size)
+		}
 		value, newOffset, err := d.decodeUint128(size, offset)
 		if err != nil {
 			return 0, err
@@ -330,6 +353,9 @@ func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint, result 
 			return newOffset, nil
 		}
 	case _Float32:
+		if size != 4 {
+			return 0, fmt.Errorf("the MaxMind DB file's data section contains bad data (float32 size of %v)", size)
+		}
 		value, newOffset, err := d.decodeFloat32(size, offset)
 		if err != nil {
 			return 0, err
@@ -346,6 +372,9 @@ func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint, result 
 			return newOffset, nil
 		}
 	case _Float64:
+		if size != 8 {
+			return 0, fmt.Errorf("the MaxMind DB file's data section contains bad data (float 64 size of %v)", size)
+		}
 		value, newOffset, err := d.decodeFloat64(size, offset)
 		if err != nil {
 			return 0, err

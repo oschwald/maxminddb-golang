@@ -22,7 +22,11 @@ func (s *MySuite) TestReader(c *C) {
 	for _, recordSize := range []uint{24, 28, 32} {
 		for _, ipVersion := range []uint{4, 6} {
 			fileName := fmt.Sprintf("test-data/test-data/MaxMind-DB-test-ipv%d-%d.mmdb", ipVersion, recordSize)
-			reader, _ := Open(fileName)
+			reader, err := Open(fileName)
+			if err != nil {
+				c.Logf("unexpected error while opening database: %v", err)
+				c.Fail()
+			}
 
 			checkMetadata(c, reader, ipVersion, recordSize)
 
@@ -40,7 +44,11 @@ func (s *MySuite) TestReaderBytes(c *C) {
 		for _, ipVersion := range []uint{4, 6} {
 			fileName := fmt.Sprintf("test-data/test-data/MaxMind-DB-test-ipv%d-%d.mmdb", ipVersion, recordSize)
 			bytes, _ := ioutil.ReadFile(fileName)
-			reader, _ := FromBytes(bytes)
+			reader, err := FromBytes(bytes)
+			if err != nil {
+				c.Logf("unexpected error while opening bytes: %v", err)
+				c.Fail()
+			}
 
 			checkMetadata(c, reader, ipVersion, recordSize)
 
@@ -54,10 +62,18 @@ func (s *MySuite) TestReaderBytes(c *C) {
 }
 
 func (s *MySuite) TestDecodingToInterface(c *C) {
-	reader, _ := Open("test-data/test-data/MaxMind-DB-test-decoder.mmdb")
+	reader, err := Open("test-data/test-data/MaxMind-DB-test-decoder.mmdb")
+	if err != nil {
+		c.Logf("unexpected error while opening database: %v", err)
+		c.Fail()
+	}
 
 	var recordInterface interface{}
-	reader.Lookup(net.ParseIP("::1.1.1.0"), &recordInterface)
+	err = reader.Lookup(net.ParseIP("::1.1.1.0"), &recordInterface)
+	if err != nil {
+		c.Logf("unexpected error while doing lookup: %v", err)
+		c.Fail()
+	}
 	record := recordInterface.(map[string]interface{})
 
 	c.Assert(record["array"], DeepEquals, []interface{}{uint64(1), uint64(2), uint64(3)})
@@ -98,10 +114,14 @@ type TestType struct {
 }
 
 func (s *MySuite) TestDecoder(c *C) {
-	reader, _ := Open("test-data/test-data/MaxMind-DB-test-decoder.mmdb")
+	reader, err := Open("test-data/test-data/MaxMind-DB-test-decoder.mmdb")
+	if err != nil {
+		c.Logf("unexpected error while opening database: %v", err)
+		c.Fail()
+	}
 
 	var result TestType
-	err := reader.Lookup(net.ParseIP("::1.1.1.0"), &result)
+	err = reader.Lookup(net.ParseIP("::1.1.1.0"), &result)
 	if err != nil {
 		c.Log(err)
 		c.Fail()
@@ -133,14 +153,18 @@ func (s *MySuite) TestDecoder(c *C) {
 }
 
 func (s *MySuite) TestIpv6inIpv4(c *C) {
-	reader, _ := Open("test-data/test-data/MaxMind-DB-test-ipv4-24.mmdb")
+	reader, err := Open("test-data/test-data/MaxMind-DB-test-ipv4-24.mmdb")
+	if err != nil {
+		c.Logf("unexpected error while opening database: %v", err)
+		c.Fail()
+	}
 
 	var result TestType
-	err := reader.Lookup(net.ParseIP("2001::"), &result)
-	// if result != nil {
-	// 	c.Log("nil record from lookup expected")
-	// 	c.Fail()
-	// }
+	err = reader.Lookup(net.ParseIP("2001::"), &result)
+
+	var emptyResult TestType
+	c.Assert(result, DeepEquals, emptyResult)
+
 	expected := errors.New("error looking up '2001::': you attempted to look up an IPv6 address in an IPv4-only database")
 	c.Assert(err, DeepEquals, expected)
 	reader.Close()
@@ -148,14 +172,17 @@ func (s *MySuite) TestIpv6inIpv4(c *C) {
 }
 
 func (s *MySuite) TestBrokenDatabase(c *C) {
-	c.Skip("NO TYPE DECODING VALIDATION DONE")
-	reader, _ := Open("test-data/test-data/GeoIP2-City-Test-Broken-Double-Format.mmdb")
-	// // Should return an error like: "The MaxMind DB file's data "
-	// //                              "section contains bad data (unknown data "
-	// //                              "type or corrupt data)"
+	reader, err := Open("test-data/test-data/GeoIP2-City-Test-Broken-Double-Format.mmdb")
+	if err != nil {
+		c.Logf("unexpected error while opening database: %v", err)
+		c.Fail()
+	}
 
-	var result TestType
-	reader.Lookup(net.ParseIP("2001:220::"), &result)
+	var result interface{}
+	err = reader.Lookup(net.ParseIP("2001:220::"), &result)
+
+	expected := errors.New("the MaxMind DB file's data section contains bad data (float 64 size of 2)")
+	c.Assert(err, DeepEquals, expected)
 	reader.Close()
 }
 
@@ -219,7 +246,11 @@ func checkIpv4(c *C, reader *Reader) {
 		ip := net.ParseIP(address)
 
 		var result map[string]string
-		reader.Lookup(ip, &result)
+		err := reader.Lookup(ip, &result)
+		if err != nil {
+			c.Logf("unexpected error while doing lookup: %v", err)
+			c.Fail()
+		}
 		c.Assert(result, DeepEquals, map[string]string{
 			"ip": address})
 	}
@@ -239,7 +270,11 @@ func checkIpv4(c *C, reader *Reader) {
 		ip := net.ParseIP(keyAddress)
 
 		var result map[string]string
-		reader.Lookup(ip, &result)
+		err := reader.Lookup(ip, &result)
+		if err != nil {
+			c.Logf("unexpected error while doing lookup: %v", err)
+			c.Fail()
+		}
 		c.Assert(result, DeepEquals, data)
 	}
 
@@ -247,7 +282,11 @@ func checkIpv4(c *C, reader *Reader) {
 		ip := net.ParseIP(address)
 
 		var result map[string]string
-		reader.Lookup(ip, &result)
+		err := reader.Lookup(ip, &result)
+		if err != nil {
+			c.Logf("unexpected error while doing lookup: %v", err)
+			c.Fail()
+		}
 		c.Assert(result, IsNil)
 	}
 }
@@ -259,7 +298,11 @@ func checkIpv6(c *C, reader *Reader) {
 
 	for _, address := range subnets {
 		var result map[string]string
-		reader.Lookup(net.ParseIP(address), &result)
+		err := reader.Lookup(net.ParseIP(address), &result)
+		if err != nil {
+			c.Logf("unexpected error while doing lookup: %v", err)
+			c.Fail()
+		}
 		c.Assert(result, DeepEquals, map[string]string{"ip": address})
 	}
 
@@ -277,13 +320,21 @@ func checkIpv6(c *C, reader *Reader) {
 	for keyAddress, valueAddress := range pairs {
 		data := map[string]string{"ip": valueAddress}
 		var result map[string]string
-		reader.Lookup(net.ParseIP(keyAddress), &result)
+		err := reader.Lookup(net.ParseIP(keyAddress), &result)
+		if err != nil {
+			c.Logf("unexpected error while doing lookup: %v", err)
+			c.Fail()
+		}
 		c.Assert(result, DeepEquals, data)
 	}
 
 	for _, address := range []string{"1.1.1.33", "255.254.253.123", "89fa::"} {
 		var result map[string]string
-		reader.Lookup(net.ParseIP(address), &result)
+		err := reader.Lookup(net.ParseIP(address), &result)
+		if err != nil {
+			c.Logf("unexpected error while doing lookup: %v", err)
+			c.Fail()
+		}
 		c.Assert(result, IsNil)
 	}
 }
