@@ -1,8 +1,7 @@
-package maxminddb_test
+package maxminddb
 
 import (
 	"fmt"
-	"github.com/oschwald/maxminddb-golang"
 	"log"
 	"net"
 )
@@ -15,7 +14,7 @@ type onlyCountry struct {
 
 // ExampleStruct shows how to decode to a struct
 func ExampleStruct() {
-	db, err := maxminddb.Open("test-data/test-data/GeoIP2-City-Test.mmdb")
+	db, err := Open("test-data/test-data/GeoIP2-City-Test.mmdb")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -34,7 +33,7 @@ func ExampleStruct() {
 
 // ExampleInterface demonstrates how to decode to an interface{}
 func ExampleInterface() {
-	db, err := maxminddb.Open("test-data/test-data/GeoIP2-City-Test.mmdb")
+	db, err := Open("test-data/test-data/GeoIP2-City-Test.mmdb")
 	if err != nil {
 		log.Fatal(err)
 	}
