@@ -13,8 +13,8 @@ type onlyCountry struct {
 	} `maxminddb:"country"`
 }
 
-// Example_struct shows how to decode to a struct
-func ExampleLookup_struct() {
+// This example shows how to decode to a struct
+func ExampleReader_Lookup_struct() {
 	db, err := maxminddb.Open("test-data/test-data/GeoIP2-City-Test.mmdb")
 	if err != nil {
 		log.Fatal(err)
@@ -32,8 +32,8 @@ func ExampleLookup_struct() {
 	db.Close()
 }
 
-// Example_interface demonstrates how to decode to an interface{}
-func ExampleLookup_interface() {
+// This example demonstrates how to decode to an interface{}
+func ExampleReader_Lookup_interface() {
 	db, err := maxminddb.Open("test-data/test-data/GeoIP2-City-Test.mmdb")
 	if err != nil {
 		log.Fatal(err)
