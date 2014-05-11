@@ -218,10 +218,8 @@ func checkIpv4(c *C, reader *Reader) {
 		address := fmt.Sprintf("1.1.1.%d", uint(1)<<i)
 		ip := net.ParseIP(address)
 
-		// XXX - Figure out why ParseIP always returns 16 byte address.
-		// Maybe update reader to accommodated
 		var result map[string]string
-		reader.Lookup(ip[12:], &result)
+		reader.Lookup(ip, &result)
 		c.Assert(result, DeepEquals, map[string]string{
 			"ip": address})
 	}
@@ -241,7 +239,7 @@ func checkIpv4(c *C, reader *Reader) {
 		ip := net.ParseIP(keyAddress)
 
 		var result map[string]string
-		reader.Lookup(ip[12:], &result)
+		reader.Lookup(ip, &result)
 		c.Assert(result, DeepEquals, data)
 	}
 
@@ -249,7 +247,7 @@ func checkIpv4(c *C, reader *Reader) {
 		ip := net.ParseIP(address)
 
 		var result map[string]string
-		reader.Lookup(ip[12:], &result)
+		reader.Lookup(ip, &result)
 		c.Assert(result, IsNil)
 	}
 }

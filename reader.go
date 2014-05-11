@@ -112,6 +112,10 @@ func FromBytes(buffer []byte) (*Reader, error) {
 // a uint64 database type must be decoded into a uint64 Go type). In the
 // future, this may be made more flexible.
 func (r *Reader) Lookup(ipAddress net.IP, result interface{}) error {
+	ipV4Address := ipAddress.To4()
+	if ipV4Address != nil {
+		ipAddress = ipV4Address
+	}
 	if len(ipAddress) == 16 && r.Metadata.IPVersion == 4 {
 		return fmt.Errorf("error looking up '%s': you attempted to look up an IPv6 address in an IPv4-only database", ipAddress.String())
 	}
@@ -130,10 +134,6 @@ func (r *Reader) Lookup(ipAddress net.IP, result interface{}) error {
 }
 
 func (r *Reader) findAddressInTree(ipAddress net.IP) (uint, error) {
-	ipV4Address := ipAddress.To4()
-	if ipV4Address != nil {
-		ipAddress = ipV4Address
-	}
 
 	bitCount := uint(len(ipAddress) * 8)
 	node, err := r.startNode(bitCount)
