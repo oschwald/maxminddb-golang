@@ -2,9 +2,10 @@ package maxminddb_test
 
 import (
 	"fmt"
-	"github.com/oschwald/maxminddb-golang"
 	"log"
 	"net"
+
+	"github.com/oschwald/maxminddb-golang"
 )
 
 type onlyCountry struct {
@@ -19,6 +20,8 @@ func ExampleReader_Lookup_struct() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer db.Close()
+
 	ip := net.ParseIP("81.2.69.142")
 
 	var record onlyCountry // Or any appropriate struct
@@ -29,7 +32,6 @@ func ExampleReader_Lookup_struct() {
 	fmt.Print(record.Country.IsoCode)
 	// Output:
 	// GB
-	db.Close()
 }
 
 // This example demonstrates how to decode to an interface{}
@@ -38,6 +40,8 @@ func ExampleReader_Lookup_interface() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer db.Close()
+
 	ip := net.ParseIP("81.2.69.142")
 
 	var record interface{}
@@ -46,5 +50,4 @@ func ExampleReader_Lookup_interface() {
 		log.Fatal(err)
 	}
 	fmt.Printf("%v", record)
-	db.Close()
 }
