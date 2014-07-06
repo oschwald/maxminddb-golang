@@ -24,7 +24,7 @@ documentation and examples.
 ## Examples ##
 
 See [GoDoc](http://godoc.org/github.com/oschwald/maxminddb-golang) or
-`example_test.go` for examples. ```go
+`example_test.go` for examples.
 
 ## Contributing ##
 
