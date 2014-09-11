@@ -112,6 +112,10 @@ func FromBytes(buffer []byte) (*Reader, error) {
 // a uint64 database type must be decoded into a uint64 Go type). In the
 // future, this may be made more flexible.
 func (r *Reader) Lookup(ipAddress net.IP, result interface{}) error {
+	if ipAddress == nil {
+		return errors.New("ipAddress passed to Lookup cannot be nil")
+	}
+
 	ipV4Address := ipAddress.To4()
 	if ipV4Address != nil {
 		ipAddress = ipV4Address

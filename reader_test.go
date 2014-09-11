@@ -4,12 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	. "launchpad.net/gocheck"
 	"math/big"
 	"math/rand"
 	"net"
 	"testing"
 	"time"
+	. "launchpad.net/gocheck"
 )
 
 func TestMaxMindDbReader(t *testing.T) { TestingT(t) }
@@ -210,6 +210,15 @@ func (s *MySuite) TestDecodingToNonPointer(c *C) {
 	var recordInterface interface{}
 	err := reader.Lookup(net.ParseIP("::1.1.1.0"), recordInterface)
 	c.Assert(err.Error(), Equals, "result param for Lookup must be a pointer")
+	reader.Close()
+}
+
+func (s *MySuite) TestNilLookup(c *C) {
+	reader, _ := Open("test-data/test-data/MaxMind-DB-test-decoder.mmdb")
+
+	var recordInterface interface{}
+	err := reader.Lookup(nil, recordInterface)
+	c.Assert(err.Error(), Equals, "ipAddress passed to Lookup cannot be nil")
 	reader.Close()
 }
 
