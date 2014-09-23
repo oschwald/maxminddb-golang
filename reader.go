@@ -94,7 +94,29 @@ func FromBytes(buffer []byte) (*Reader, error) {
 	searchTreeSize := metadata.NodeCount * metadata.RecordSize / 4
 	decoder := decoder{buffer, searchTreeSize + dataSectionSeparatorSize}
 
-	return &Reader{buffer: buffer, decoder: decoder, Metadata: metadata, ipv4Start: 0}, nil
+	reader := &Reader{buffer: buffer, decoder: decoder, Metadata: metadata, ipv4Start: 0}
+
+	reader.ipv4Start, err = reader.startNode()
+
+	return reader, err
+}
+
+func (r *Reader) startNode() (uint, error) {
+	if r.Metadata.IPVersion != 6 {
+		return 0, nil
+	}
+
+	nodeCount := r.Metadata.NodeCount
+
+	node := uint(0)
+	var err error
+	for i := 0; i < 96 && node < nodeCount; i++ {
+		node, err = r.readNode(node, 0)
+		if err != nil {
+			return 0, err
+		}
+	}
+	return node, err
 }
 
 // Lookup takes an IP address as a net.IP structure and a pointer to the
@@ -140,10 +162,12 @@ func (r *Reader) Lookup(ipAddress net.IP, result interface{}) error {
 func (r *Reader) findAddressInTree(ipAddress net.IP) (uint, error) {
 
 	bitCount := uint(len(ipAddress) * 8)
-	node, err := r.startNode(bitCount)
-	if err != nil {
-		return 0, err
+
+	var node uint
+	if bitCount == 32 {
+		node = r.ipv4Start
 	}
+
 	nodeCount := r.Metadata.NodeCount
 
 	for i := uint(0); i < bitCount && node < nodeCount; i++ {
@@ -163,31 +187,6 @@ func (r *Reader) findAddressInTree(ipAddress net.IP) (uint, error) {
 	}
 
 	return 0, errors.New("invalid node in search tree")
-}
-
-func (r *Reader) startNode(length uint) (uint, error) {
-	if r.Metadata.IPVersion != 6 || length == 128 {
-		return 0, nil
-	}
-
-	// We are looking up an IPv4 address in an IPv6 tree. Skip over the
-	// first 96 nodes.
-	if r.ipv4Start != 0 {
-		return r.ipv4Start, nil
-	}
-
-	nodeCount := r.Metadata.NodeCount
-
-	node := uint(0)
-	var err error
-	for i := 0; i < 96 && node < nodeCount; i++ {
-		node, err = r.readNode(node, 0)
-		if err != nil {
-			return 0, err
-		}
-	}
-	r.ipv4Start = node
-	return node, err
 }
 
 func (r *Reader) readNode(nodeNumber uint, index uint) (uint, error) {
