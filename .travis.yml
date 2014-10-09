@@ -7,5 +7,5 @@ go:
  - release
  - tip
 
--install:
-- - go get launchpad.net/gocheck
+install:
+  - go get launchpad.net/gocheck
