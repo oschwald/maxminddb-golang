@@ -1,13 +1,8 @@
 language: go
+
 go:
  - 1.1
  - 1.2
+ - 1.3
  - release
  - tip
-
-install:
- - go get launchpad.net/gocheck
- - go get github.com/mitchellh/mapstructure
-
-script:
- - go test -v ./...
