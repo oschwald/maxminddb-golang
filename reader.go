@@ -7,7 +7,6 @@ import (
 	"net"
 	"os"
 	"reflect"
-	"syscall"
 )
 
 const dataSectionSeparatorSize = 16
@@ -17,11 +16,11 @@ var metadataStartMarker = []byte("\xAB\xCD\xEFMaxMind.com")
 // Reader holds the data corresponding to the MaxMind DB file. Its only public
 // field is Metadata, which contains the metadata from the MaxMind DB file.
 type Reader struct {
-	file      *os.File
-	buffer    []byte
-	decoder   decoder
-	Metadata  Metadata
-	ipv4Start uint
+	hasMappedFile bool
+	buffer        []byte
+	decoder       decoder
+	Metadata      Metadata
+	ipv4Start     uint
 }
 
 // Metadata holds the metadata decoded from the MaxMind DB file. In particular
@@ -46,6 +45,7 @@ type Metadata struct {
 // system.
 func Open(file string) (*Reader, error) {
 	mapFile, err := os.Open(file)
+	defer mapFile.Close()
 	if err != nil {
 		return nil, err
 	}
@@ -55,19 +55,18 @@ func Open(file string) (*Reader, error) {
 	}
 
 	fileSize := int(stats.Size())
-	mmap, err := syscall.Mmap(int(mapFile.Fd()), 0, fileSize, syscall.PROT_READ, syscall.MAP_SHARED)
+	mmap, err := mmap(int(mapFile.Fd()), fileSize)
 	if err != nil {
 		return nil, err
 	}
 
 	reader, err := FromBytes(mmap)
 	if err != nil {
-		syscall.Munmap(mmap)
-		mapFile.Close()
+		munmap(mmap)
 		return nil, err
 	}
 
-	reader.file = mapFile
+	reader.hasMappedFile = true
 	return reader, nil
 }
 
@@ -236,8 +235,8 @@ func (r *Reader) resolveDataPointer(pointer uint, result reflect.Value) error {
 // resources to the system. If called on a Reader opened using FromBytes,
 // this method does nothing.
 func (r *Reader) Close() {
-	if r.file != nil {
-		syscall.Munmap(r.buffer)
-		r.file.Close()
+	if r.hasMappedFile {
+		munmap(r.buffer)
+		r.hasMappedFile = false
 	}
 }
