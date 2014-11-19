@@ -6,7 +6,6 @@ import (
 	"os"
 	"reflect"
 	"strings"
-	"syscall"
 	"testing"
 )
 
@@ -219,16 +218,17 @@ func TestPointers(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+    defer mapFile.Close()
 	stats, err := mapFile.Stat()
 	if err != nil {
 		t.Error(err)
 	}
 
-	mmap, err := syscall.Mmap(int(mapFile.Fd()), 0, int(stats.Size()), syscall.PROT_READ, syscall.MAP_SHARED)
+	mmap, err := mmap(int(mapFile.Fd()), int(stats.Size()))
 	if err != nil {
 		t.Error(err)
-
 	}
+    defer munmap(mmap)
 	d := decoder{mmap, 0}
 
 	expected := map[uint]map[string]string{
@@ -250,6 +250,5 @@ func TestPointers(t *testing.T) {
 			t.Errorf("Decode for pointer at %d failed", offset)
 		}
 	}
-	syscall.Munmap(mmap)
-	mapFile.Close()
+
 }

@@ -192,7 +192,7 @@ func (s *MySuite) TestMissingDatabase(c *C) {
 		c.Log("received reader when doing lookups on DB that doesn't exist")
 		c.Fail()
 	}
-	c.Assert(err.Error(), Equals, "open file-does-not-exist.mmdb: no such file or directory")
+	c.Assert(err, ErrorMatches, "open file-does-not-exist.mmdb.*")
 }
 
 func (s *MySuite) TestNonDatabase(c *C) {

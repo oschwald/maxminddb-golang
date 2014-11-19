@@ -45,10 +45,11 @@ type Metadata struct {
 // system.
 func Open(file string) (*Reader, error) {
 	mapFile, err := os.Open(file)
-	defer mapFile.Close()
 	if err != nil {
 		return nil, err
 	}
+	defer mapFile.Close()
+
 	stats, err := mapFile.Stat()
 	if err != nil {
 		return nil, err
