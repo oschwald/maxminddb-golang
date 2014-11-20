@@ -1,6 +1,7 @@
 # MaxMind DB Reader for Go #
 
 [![Build Status](https://travis-ci.org/oschwald/maxminddb-golang.png?branch=master)](https://travis-ci.org/oschwald/maxminddb-golang)
+[![Windows Build Status](https://ci.appveyor.com/api/projects/status/4j2f9oep8nnfrmov/branch/master?svg=true)](https://ci.appveyor.com/project/oschwald/maxminddb-golang/branch/master)
 [![GoDoc](https://godoc.org/github.com/oschwald/maxminddb-golang?status.png)](https://godoc.org/github.com/oschwald/maxminddb-golang)
 
 
