@@ -10,6 +10,7 @@ environment:
 install:
   - echo %PATH%
   - echo %GOPATH%
+  - git submodule update --init --recursive
   - go version
   - go env
   - go get -v -t ./...
