@@ -8,4 +8,4 @@ go:
  - tip
 
 install:
-  - go get -v -t ./...
+  - go get gopkg.in/check.v1
