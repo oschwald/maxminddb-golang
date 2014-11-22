@@ -218,7 +218,7 @@ func TestPointers(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-    defer mapFile.Close()
+	defer mapFile.Close()
 	stats, err := mapFile.Stat()
 	if err != nil {
 		t.Error(err)
@@ -228,16 +228,16 @@ func TestPointers(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-    defer munmap(mmap)
+	defer munmap(mmap)
 	d := decoder{mmap, 0}
 
 	expected := map[uint]map[string]string{
-		0:  map[string]string{"long_key": "long_value1"},
-		22: map[string]string{"long_key": "long_value2"},
-		37: map[string]string{"long_key2": "long_value1"},
-		50: map[string]string{"long_key2": "long_value2"},
-		55: map[string]string{"long_key": "long_value1"},
-		57: map[string]string{"long_key2": "long_value2"},
+		0:  {"long_key": "long_value1"},
+		22: {"long_key": "long_value2"},
+		37: {"long_key2": "long_value1"},
+		50: {"long_key2": "long_value2"},
+		55: {"long_key": "long_value1"},
+		57: {"long_key2": "long_value2"},
 	}
 
 	for offset, expectedValue := range expected {
