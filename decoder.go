@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"reflect"
+	"sync"
 )
 
 type decoder struct {
@@ -429,13 +430,16 @@ func (d *decoder) decodeString(size uint, offset uint) (string, uint, error) {
 }
 
 var (
-	fieldMap = map[reflect.Type]map[string]int{}
+	fieldMap   = map[reflect.Type]map[string]int{}
+	fieldMapMu sync.RWMutex
 )
 
 func (d *decoder) decodeStruct(size uint, offset uint, result reflect.Value) (uint, error) {
 	resultType := result.Type()
 
+	fieldMapMu.RLock()
 	fields, ok := fieldMap[resultType]
+	fieldMapMu.RUnlock()
 	if !ok {
 		numFields := resultType.NumField()
 		fields = make(map[string]int, numFields)
@@ -448,7 +452,9 @@ func (d *decoder) decodeStruct(size uint, offset uint, result reflect.Value) (ui
 			}
 			fields[fieldName] = i
 		}
+		fieldMapMu.Lock()
 		fieldMap[resultType] = fields
+		fieldMapMu.Unlock()
 	}
 
 	for i := uint(0); i < size; i++ {
