@@ -428,36 +428,42 @@ func (d *decoder) decodeString(size uint, offset uint) (string, uint, error) {
 	return string(d.buffer[offset:newOffset]), newOffset, nil
 }
 
+var (
+	fieldMap = map[reflect.Type]map[string]int{}
+)
+
 func (d *decoder) decodeStruct(size uint, offset uint, result reflect.Value) (uint, error) {
 	resultType := result.Type()
-	numFields := resultType.NumField()
 
-	fields := make(map[string]reflect.Value, numFields)
-	for i := 0; i < numFields; i++ {
-		fieldType := resultType.Field(i)
+	fields, ok := fieldMap[resultType]
+	if !ok {
+		numFields := resultType.NumField()
+		fields = make(map[string]int, numFields)
+		for i := 0; i < numFields; i++ {
+			fieldType := resultType.Field(i)
 
-		fieldName := fieldType.Name
-		tag := fieldType.Tag.Get("maxminddb")
-		if tag != "" {
-			fieldName = tag
+			fieldName := fieldType.Name
+			if tag := fieldType.Tag.Get("maxminddb"); tag != "" {
+				fieldName = tag
+			}
+			fields[fieldName] = i
 		}
-		fields[fieldName] = result.Field(i)
+		fieldMap[resultType] = fields
 	}
 
 	for i := uint(0); i < size; i++ {
-
 		var key string
 		var err error
 		key, offset, err = d.decodeKeyString(offset)
 		if err != nil {
 			return 0, err
 		}
-		field, ok := fields[key]
+		i, ok := fields[key]
 		if !ok {
 			offset = d.nextValueOffset(offset, 1)
 			continue
 		}
-		offset, err = d.decode(offset, field)
+		offset, err = d.decode(offset, result.Field(i))
 		if err != nil {
 			return 0, err
 		}
