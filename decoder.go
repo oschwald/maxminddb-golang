@@ -1,7 +1,6 @@
 package maxminddb
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
 	"math"
@@ -346,15 +345,10 @@ func (d *decoder) decodeFloat32(size uint, offset uint) (float32, uint, error) {
 
 func (d *decoder) decodeInt(size uint, offset uint) (int, uint, error) {
 	newOffset := offset + size
-	intBytes := d.buffer[offset:newOffset]
-	if size != 4 {
-		pad := make([]byte, 4-size)
-		intBytes = append(pad, intBytes...)
-	}
-
 	var val int32
-	binary.Read(bytes.NewBuffer(intBytes), binary.BigEndian, &val)
-
+	for _, b := range d.buffer[offset:newOffset] {
+		val = (val << 8) | int32(b)
+	}
 	return int(val), newOffset, nil
 }
 
