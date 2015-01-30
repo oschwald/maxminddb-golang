@@ -1,9 +1,10 @@
+package maxminddb
+
 // Windows support largely borrowed from mmap-go.
 //
 // Copyright 2011 Evan Shaw. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
-package maxminddb
 
 import (
 	"errors"
@@ -14,7 +15,7 @@ import (
 	"unsafe"
 )
 
-type MMap []byte
+type memoryMap []byte
 
 // Windows
 var handleLock sync.Mutex
@@ -36,7 +37,7 @@ func mmap(fd int, length int) (data []byte, err error) {
 	handleMap[addr] = h
 	handleLock.Unlock()
 
-	m := MMap{}
+	m := memoryMap{}
 	dh := m.header()
 	dh.Data = addr
 	dh.Len = length
@@ -45,7 +46,7 @@ func mmap(fd int, length int) (data []byte, err error) {
 	return m, nil
 }
 
-func (m *MMap) header() *reflect.SliceHeader {
+func (m *memoryMap) header() *reflect.SliceHeader {
 	return (*reflect.SliceHeader)(unsafe.Pointer(m))
 }
 
@@ -55,7 +56,7 @@ func flush(addr, len uintptr) error {
 }
 
 func munmap(b []byte) (err error) {
-	m := MMap(b)
+	m := memoryMap(b)
 	dh := m.header()
 
 	addr := dh.Data

@@ -9,6 +9,7 @@ import (
 	"net"
 	"testing"
 	"time"
+
 	. "gopkg.in/check.v1"
 )
 
