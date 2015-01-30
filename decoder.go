@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"reflect"
 	"sync"
+	"unsafe"
 )
 
 type decoder struct {
@@ -33,8 +34,6 @@ const (
 	_Marker
 	_Bool
 	_Float32
-
-	structKeyLen = 32
 )
 
 func (d *decoder) decode(offset uint, result reflect.Value) (uint, error) {
@@ -432,7 +431,7 @@ func (d *decoder) decodeString(size uint, offset uint) (string, uint, error) {
 }
 
 var (
-	fieldMap   = map[reflect.Type]map[[structKeyLen]byte]int{}
+	fieldMap   = map[reflect.Type]map[string]int{}
 	fieldMapMu sync.RWMutex
 )
 
@@ -444,7 +443,7 @@ func (d *decoder) decodeStruct(size uint, offset uint, result reflect.Value) (ui
 	fieldMapMu.RUnlock()
 	if !ok {
 		numFields := resultType.NumField()
-		fields = make(map[[structKeyLen]byte]int, numFields)
+		fields = make(map[string]int, numFields)
 		for i := 0; i < numFields; i++ {
 			fieldType := resultType.Field(i)
 
@@ -452,19 +451,19 @@ func (d *decoder) decodeStruct(size uint, offset uint, result reflect.Value) (ui
 			if tag := fieldType.Tag.Get("maxminddb"); tag != "" {
 				fieldName = tag
 			}
-			var key [structKeyLen]byte
-			copy(key[:], fieldName)
-			fields[key] = i
+			fields[fieldName] = i
 		}
 		fieldMapMu.Lock()
 		fieldMap[resultType] = fields
 		fieldMapMu.Unlock()
 	}
 
-	var key [structKeyLen]byte
 	for i := uint(0); i < size; i++ {
-		var err error
-		offset, err = d.decodeStructKey(offset, &key)
+		var (
+			err error
+			key string
+		)
+		key, offset, err = d.decodeStructKey(offset)
 		if err != nil {
 			return 0, err
 		}
@@ -517,21 +516,23 @@ func (d *decoder) decodeKeyString(offset uint) (string, uint, error) {
 	return d.decodeString(size, newOffset)
 }
 
-func (d *decoder) decodeStructKey(offset uint, s *[structKeyLen]byte) (uint, error) {
+// decodeStructKey returns a string which points into the database. Don't keep
+// it around.
+func (d *decoder) decodeStructKey(offset uint) (string, uint, error) {
 	typeNum, size, newOffset := d.decodeCtrlData(offset)
 	switch typeNum {
 	case _Pointer:
 		pointer, ptrOffset := d.decodePointer(size, newOffset)
-		_, err := d.decodeStructKey(pointer, s)
-		return ptrOffset, err
+		s, _, err := d.decodeStructKey(pointer)
+		return s, ptrOffset, err
 	case _String:
-		copy(s[:], d.buffer[newOffset:newOffset+size])
-		for i := size; i < 32; i++ {
-			s[i] = 0
-		}
-		return newOffset + size, nil
+		var s string
+		val := (*reflect.StringHeader)(unsafe.Pointer(&s))
+		val.Data = uintptr(unsafe.Pointer(&d.buffer[newOffset]))
+		val.Len = int(size)
+		return s, newOffset + size, nil
 	default:
-		return 0, fmt.Errorf("unexpected type when decoding structkey: %v", typeNum)
+		return "", 0, fmt.Errorf("unexpected type when decoding structkey: %v", typeNum)
 	}
 }
 
