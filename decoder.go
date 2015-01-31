@@ -1,9 +1,9 @@
 package maxminddb
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"math/big"
 	"reflect"
 	"sync"
@@ -334,29 +334,22 @@ func (d *decoder) decodeBytes(size uint, offset uint) ([]byte, uint, error) {
 
 func (d *decoder) decodeFloat64(size uint, offset uint) (float64, uint, error) {
 	newOffset := offset + size
-	var dbl float64
-	binary.Read(bytes.NewBuffer(d.buffer[offset:newOffset]), binary.BigEndian, &dbl)
-	return dbl, newOffset, nil
+	bits := binary.BigEndian.Uint64(d.buffer[offset:newOffset])
+	return math.Float64frombits(bits), newOffset, nil
 }
 
 func (d *decoder) decodeFloat32(size uint, offset uint) (float32, uint, error) {
 	newOffset := offset + size
-	var flt float32
-	binary.Read(bytes.NewBuffer(d.buffer[offset:newOffset]), binary.BigEndian, &flt)
-	return flt, newOffset, nil
+	bits := binary.BigEndian.Uint32(d.buffer[offset:newOffset])
+	return math.Float32frombits(bits), newOffset, nil
 }
 
 func (d *decoder) decodeInt(size uint, offset uint) (int, uint, error) {
 	newOffset := offset + size
-	intBytes := d.buffer[offset:newOffset]
-	if size != 4 {
-		pad := make([]byte, 4-size)
-		intBytes = append(pad, intBytes...)
-	}
-
 	var val int32
-	binary.Read(bytes.NewBuffer(intBytes), binary.BigEndian, &val)
-
+	for _, b := range d.buffer[offset:newOffset] {
+		val = (val << 8) | int32(b)
+	}
 	return int(val), newOffset, nil
 }
 
