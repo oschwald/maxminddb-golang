@@ -9,3 +9,7 @@ go:
 
 install:
   - go get gopkg.in/check.v1
+
+script:
+  - go test
+  - go test -tags appengine
