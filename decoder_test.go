@@ -2,8 +2,8 @@ package maxminddb
 
 import (
 	"encoding/hex"
+	"io/ioutil"
 	"math/big"
-	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -214,22 +214,11 @@ func validateDecoding(t *testing.T, tests map[string]interface{}) {
 }
 
 func TestPointers(t *testing.T) {
-	mapFile, err := os.Open("test-data/test-data/maps-with-pointers.raw")
+	bytes, err := ioutil.ReadFile("test-data/test-data/maps-with-pointers.raw")
 	if err != nil {
 		t.Error(err)
 	}
-	defer mapFile.Close()
-	stats, err := mapFile.Stat()
-	if err != nil {
-		t.Error(err)
-	}
-
-	mmap, err := mmap(int(mapFile.Fd()), int(stats.Size()))
-	if err != nil {
-		t.Error(err)
-	}
-	defer munmap(mmap)
-	d := decoder{mmap, 0}
+	d := decoder{bytes, 0}
 
 	expected := map[uint]map[string]string{
 		0:  {"long_key": "long_value1"},
