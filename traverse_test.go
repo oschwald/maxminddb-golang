@@ -19,17 +19,17 @@ func TestTraverse(t *testing.T) {
 
 			for {
 				var recordInterface interface{}
-				ip, err := i.Next(&recordInterface)
+				network, err := i.Next(&recordInterface)
 				if err != nil {
 					t.Fatal(err)
-				} else if ip == nil {
+				} else if network == nil {
 					break
 				}
 
 				record := recordInterface.(map[string]interface{})
 
-				if record["ip"] != ip.String() {
-					t.Fatalf("expected %s got %s", record["ip"], ip.String())
+				if record["ip"] != network.IP.String() {
+					t.Fatalf("expected %s got %s", record["ip"], network.IP.String())
 				}
 			}
 		}

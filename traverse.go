@@ -8,15 +8,14 @@ import (
 
 // Internal structure used to keep track of nodes we still need to visit.
 type nodeip struct {
-	node uint
-	ip   net.IP
-	bit  uint
+	pointer uint
+	ip      net.IP
+	bit     uint
 }
 
 type Iterator struct {
-	r *Reader
-	n []nodeip // Nodes we still have to visit.
-	k uint // Which direction to go in the tree.
+	reader *Reader
+	nodes  []nodeip // Nodes we still have to visit.
 }
 
 // Traverse can be used to traverse all entries in DB file.
@@ -25,10 +24,9 @@ func (r *Reader) Traverse() *Iterator {
 	if r.Metadata.IPVersion == 6 {
 		s = 16
 	}
-
 	return &Iterator{
-		r: r,
-		n: []nodeip{
+		reader: r,
+		nodes: []nodeip{
 			nodeip{
 				ip: make(net.IP, s),
 			},
@@ -38,49 +36,52 @@ func (r *Reader) Traverse() *Iterator {
 
 // Next returns the next ip in the iterator. result will be filled similar to Lookup.
 // The end of the iterator is reached when the return value is (nil, nil).
-func (i *Iterator) Next(result interface{}) (net.IP, error) {
+func (it *Iterator) Next(result interface{}) (*net.IPNet, error) {
 	rv := reflect.ValueOf(result)
 	if rv.Kind() != reflect.Ptr || rv.IsNil() {
 		return nil, errors.New("result param for Next must be a pointer")
 	}
 
-	for len(i.n) > 0 {
-		node := i.n[0]
+	for len(it.nodes) > 0 {
+		node := it.nodes[len(it.nodes)-1]
+		it.nodes = it.nodes[:len(it.nodes)-1]
 
-		// Have we visited both children?
-		for i.k < 2 {
-			pointer, err := i.r.readNode(node.node, i.k)
-			if err != nil {
-				return nil, err
-			}
+		for {
+			if node.pointer < it.reader.Metadata.NodeCount {
+				ipRight := make(net.IP, len(node.ip))
+				copy(ipRight, node.ip)
+				ipRight[node.bit>>3] |= 1 << uint(7-(node.bit%8))
 
-			// We need to make a copy so we don't modify the original.
-			ip := make(net.IP, len(node.ip))
-			copy(ip, node.ip)
-
-			if i.k == 1 {
-				ip[node.bit>>3] |= 1 << uint(7-(node.bit%8))
-			}
-
-			i.k++
-
-			if pointer < i.r.Metadata.NodeCount {
-				i.n = append(i.n, nodeip{
-					node: pointer,
-					ip:   ip,
-					bit:  node.bit + 1,
-				})
-			} else if pointer > i.r.Metadata.NodeCount {
-				if err = i.r.resolveDataPointer(pointer, rv); err != nil {
+				rightPointer, err := it.reader.readNode(node.pointer, 1)
+				if err != nil {
 					return nil, err
 				}
 
-				return ip, nil
-			} // pointer == i.r.Metadata.NodeCount means an empty node we can ignore.
-		}
+				node.bit++
+				it.nodes = append(it.nodes, nodeip{
+					pointer: rightPointer,
+					ip:      ipRight,
+					bit:     node.bit,
+				})
 
-		i.n = i.n[1:]
-		i.k = 0
+				node.pointer, err = it.reader.readNode(node.pointer, 0)
+				if err != nil {
+					return nil, err
+				}
+
+			} else if node.pointer > it.reader.Metadata.NodeCount {
+				if err := it.reader.resolveDataPointer(node.pointer, rv); err != nil {
+					return nil, err
+				}
+
+				return &net.IPNet{
+					IP:   node.ip,
+					Mask: net.CIDRMask(int(node.bit), len(node.ip)*8),
+				}, nil
+			} else {
+				break
+			}
+		}
 	}
 
 	return nil, nil
