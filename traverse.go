@@ -1,88 +1,102 @@
 package maxminddb
 
-import (
-	"errors"
-	"net"
-	"reflect"
-)
+import "net"
 
 // Internal structure used to keep track of nodes we still need to visit.
-type nodeip struct {
-	pointer uint
+type netNode struct {
 	ip      net.IP
 	bit     uint
+	pointer uint
 }
 
-type Iterator struct {
-	reader *Reader
-	nodes  []nodeip // Nodes we still have to visit.
+type Networks struct {
+	reader   *Reader
+	nodes    []netNode // Nodes we still have to visit.
+	lastNode netNode
+	err      error
 }
 
-// Traverse can be used to traverse all entries in DB file.
-func (r *Reader) Traverse() *Iterator {
+// Networks returns an iterator that can be used to traverse all networks in
+// the database.
+//
+// Please note that a MaxMind DB may map the IPv4 network into several
+// locations in in an IPv6 database. This iterator will iterate over all of
+// these locations separately.
+func (r *Reader) Networks() *Networks {
 	s := 4
 	if r.Metadata.IPVersion == 6 {
 		s = 16
 	}
-	return &Iterator{
+	return &Networks{
 		reader: r,
-		nodes: []nodeip{
-			nodeip{
+		nodes: []netNode{
+			netNode{
 				ip: make(net.IP, s),
 			},
 		},
 	}
 }
 
-// Next returns the next ip in the iterator. result will be filled similar to Lookup.
-// The end of the iterator is reached when the return value is (nil, nil).
-func (it *Iterator) Next(result interface{}) (*net.IPNet, error) {
-	rv := reflect.ValueOf(result)
-	if rv.Kind() != reflect.Ptr || rv.IsNil() {
-		return nil, errors.New("result param for Next must be a pointer")
-	}
-
-	for len(it.nodes) > 0 {
-		node := it.nodes[len(it.nodes)-1]
-		it.nodes = it.nodes[:len(it.nodes)-1]
+// Next prepared the next network for reading with the Network method. It
+// returns true if there is another network to be processed and false if there
+// are no more networks or if there is an error.
+func (n *Networks) Next() bool {
+	for len(n.nodes) > 0 {
+		node := n.nodes[len(n.nodes)-1]
+		n.nodes = n.nodes[:len(n.nodes)-1]
 
 		for {
-			if node.pointer < it.reader.Metadata.NodeCount {
+			if node.pointer < n.reader.Metadata.NodeCount {
 				ipRight := make(net.IP, len(node.ip))
 				copy(ipRight, node.ip)
 				ipRight[node.bit>>3] |= 1 << uint(7-(node.bit%8))
 
-				rightPointer, err := it.reader.readNode(node.pointer, 1)
+				rightPointer, err := n.reader.readNode(node.pointer, 1)
 				if err != nil {
-					return nil, err
+					n.err = err
+					return false
 				}
 
 				node.bit++
-				it.nodes = append(it.nodes, nodeip{
+				n.nodes = append(n.nodes, netNode{
 					pointer: rightPointer,
 					ip:      ipRight,
 					bit:     node.bit,
 				})
 
-				node.pointer, err = it.reader.readNode(node.pointer, 0)
+				node.pointer, err = n.reader.readNode(node.pointer, 0)
 				if err != nil {
-					return nil, err
+					n.err = err
+					return false
 				}
 
-			} else if node.pointer > it.reader.Metadata.NodeCount {
-				if err := it.reader.resolveDataPointer(node.pointer, rv); err != nil {
-					return nil, err
-				}
-
-				return &net.IPNet{
-					IP:   node.ip,
-					Mask: net.CIDRMask(int(node.bit), len(node.ip)*8),
-				}, nil
+			} else if node.pointer > n.reader.Metadata.NodeCount {
+				n.lastNode = node
+				return true
 			} else {
 				break
 			}
 		}
 	}
 
-	return nil, nil
+	return false
+}
+
+// Network returns the current network or an error if there is a problem
+// decoding the data for the network. It takes a pointer to a result value to
+// decode the network's data into.
+func (n *Networks) Network(result interface{}) (*net.IPNet, error) {
+	if err := n.reader.resolveDataPointer(n.lastNode.pointer, result); err != nil {
+		return nil, err
+	}
+
+	return &net.IPNet{
+		IP:   n.lastNode.ip,
+		Mask: net.CIDRMask(int(n.lastNode.bit), len(n.lastNode.ip)*8),
+	}, nil
+}
+
+// Err returns an error, if any, that was encountered during iteration.
+func (n *Networks) Err() error {
+	return n.err
 }

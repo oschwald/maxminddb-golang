@@ -119,11 +119,7 @@ func (r *Reader) Lookup(ipAddress net.IP, result interface{}) error {
 		return err
 	}
 
-	rv := reflect.ValueOf(result)
-	if rv.Kind() != reflect.Ptr || rv.IsNil() {
-		return errors.New("result param for Lookup must be a pointer")
-	}
-	return r.resolveDataPointer(pointer, rv)
+	return r.resolveDataPointer(pointer, result)
 }
 
 func (r *Reader) findAddressInTree(ipAddress net.IP) (uint, error) {
@@ -185,7 +181,12 @@ func (r *Reader) readNode(nodeNumber uint, index uint) (uint, error) {
 	return uint(uintFromBytes(prefix, nodeBytes)), nil
 }
 
-func (r *Reader) resolveDataPointer(pointer uint, result reflect.Value) error {
+func (r *Reader) resolveDataPointer(pointer uint, result interface{}) error {
+	rv := reflect.ValueOf(result)
+	if rv.Kind() != reflect.Ptr || rv.IsNil() {
+		return errors.New("result param must be a pointer")
+	}
+
 	nodeCount := r.Metadata.NodeCount
 	searchTreeSize := r.Metadata.RecordSize * nodeCount / 4
 
@@ -195,6 +196,6 @@ func (r *Reader) resolveDataPointer(pointer uint, result reflect.Value) error {
 		return errors.New("the MaxMind DB file's search tree is corrupt")
 	}
 
-	_, err := r.decoder.decode(resolved, result)
+	_, err := r.decoder.decode(resolved, rv)
 	return err
 }
