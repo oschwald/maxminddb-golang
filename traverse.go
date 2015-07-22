@@ -19,9 +19,9 @@ type Networks struct {
 // Networks returns an iterator that can be used to traverse all networks in
 // the database.
 //
-// Please note that a MaxMind DB may map the IPv4 network into several
-// locations in in an IPv6 database. This iterator will iterate over all of
-// these locations separately.
+// Please note that a MaxMind DB may map IPv4 networks into several locations
+// in in an IPv6 database. This iterator will iterate over all of these
+// locations separately.
 func (r *Reader) Networks() *Networks {
 	s := 4
 	if r.Metadata.IPVersion == 6 {
@@ -86,7 +86,7 @@ func (n *Networks) Next() bool {
 // decoding the data for the network. It takes a pointer to a result value to
 // decode the network's data into.
 func (n *Networks) Network(result interface{}) (*net.IPNet, error) {
-	if err := n.reader.resolveDataPointer(n.lastNode.pointer, result); err != nil {
+	if err := n.reader.retrieveData(n.lastNode.pointer, result); err != nil {
 		return nil, err
 	}
 

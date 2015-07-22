@@ -48,20 +48,27 @@ func FromBytes(buffer []byte) (*Reader, error) {
 	}
 
 	metadataStart += len(metadataStartMarker)
-	metadataDecoder := decoder{buffer, uint(metadataStart)}
+	metadataDecoder := decoder{buffer[metadataStart:]}
 
 	var metadata Metadata
 
 	rvMetdata := reflect.ValueOf(&metadata)
-	_, err := metadataDecoder.decode(uint(metadataStart), rvMetdata)
+	_, err := metadataDecoder.decode(0, rvMetdata)
 	if err != nil {
 		return nil, err
 	}
 
 	searchTreeSize := metadata.NodeCount * metadata.RecordSize / 4
-	decoder := decoder{buffer, searchTreeSize + dataSectionSeparatorSize}
+	decoder := decoder{
+		buffer[searchTreeSize+dataSectionSeparatorSize : metadataStart-len(metadataStartMarker)],
+	}
 
-	reader := &Reader{buffer: buffer, decoder: decoder, Metadata: metadata, ipv4Start: 0}
+	reader := &Reader{
+		buffer:    buffer,
+		decoder:   decoder,
+		Metadata:  metadata,
+		ipv4Start: 0,
+	}
 
 	reader.ipv4Start, err = reader.startNode()
 
@@ -119,7 +126,7 @@ func (r *Reader) Lookup(ipAddress net.IP, result interface{}) error {
 		return err
 	}
 
-	return r.resolveDataPointer(pointer, result)
+	return r.retrieveData(pointer, result)
 }
 
 func (r *Reader) findAddressInTree(ipAddress net.IP) (uint, error) {
@@ -181,21 +188,29 @@ func (r *Reader) readNode(nodeNumber uint, index uint) (uint, error) {
 	return uint(uintFromBytes(prefix, nodeBytes)), nil
 }
 
-func (r *Reader) resolveDataPointer(pointer uint, result interface{}) error {
+func (r *Reader) retrieveData(pointer uint, result interface{}) error {
 	rv := reflect.ValueOf(result)
 	if rv.Kind() != reflect.Ptr || rv.IsNil() {
 		return errors.New("result param must be a pointer")
 	}
 
-	nodeCount := r.Metadata.NodeCount
-	searchTreeSize := r.Metadata.RecordSize * nodeCount / 4
-
-	resolved := pointer - nodeCount + searchTreeSize
-
-	if resolved > uint(len(r.buffer)) {
-		return errors.New("the MaxMind DB file's search tree is corrupt")
+	offset, err := r.resolveDataPointer(pointer)
+	if err != nil {
+		return err
 	}
 
-	_, err := r.decoder.decode(resolved, rv)
+	_, err = r.decoder.decode(offset, rv)
 	return err
+}
+
+func (r *Reader) resolveDataPointer(pointer uint) (uint, error) {
+	nodeCount := r.Metadata.NodeCount
+
+	resolved := pointer - nodeCount - dataSectionSeparatorSize
+
+	if resolved > uint(len(r.buffer)) {
+		return 0, errors.New("the MaxMind DB file's search tree is corrupt")
+	}
+
+	return resolved, nil
 }
