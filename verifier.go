@@ -9,6 +9,8 @@ type verifier struct {
 	reader *Reader
 }
 
+// Verify checks that the database is valid. It validates the search tree,
+// the data section, and the metadata section.
 func (r *Reader) Verify() error {
 	v := verifier{r}
 	if err := v.verifyMetadata(); err != nil {
@@ -99,15 +101,14 @@ func (v *verifier) verifySearchTree() (map[uint]bool, error) {
 
 	it := v.reader.Networks()
 	for it.Next() {
-		if err := it.Err(); err != nil {
-			return nil, err
-		}
-
 		offset, err := v.reader.resolveDataPointer(it.lastNode.pointer)
 		if err != nil {
 			return nil, err
 		}
 		offsets[offset] = true
+	}
+	if err := it.Err(); err != nil {
+		return nil, err
 	}
 	return offsets, nil
 }
