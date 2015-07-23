@@ -10,7 +10,8 @@ type verifier struct {
 }
 
 // Verify checks that the database is valid. It validates the search tree,
-// the data section, and the metadata section.
+// the data section, and the metadata section. This verifier is stricter than
+// the specification and may return errors on databases that are readable.
 func (r *Reader) Verify() error {
 	v := verifier{r}
 	if err := v.verifyMetadata(); err != nil {
