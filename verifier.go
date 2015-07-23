@@ -119,8 +119,8 @@ func (v *verifier) verifyDataSectionSeparator() error {
 
 	separator := v.reader.buffer[separatorStart : separatorStart+dataSectionSeparatorSize]
 
-	for b := range separator {
-		if separator[b] != 0 {
+	for _, b := range separator {
+		if b != 0 {
 			return fmt.Errorf("unexpected byte in data separator: %v", separator)
 		}
 	}

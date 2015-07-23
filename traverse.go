@@ -12,6 +12,7 @@ type netNode struct {
 	pointer uint
 }
 
+// Networks represents a set of subnets that we are iterating over.
 type Networks struct {
 	reader   *Reader
 	nodes    []netNode // Nodes we still have to visit.

@@ -26,13 +26,13 @@ func TestVerifyOnGoodDatabases(t *testing.T) {
 		"test-data/test-data/MaxMind-DB-test-nested.mmdb",
 	}
 
-	for i := range databases {
-		reader, err := Open(databases[i])
+	for _, database := range databases {
+		reader, err := Open(database)
 		if err != nil {
 			t.Error(err)
 		}
 		if err = reader.Verify(); err != nil {
-			t.Errorf("Received error (%v) when verifying %v", err, databases[i])
+			t.Errorf("Received error (%v) when verifying %v", err, database)
 		}
 	}
 }
@@ -44,8 +44,8 @@ func TestVerifyOnBrokenDatabases(t *testing.T) {
 		"test-data/test-data/MaxMind-DB-test-broken-search-tree-24.mmdb",
 	}
 
-	for i := range databases {
-		reader, err := Open(databases[i])
+	for _, database := range databases {
+		reader, err := Open(database)
 		if err != nil {
 			t.Error(err)
 		}
@@ -53,7 +53,7 @@ func TestVerifyOnBrokenDatabases(t *testing.T) {
 		if err == nil {
 			t.Errorf(
 				"Did not receive expected error when verifying %v",
-				databases[i],
+				database,
 			)
 		}
 	}
