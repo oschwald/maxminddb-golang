@@ -40,7 +40,7 @@ func (r *Reader) Networks() *Networks {
 	}
 }
 
-// Next prepared the next network for reading with the Network method. It
+// Next prepares the next network for reading with the Network method. It
 // returns true if there is another network to be processed and false if there
 // are no more networks or if there is an error.
 func (n *Networks) Next() bool {
