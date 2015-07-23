@@ -35,3 +35,25 @@ func TestNetworks(t *testing.T) {
 		}
 	}
 }
+
+func TestNetworksWithInvalidSearchTree(t *testing.T) {
+	reader, err := Open("test-data/test-data/MaxMind-DB-test-broken-search-tree-24.mmdb")
+	if err != nil {
+		t.Fatalf("unexpected error while opening database: %v", err)
+	}
+	defer reader.Close()
+
+	n := reader.Networks()
+	for n.Next() {
+		var record interface{}
+		_, err := n.Network(&record)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n.Err() == nil {
+		t.Fatal("no error received when traversing an broken search tree")
+	} else if n.Err().Error() != "invalid search tree at 128.128.128.128/32" {
+		t.Error(n.Err())
+	}
+}
