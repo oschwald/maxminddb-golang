@@ -14,7 +14,11 @@ func Open(file string) (*Reader, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer func() { err = mapFile.Close() }()
+	defer func() {
+		if rerr := mapFile.Close(); rerr != nil {
+			err = rerr
+		}
+	}()
 
 	stats, err := mapFile.Stat()
 	if err != nil {
