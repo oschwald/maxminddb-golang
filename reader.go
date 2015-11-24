@@ -122,8 +122,13 @@ func (r *Reader) Lookup(ipAddress net.IP, result interface{}) error {
 
 	pointer, err := r.findAddressInTree(ipAddress)
 
-	if pointer == 0 {
+	if err != nil {
 		return err
+	}
+
+	if pointer == 0 {
+		// No error occurred, but no data found in the db for the given IP address.
+		return fmt.Errorf("No record found for %s", ipAddress.String())
 	}
 
 	return r.retrieveData(pointer, result)
