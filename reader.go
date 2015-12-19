@@ -107,9 +107,15 @@ func (r *Reader) startNode() (uint, error) {
 // Currently the decoder expect most data types to correspond exactly (e.g.,
 // a uint64 database type must be decoded into a uint64 Go type). In the
 // future, this may be made more flexible.
-func (r *Reader) Lookup(ipAddress net.IP, result interface{}) (error, int) {
+func (r *Reader) Lookup(ipAddress net.IP, result interface{}) error {
+	_, err := r.LookupNetmask(ipAddress, result)
+
+	return err
+}
+
+func (r *Reader) LookupNetmask(ipAddress net.IP, result interface{}) (int, error) {
 	if ipAddress == nil {
-		return errors.New("ipAddress passed to Lookup cannot be nil"), 0
+		return 0, errors.New("ipAddress passed to Lookup cannot be nil")
 	}
 
 	ipV4Address := ipAddress.To4()
@@ -117,7 +123,7 @@ func (r *Reader) Lookup(ipAddress net.IP, result interface{}) (error, int) {
 		ipAddress = ipV4Address
 	}
 	if len(ipAddress) == 16 && r.Metadata.IPVersion == 4 {
-		return fmt.Errorf("error looking up '%s': you attempted to look up an IPv6 address in an IPv4-only database", ipAddress.String()), 0
+		return 0, fmt.Errorf("error looking up '%s': you attempted to look up an IPv6 address in an IPv4-only database", ipAddress.String())
 	}
 
 	pointer, bits, err := r.findAddressInTree(ipAddress)
@@ -125,10 +131,10 @@ func (r *Reader) Lookup(ipAddress net.IP, result interface{}) (error, int) {
 	netmask := int(bits);
 
 	if pointer == 0 {
-		return err, netmask
+		return netmask, err
 	}
 
-	return r.retrieveData(pointer, result), netmask
+	return netmask, r.retrieveData(pointer, result)
 }
 
 func (r *Reader) findAddressInTree(ipAddress net.IP) (uint, uint, error) {
