@@ -107,9 +107,9 @@ func (r *Reader) startNode() (uint, error) {
 // Currently the decoder expect most data types to correspond exactly (e.g.,
 // a uint64 database type must be decoded into a uint64 Go type). In the
 // future, this may be made more flexible.
-func (r *Reader) Lookup(ipAddress net.IP, result interface{}) error {
+func (r *Reader) Lookup(ipAddress net.IP, result interface{}) (error, int) {
 	if ipAddress == nil {
-		return errors.New("ipAddress passed to Lookup cannot be nil")
+		return errors.New("ipAddress passed to Lookup cannot be nil"), 0
 	}
 
 	ipV4Address := ipAddress.To4()
@@ -117,19 +117,21 @@ func (r *Reader) Lookup(ipAddress net.IP, result interface{}) error {
 		ipAddress = ipV4Address
 	}
 	if len(ipAddress) == 16 && r.Metadata.IPVersion == 4 {
-		return fmt.Errorf("error looking up '%s': you attempted to look up an IPv6 address in an IPv4-only database", ipAddress.String())
+		return fmt.Errorf("error looking up '%s': you attempted to look up an IPv6 address in an IPv4-only database", ipAddress.String()), 0
 	}
 
-	pointer, err := r.findAddressInTree(ipAddress)
+	pointer, bits, err := r.findAddressInTree(ipAddress)
+
+	netmask := int(bits);
 
 	if pointer == 0 {
-		return err
+		return err, netmask
 	}
 
-	return r.retrieveData(pointer, result)
+	return r.retrieveData(pointer, result), netmask
 }
 
-func (r *Reader) findAddressInTree(ipAddress net.IP) (uint, error) {
+func (r *Reader) findAddressInTree(ipAddress net.IP) (uint, uint, error) {
 
 	bitCount := uint(len(ipAddress) * 8)
 
@@ -140,23 +142,27 @@ func (r *Reader) findAddressInTree(ipAddress net.IP) (uint, error) {
 
 	nodeCount := r.Metadata.NodeCount
 
+	var b uint;
+
 	for i := uint(0); i < bitCount && node < nodeCount; i++ {
 		bit := uint(1) & (uint(ipAddress[i>>3]) >> (7 - (i % 8)))
 
 		var err error
 		node, err = r.readNode(node, bit)
 		if err != nil {
-			return 0, err
+			return 0, 0, err
 		}
+
+		b = i
 	}
 	if node == nodeCount {
 		// Record is empty
-		return 0, nil
+		return 0, b, nil
 	} else if node > nodeCount {
-		return node, nil
+		return node, b, nil
 	}
 
-	return 0, errors.New("invalid node in search tree")
+	return 0, 0, errors.New("invalid node in search tree")
 }
 
 func (r *Reader) readNode(nodeNumber uint, index uint) (uint, error) {
