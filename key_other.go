@@ -3,7 +3,6 @@
 package maxminddb
 
 import (
-	"fmt"
 	"reflect"
 	"unsafe"
 )
@@ -24,6 +23,6 @@ func (d *decoder) decodeStructKey(offset uint) (string, uint, error) {
 		val.Len = int(size)
 		return s, newOffset + size, nil
 	default:
-		return "", 0, fmt.Errorf("unexpected type when decoding structkey: %v", typeNum)
+		return "", 0, newInvalidDatabaseError("unexpected type when decoding struct key: %v", typeNum)
 	}
 }

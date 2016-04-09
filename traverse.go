@@ -1,9 +1,6 @@
 package maxminddb
 
-import (
-	"fmt"
-	"net"
-)
+import "net"
 
 // Internal structure used to keep track of nodes we still need to visit.
 type netNode struct {
@@ -54,7 +51,7 @@ func (n *Networks) Next() bool {
 				ipRight := make(net.IP, len(node.ip))
 				copy(ipRight, node.ip)
 				if len(ipRight) <= int(node.bit>>3) {
-					n.err = fmt.Errorf(
+					n.err = newInvalidDatabaseError(
 						"invalid search tree at %v/%v", ipRight, node.bit)
 					return false
 				}

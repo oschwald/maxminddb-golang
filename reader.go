@@ -44,7 +44,7 @@ func FromBytes(buffer []byte) (*Reader, error) {
 	metadataStart := bytes.LastIndex(buffer, metadataStartMarker)
 
 	if metadataStart == -1 {
-		return nil, fmt.Errorf("error opening database file: invalid MaxMind DB file")
+		return nil, newInvalidDatabaseError("error opening database: invalid MaxMind DB file")
 	}
 
 	metadataStart += len(metadataStartMarker)
@@ -59,13 +59,18 @@ func FromBytes(buffer []byte) (*Reader, error) {
 	}
 
 	searchTreeSize := metadata.NodeCount * metadata.RecordSize / 4
-	decoder := decoder{
+	dataSectionStart := searchTreeSize + dataSectionSeparatorSize
+	dataSectionEnd := uint(metadataStart - len(metadataStartMarker))
+	if dataSectionStart > dataSectionEnd {
+		return nil, newInvalidDatabaseError("the MaxMind DB contains invalid metadata")
+	}
+	d := decoder{
 		buffer[searchTreeSize+dataSectionSeparatorSize : metadataStart-len(metadataStartMarker)],
 	}
 
 	reader := &Reader{
 		buffer:    buffer,
-		decoder:   decoder,
+		decoder:   d,
 		Metadata:  metadata,
 		ipv4Start: 0,
 	}
@@ -156,7 +161,7 @@ func (r *Reader) findAddressInTree(ipAddress net.IP) (uint, error) {
 		return node, nil
 	}
 
-	return 0, errors.New("invalid node in search tree")
+	return 0, newInvalidDatabaseError("invalid node in search tree")
 }
 
 func (r *Reader) readNode(nodeNumber uint, index uint) (uint, error) {
@@ -183,7 +188,7 @@ func (r *Reader) readNode(nodeNumber uint, index uint) (uint, error) {
 		offset := baseOffset + index*4
 		nodeBytes = r.buffer[offset : offset+4]
 	default:
-		return 0, fmt.Errorf("unknown record size: %d", RecordSize)
+		return 0, newInvalidDatabaseError("unknown record size: %d", RecordSize)
 	}
 	return uint(uintFromBytes(prefix, nodeBytes)), nil
 }
@@ -209,7 +214,7 @@ func (r *Reader) resolveDataPointer(pointer uint) (uint, error) {
 	resolved := pointer - nodeCount - dataSectionSeparatorSize
 
 	if resolved > uint(len(r.buffer)) {
-		return 0, errors.New("the MaxMind DB file's search tree is corrupt")
+		return 0, newInvalidDatabaseError("the MaxMind DB file's search tree is corrupt")
 	}
 
 	return resolved, nil

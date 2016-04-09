@@ -150,7 +150,9 @@ func (s *MySuite) TestDecoder(c *C) {
 	bigInt.SetString("1329227995784915872903807060280344576", 10)
 	c.Assert(&result.Uint128, DeepEquals, bigInt)
 
-	reader.Close()
+	if err = reader.Close(); err != nil {
+		c.Assert(err, nil, "no error on close")
+	}
 }
 
 func (s *MySuite) TestIpv6inIpv4(c *C) {
@@ -168,11 +170,12 @@ func (s *MySuite) TestIpv6inIpv4(c *C) {
 
 	expected := errors.New("error looking up '2001::': you attempted to look up an IPv6 address in an IPv4-only database")
 	c.Assert(err, DeepEquals, expected)
-	reader.Close()
-
+	if err = reader.Close(); err != nil {
+		c.Assert(err, nil, "no error on close")
+	}
 }
 
-func (s *MySuite) TestBrokenDatabase(c *C) {
+func (s *MySuite) TestBrokenDoubleDatabase(c *C) {
 	reader, err := Open("test-data/test-data/GeoIP2-City-Test-Broken-Double-Format.mmdb")
 	if err != nil {
 		c.Logf("unexpected error while opening database: %v", err)
@@ -182,9 +185,18 @@ func (s *MySuite) TestBrokenDatabase(c *C) {
 	var result interface{}
 	err = reader.Lookup(net.ParseIP("2001:220::"), &result)
 
-	expected := errors.New("the MaxMind DB file's data section contains bad data (float 64 size of 2)")
+	expected := newInvalidDatabaseError("the MaxMind DB file's data section contains bad data (float 64 size of 2)")
 	c.Assert(err, DeepEquals, expected)
-	reader.Close()
+	if err = reader.Close(); err != nil {
+		c.Assert(err, nil, "no error on close")
+	}
+}
+
+func (s *MySuite) TestInvalidNodeCountDatabase(c *C) {
+	_, err := Open("test-data/test-data/GeoIP2-City-Test-Invalid-Node-Count.mmdb")
+
+	expected := newInvalidDatabaseError("the MaxMind DB contains invalid metadata")
+	c.Assert(err, DeepEquals, expected)
 }
 
 func (s *MySuite) TestMissingDatabase(c *C) {
@@ -202,7 +214,7 @@ func (s *MySuite) TestNonDatabase(c *C) {
 		c.Log("received reader when doing lookups on DB that doesn't exist")
 		c.Fail()
 	}
-	c.Assert(err.Error(), Equals, "error opening database file: invalid MaxMind DB file")
+	c.Assert(err.Error(), Equals, "error opening database: invalid MaxMind DB file")
 }
 
 func (s *MySuite) TestDecodingToNonPointer(c *C) {
@@ -211,7 +223,9 @@ func (s *MySuite) TestDecodingToNonPointer(c *C) {
 	var recordInterface interface{}
 	err := reader.Lookup(net.ParseIP("::1.1.1.0"), recordInterface)
 	c.Assert(err.Error(), Equals, "result param must be a pointer")
-	reader.Close()
+	if err = reader.Close(); err != nil {
+		c.Assert(err, nil, "no error on close")
+	}
 }
 
 func (s *MySuite) TestNilLookup(c *C) {
@@ -220,7 +234,9 @@ func (s *MySuite) TestNilLookup(c *C) {
 	var recordInterface interface{}
 	err := reader.Lookup(nil, recordInterface)
 	c.Assert(err.Error(), Equals, "ipAddress passed to Lookup cannot be nil")
-	reader.Close()
+	if err = reader.Close(); err != nil {
+		c.Assert(err, nil, "no error on close")
+	}
 }
 
 func checkMetadata(c *C, reader *Reader, ipVersion uint, recordSize uint) {
@@ -241,9 +257,9 @@ func checkMetadata(c *C, reader *Reader, ipVersion uint, recordSize uint) {
 	c.Assert(metadata.Languages, DeepEquals, []string{"en", "zh"})
 
 	if ipVersion == 4 {
-		c.Assert(metadata.NodeCount, Equals, uint(37))
+		c.Assert(metadata.NodeCount, Equals, uint(164))
 	} else {
-		c.Assert(metadata.NodeCount, Equals, uint(160))
+		c.Assert(metadata.NodeCount, Equals, uint(416))
 	}
 
 	c.Assert(metadata.RecordSize, Equals, recordSize)
@@ -362,12 +378,14 @@ func BenchmarkMaxMindDB(b *testing.B) {
 		num := r.Uint32()
 		ip := net.ParseIP(fmt.Sprintf("%d.%d.%d.%d", (0xFF000000&num)>>24,
 			(0x00FF0000&num)>>16, (0x0000FF00&num)>>8, 0x000000FF&num))
-		err := db.Lookup(ip, &result)
+		err = db.Lookup(ip, &result)
 		if err != nil {
 			b.Fatal(err)
 		}
 	}
-	db.Close()
+	if err = db.Close(); err != nil {
+		b.Error("error on close")
+	}
 }
 
 func BenchmarkCountryCode(b *testing.B) {
@@ -389,10 +407,12 @@ func BenchmarkCountryCode(b *testing.B) {
 		num := r.Uint32()
 		ip := net.ParseIP(fmt.Sprintf("%d.%d.%d.%d", (0xFF000000&num)>>24,
 			(0x00FF0000&num)>>16, (0x0000FF00&num)>>8, 0x000000FF&num))
-		err := db.Lookup(ip, &result)
+		err = db.Lookup(ip, &result)
 		if err != nil {
 			b.Fatal(err)
 		}
 	}
-	db.Close()
+	if err = db.Close(); err != nil {
+		b.Error("error on close")
+	}
 }

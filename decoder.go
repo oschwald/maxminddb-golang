@@ -112,13 +112,13 @@ func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint, result 
 	case _Uint128:
 		return d.unmarshalUint128(size, offset, result)
 	default:
-		return 0, fmt.Errorf("unknown type: %d", dtype)
+		return 0, newInvalidDatabaseError("unknown type: %d", dtype)
 	}
 }
 
 func (d *decoder) unmarshalBool(size uint, offset uint, result reflect.Value) (uint, error) {
 	if size > 1 {
-		return 0, fmt.Errorf("the MaxMind DB file's data section contains bad data (bool size of %v)", size)
+		return 0, newInvalidDatabaseError("the MaxMind DB file's data section contains bad data (bool size of %v)", size)
 	}
 	value, newOffset, err := d.decodeBool(size, offset)
 	if err != nil {
@@ -156,7 +156,7 @@ func (d *decoder) unmarshalBytes(size uint, offset uint, result reflect.Value) (
 
 func (d *decoder) unmarshalFloat32(size uint, offset uint, result reflect.Value) (uint, error) {
 	if size != 4 {
-		return 0, fmt.Errorf("the MaxMind DB file's data section contains bad data (float32 size of %v)", size)
+		return 0, newInvalidDatabaseError("the MaxMind DB file's data section contains bad data (float32 size of %v)", size)
 	}
 	value, newOffset, err := d.decodeFloat32(size, offset)
 	if err != nil {
@@ -178,7 +178,7 @@ func (d *decoder) unmarshalFloat32(size uint, offset uint, result reflect.Value)
 func (d *decoder) unmarshalFloat64(size uint, offset uint, result reflect.Value) (uint, error) {
 
 	if size != 8 {
-		return 0, fmt.Errorf("the MaxMind DB file's data section contains bad data (float 64 size of %v)", size)
+		return 0, newInvalidDatabaseError("the MaxMind DB file's data section contains bad data (float 64 size of %v)", size)
 	}
 	value, newOffset, err := d.decodeFloat64(size, offset)
 	if err != nil {
@@ -198,7 +198,7 @@ func (d *decoder) unmarshalFloat64(size uint, offset uint, result reflect.Value)
 
 func (d *decoder) unmarshalInt32(size uint, offset uint, result reflect.Value) (uint, error) {
 	if size > 4 {
-		return 0, fmt.Errorf("the MaxMind DB file's data section contains bad data (int32 size of %v)", size)
+		return 0, newInvalidDatabaseError("the MaxMind DB file's data section contains bad data (int32 size of %v)", size)
 	}
 	value, newOffset, err := d.decodeInt(size, offset)
 	if err != nil {
@@ -276,7 +276,7 @@ func (d *decoder) unmarshalString(size uint, offset uint, result reflect.Value) 
 
 func (d *decoder) unmarshalUint(size uint, offset uint, result reflect.Value, uintType uint) (uint, error) {
 	if size > uintType/8 {
-		return 0, fmt.Errorf("the MaxMind DB file's data section contains bad data (uint%v size of %v)", uintType, size)
+		return 0, newInvalidDatabaseError("the MaxMind DB file's data section contains bad data (uint%v size of %v)", uintType, size)
 	}
 
 	value, newOffset, err := d.decodeUint(size, offset)
@@ -298,7 +298,7 @@ func (d *decoder) unmarshalUint(size uint, offset uint, result reflect.Value, ui
 
 func (d *decoder) unmarshalUint128(size uint, offset uint, result reflect.Value) (uint, error) {
 	if size > 16 {
-		return 0, fmt.Errorf("the MaxMind DB file's data section contains bad data (uint128 size of %v)", size)
+		return 0, newInvalidDatabaseError("the MaxMind DB file's data section contains bad data (uint128 size of %v)", size)
 	}
 	value, newOffset, err := d.decodeUint128(size, offset)
 	if err != nil {
@@ -502,7 +502,7 @@ func (d *decoder) decodeKeyString(offset uint) (string, uint, error) {
 		return key, ptrOffset, err
 	}
 	if typeNum != _String {
-		return "", 0, fmt.Errorf("unexpected type when decoding string: %v", typeNum)
+		return "", 0, newInvalidDatabaseError("unexpected type when decoding string: %v", typeNum)
 	}
 	return d.decodeString(size, newOffset)
 }
