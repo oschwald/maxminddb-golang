@@ -414,10 +414,9 @@ func BenchmarkCountryCode(b *testing.B) {
 }
 
 func randomIPv4Address(b *testing.B, r *rand.Rand) net.IP {
-	ip := make([]byte, 4, 4)
-	if _, err := r.Read(ip); err != nil {
-		b.Fatalf("Error generating IP: %v", err)
-	}
+	num := r.Uint32()
+	ip := []byte{byte(num >> 24), byte(num >> 16), byte(num >> 8),
+		byte(num)}
 
 	return ip
 }
