@@ -375,9 +375,7 @@ func BenchmarkMaxMindDB(b *testing.B) {
 	var result interface{}
 
 	for i := 0; i < b.N; i++ {
-		num := r.Uint32()
-		ip := net.ParseIP(fmt.Sprintf("%d.%d.%d.%d", (0xFF000000&num)>>24,
-			(0x00FF0000&num)>>16, (0x0000FF00&num)>>8, 0x000000FF&num))
+		ip := randomIPv4Address(b, r)
 		err = db.Lookup(ip, &result)
 		if err != nil {
 			b.Fatal(err)
@@ -400,13 +398,11 @@ func BenchmarkCountryCode(b *testing.B) {
 		} `maxminddb:"country"`
 	}
 
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	r := rand.New(rand.NewSource(0))
 	var result MinCountry
 
 	for i := 0; i < b.N; i++ {
-		num := r.Uint32()
-		ip := net.ParseIP(fmt.Sprintf("%d.%d.%d.%d", (0xFF000000&num)>>24,
-			(0x00FF0000&num)>>16, (0x0000FF00&num)>>8, 0x000000FF&num))
+		ip := randomIPv4Address(b, r)
 		err = db.Lookup(ip, &result)
 		if err != nil {
 			b.Fatal(err)
@@ -415,4 +411,13 @@ func BenchmarkCountryCode(b *testing.B) {
 	if err = db.Close(); err != nil {
 		b.Error("error on close")
 	}
+}
+
+func randomIPv4Address(b *testing.B, r *rand.Rand) net.IP {
+	ip := make([]byte, 4, 4)
+	if _, err := r.Read(ip); err != nil {
+		b.Fatalf("Error generating IP: %v", err)
+	}
+
+	return ip
 }
