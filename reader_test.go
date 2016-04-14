@@ -415,8 +415,6 @@ func BenchmarkCountryCode(b *testing.B) {
 
 func randomIPv4Address(b *testing.B, r *rand.Rand) net.IP {
 	num := r.Uint32()
-	ip := []byte{byte(num >> 24), byte(num >> 16), byte(num >> 8),
+	return []byte{byte(num >> 24), byte(num >> 16), byte(num >> 8),
 		byte(num)}
-
-	return ip
 }
