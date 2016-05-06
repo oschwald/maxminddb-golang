@@ -211,6 +211,12 @@ func (d *decoder) unmarshalInt32(size uint, offset uint, result reflect.Value) (
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		result.SetInt(int64(value))
 		return newOffset, nil
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		if value < 0 {
+			return 0, fmt.Errorf("trying to unmarshal %v into %v", value, result.Type())
+		}
+		result.SetUint(uint64(value))
+		return newOffset, nil
 	case reflect.Interface:
 		result.Set(reflect.ValueOf(value))
 		return newOffset, nil
@@ -287,6 +293,9 @@ func (d *decoder) unmarshalUint(size uint, offset uint, result reflect.Value, ui
 	switch result.Kind() {
 	default:
 		return newOffset, fmt.Errorf("trying to unmarshal %v into %v", value, result.Type())
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		result.SetInt(int64(value))
+		return newOffset, nil
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
 		result.SetUint(value)
 		return newOffset, nil

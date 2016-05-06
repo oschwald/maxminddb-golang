@@ -155,6 +155,25 @@ func (s *MySuite) TestDecoder(c *C) {
 	}
 }
 
+func (s *MySuite) TestDecodingUint16IntoInt(c *C) {
+	reader, err := Open("test-data/test-data/MaxMind-DB-test-decoder.mmdb")
+	if err != nil {
+		c.Logf("unexpected error while opening database: %v", err)
+		c.Fail()
+	}
+
+	var result struct {
+		Uint16 int `maxminddb:"uint16"`
+	}
+	err = reader.Lookup(net.ParseIP("::1.1.1.0"), &result)
+	if err != nil {
+		c.Log(err)
+		c.Fail()
+	}
+
+	c.Assert(result.Uint16, Equals, 100)
+}
+
 func (s *MySuite) TestIpv6inIpv4(c *C) {
 	reader, err := Open("test-data/test-data/MaxMind-DB-test-ipv4-24.mmdb")
 	if err != nil {
