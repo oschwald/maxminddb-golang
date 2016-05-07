@@ -136,7 +136,6 @@ func (d *decoder) unmarshalBool(size uint, offset uint, result reflect.Value) (u
 }
 
 func (d *decoder) unmarshalBytes(size uint, offset uint, result reflect.Value) (uint, error) {
-
 	value, newOffset, err := d.decodeBytes(size, offset)
 	if err != nil {
 		return 0, err
@@ -269,7 +268,6 @@ func (d *decoder) unmarshalSlice(size uint, offset uint, result reflect.Value) (
 }
 
 func (d *decoder) unmarshalString(size uint, offset uint, result reflect.Value) (uint, error) {
-
 	value, newOffset, err := d.decodeString(size, offset)
 
 	if err != nil {
