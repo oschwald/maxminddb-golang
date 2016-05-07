@@ -187,6 +187,9 @@ func (d *decoder) unmarshalFloat64(size uint, offset uint, result reflect.Value)
 	default:
 		return newOffset, newUnmarshalTypeError(value, result.Type())
 	case reflect.Float32, reflect.Float64:
+		if result.OverflowFloat(value) {
+			return 0, newUnmarshalTypeError(value, result.Type())
+		}
 		result.SetFloat(value)
 		return newOffset, nil
 	case reflect.Interface:
