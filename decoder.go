@@ -208,13 +208,18 @@ func (d *decoder) unmarshalInt32(size uint, offset uint, result reflect.Value) (
 	default:
 		return newOffset, newUnmarshalTypeError(value, result.Type())
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		result.SetInt(int64(value))
-		return newOffset, nil
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
-		if value < 0 {
+		n := int64(value)
+		if result.OverflowInt(n) {
 			return 0, newUnmarshalTypeError(value, result.Type())
 		}
-		result.SetUint(uint64(value))
+		result.SetInt(n)
+		return newOffset, nil
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		n := uint64(value)
+		if result.OverflowUint(n) {
+			return 0, newUnmarshalTypeError(value, result.Type())
+		}
+		result.SetUint(n)
 		return newOffset, nil
 	case reflect.Interface:
 		result.Set(reflect.ValueOf(value))
@@ -293,9 +298,16 @@ func (d *decoder) unmarshalUint(size uint, offset uint, result reflect.Value, ui
 	default:
 		return newOffset, newUnmarshalTypeError(value, result.Type())
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		result.SetInt(int64(value))
+		n := int64(value)
+		if result.OverflowInt(n) {
+			return 0, newUnmarshalTypeError(value, result.Type())
+		}
+		result.SetInt(n)
 		return newOffset, nil
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		if result.OverflowUint(value) {
+			return 0, newUnmarshalTypeError(value, result.Type())
+		}
 		result.SetUint(value)
 		return newOffset, nil
 	case reflect.Interface:
