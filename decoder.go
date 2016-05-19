@@ -35,7 +35,13 @@ const (
 
 func (d *decoder) decode(offset uint, result reflect.Value) (uint, error) {
 	typeNum, size, newOffset := d.decodeCtrlData(offset)
-	return d.decodeFromType(typeNum, size, newOffset, result)
+
+	if typeNum != _Pointer && result.Kind() == reflect.Uintptr {
+		result.Set(reflect.ValueOf(uintptr(offset)))
+		return d.nextValueOffset(offset, 1), nil
+	} else {
+		return d.decodeFromType(typeNum, size, newOffset, result)
+	}
 }
 
 func (d *decoder) decodeCtrlData(offset uint) (dataType, uint, uint) {

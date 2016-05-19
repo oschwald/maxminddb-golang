@@ -8,7 +8,12 @@ import (
 	"reflect"
 )
 
-const dataSectionSeparatorSize = 16
+const (
+	// Returned by LookupOffset when a matched root record offset cannot be found.
+	NotFound = ^uintptr(0)
+
+	dataSectionSeparatorSize = 16
+)
 
 var metadataStartMarker = []byte("\xAB\xCD\xEFMaxMind.com")
 
@@ -113,8 +118,37 @@ func (r *Reader) startNode() (uint, error) {
 // a uint64 database type must be decoded into a uint64 Go type). In the
 // future, this may be made more flexible.
 func (r *Reader) Lookup(ipAddress net.IP, result interface{}) error {
+	if pointer, err := r.lookupPointer(ipAddress); pointer == 0 {
+		return err
+	} else {
+		return r.retrieveData(pointer, result)
+	}
+}
+
+// LookupOffset maps an argument net.IP to corresponding root record offset
+// in the database. NotFound is returned if no such record is found.
+func (r *Reader) LookupOffset(ipAddress net.IP) (uintptr, error) {
+	if pointer, err := r.lookupPointer(ipAddress); pointer == 0 {
+		return NotFound, err
+	} else {
+		return r.resolveDataPointer(pointer)
+	}
+}
+
+// Decodes the record at |offset| into |result|.
+func (r *Reader) Decode(offset uintptr, result interface{}) error {
+	rv := reflect.ValueOf(result)
+	if rv.Kind() != reflect.Ptr || rv.IsNil() {
+		return errors.New("result param must be a pointer")
+	}
+
+	_, err := r.decoder.decode(uint(offset), reflect.ValueOf(result))
+	return err
+}
+
+func (r *Reader) lookupPointer(ipAddress net.IP) (uint, error) {
 	if ipAddress == nil {
-		return errors.New("ipAddress passed to Lookup cannot be nil")
+		return 0, errors.New("ipAddress passed to Lookup cannot be nil")
 	}
 
 	ipV4Address := ipAddress.To4()
@@ -122,16 +156,10 @@ func (r *Reader) Lookup(ipAddress net.IP, result interface{}) error {
 		ipAddress = ipV4Address
 	}
 	if len(ipAddress) == 16 && r.Metadata.IPVersion == 4 {
-		return fmt.Errorf("error looking up '%s': you attempted to look up an IPv6 address in an IPv4-only database", ipAddress.String())
+		return 0, fmt.Errorf("error looking up '%s': you attempted to look up an IPv6 address in an IPv4-only database", ipAddress.String())
 	}
 
-	pointer, err := r.findAddressInTree(ipAddress)
-
-	if pointer == 0 {
-		return err
-	}
-
-	return r.retrieveData(pointer, result)
+	return r.findAddressInTree(ipAddress)
 }
 
 func (r *Reader) findAddressInTree(ipAddress net.IP) (uint, error) {
@@ -194,28 +222,18 @@ func (r *Reader) readNode(nodeNumber uint, index uint) (uint, error) {
 }
 
 func (r *Reader) retrieveData(pointer uint, result interface{}) error {
-	rv := reflect.ValueOf(result)
-	if rv.Kind() != reflect.Ptr || rv.IsNil() {
-		return errors.New("result param must be a pointer")
-	}
-
-	offset, err := r.resolveDataPointer(pointer)
-	if err != nil {
+	if offset, err := r.resolveDataPointer(pointer); err != nil {
 		return err
+	} else {
+		return r.Decode(offset, result)
 	}
-
-	_, err = r.decoder.decode(offset, rv)
-	return err
 }
 
-func (r *Reader) resolveDataPointer(pointer uint) (uint, error) {
-	nodeCount := r.Metadata.NodeCount
+func (r *Reader) resolveDataPointer(pointer uint) (uintptr, error) {
+	var resolved = uintptr(pointer - r.Metadata.NodeCount - dataSectionSeparatorSize)
 
-	resolved := pointer - nodeCount - dataSectionSeparatorSize
-
-	if resolved > uint(len(r.buffer)) {
+	if resolved > uintptr(len(r.buffer)) {
 		return 0, newInvalidDatabaseError("the MaxMind DB file's search tree is corrupt")
 	}
-
 	return resolved, nil
 }
