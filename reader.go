@@ -104,19 +104,7 @@ func (r *Reader) startNode() (uint, error) {
 }
 
 // Lookup takes an IP address as a net.IP structure and a pointer to the
-// result value to decode into. The result value pointed to must be a data
-// value that corresponds to a record in the database. This may include a
-// struct representation of the data, a map capable of holding the data or an
-// empty interface{} value.
-//
-// If result is a pointer to a struct, the struct need not include a field
-// for every value that may be in the database. If a field is not present in
-// the structure, the decoder will not decode that field, reducing the time
-// required to decode the record.
-//
-// Currently the decoder expect most data types to correspond exactly (e.g.,
-// a uint64 database type must be decoded into a uint64 Go type). In the
-// future, this may be made more flexible.
+// result value to Decode into.
 func (r *Reader) Lookup(ipAddress net.IP, result interface{}) error {
 	if pointer, err := r.lookupPointer(ipAddress); pointer == 0 {
 		return err
@@ -125,8 +113,11 @@ func (r *Reader) Lookup(ipAddress net.IP, result interface{}) error {
 	}
 }
 
-// LookupOffset maps an argument net.IP to corresponding root record offset
-// in the database. NotFound is returned if no such record is found.
+// LookupOffset maps an argument net.IP to a corresponding record offset in the
+// database. NotFound is returned if no such record is found, and a record may
+// otherwise be extracted by passing the returned offset to Decode. LookupOffset
+// is an advanced API, which exists to provide clients with a means to cache
+// previously-decoded records.
 func (r *Reader) LookupOffset(ipAddress net.IP) (uintptr, error) {
 	if pointer, err := r.lookupPointer(ipAddress); pointer == 0 {
 		return NotFound, err
@@ -135,7 +126,26 @@ func (r *Reader) LookupOffset(ipAddress net.IP) (uintptr, error) {
 	}
 }
 
-// Decodes the record at |offset| into |result|.
+// Decodes the record at |offset| into |result|. The result value pointed to
+// must be a data value that corresponds to a record in the database. This may
+// include a struct representation of the data, a map capable of holding the
+// data or an empty interface{} value.
+//
+// If result is a pointer to a struct, the struct need not include a field
+// for every value that may be in the database. If a field is not present in
+// the structure, the decoder will not decode that field, reducing the time
+// required to decode the record.
+//
+// As a special case, a struct field of type uintptr will be used to capture
+// the offset of the value. Decode may later be used to extract the stored
+// value from the offset. MaxmindDBs are highly normalized: for example in the
+// Cities database, all records of the same country will reference a single
+// representative record for that country. This uintptr behavior allows clients
+// to leverage this normalization in their own sub-record caching.
+//
+// Currently the decoder expect most data types to correspond exactly (e.g.,
+// a uint64 database type must be decoded into a uint64 Go type), with the
+// exception of uintptr. In the future, this may be made more flexible.
 func (r *Reader) Decode(offset uintptr, result interface{}) error {
 	rv := reflect.ValueOf(result)
 	if rv.Kind() != reflect.Ptr || rv.IsNil() {
