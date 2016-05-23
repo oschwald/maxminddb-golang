@@ -138,14 +138,10 @@ func (r *Reader) LookupOffset(ipAddress net.IP) (uintptr, error) {
 //
 // As a special case, a struct field of type uintptr will be used to capture
 // the offset of the value. Decode may later be used to extract the stored
-// value from the offset. MaxmindDBs are highly normalized: for example in the
-// Cities database, all records of the same country will reference a single
-// representative record for that country. This uintptr behavior allows clients
-// to leverage this normalization in their own sub-record caching.
-//
-// Currently the decoder expect most data types to correspond exactly (e.g.,
-// a uint64 database type must be decoded into a uint64 Go type), with the
-// exception of uintptr. In the future, this may be made more flexible.
+// value from the offset. MaxMind DBs are highly normalized: for example in
+// the City database, all records of the same country will reference a
+// single representative record for that country. This uintptr behavior allows
+// clients to leverage this normalization in their own sub-record caching.
 func (r *Reader) Decode(offset uintptr, result interface{}) error {
 	rv := reflect.ValueOf(result)
 	if rv.Kind() != reflect.Ptr || rv.IsNil() {
