@@ -9,7 +9,8 @@ import (
 )
 
 const (
-	// Returned by LookupOffset when a matched root record offset cannot be found.
+	// NotFound is returned by LookupOffset when a matched root record offset
+	// cannot be found.
 	NotFound = ^uintptr(0)
 
 	dataSectionSeparatorSize = 16
@@ -106,11 +107,11 @@ func (r *Reader) startNode() (uint, error) {
 // Lookup takes an IP address as a net.IP structure and a pointer to the
 // result value to Decode into.
 func (r *Reader) Lookup(ipAddress net.IP, result interface{}) error {
-	if pointer, err := r.lookupPointer(ipAddress); pointer == 0 {
+	pointer, err := r.lookupPointer(ipAddress)
+	if pointer == 0 || err != nil {
 		return err
-	} else {
-		return r.retrieveData(pointer, result)
 	}
+	return r.retrieveData(pointer, result)
 }
 
 // LookupOffset maps an argument net.IP to a corresponding record offset in the
@@ -119,14 +120,14 @@ func (r *Reader) Lookup(ipAddress net.IP, result interface{}) error {
 // is an advanced API, which exists to provide clients with a means to cache
 // previously-decoded records.
 func (r *Reader) LookupOffset(ipAddress net.IP) (uintptr, error) {
-	if pointer, err := r.lookupPointer(ipAddress); pointer == 0 {
+	pointer, err := r.lookupPointer(ipAddress)
+	if pointer == 0 || err != nil {
 		return NotFound, err
-	} else {
-		return r.resolveDataPointer(pointer)
 	}
+	return r.resolveDataPointer(pointer)
 }
 
-// Decodes the record at |offset| into |result|. The result value pointed to
+// Decode the record at |offset| into |result|. The result value pointed to
 // must be a data value that corresponds to a record in the database. This may
 // include a struct representation of the data, a map capable of holding the
 // data or an empty interface{} value.

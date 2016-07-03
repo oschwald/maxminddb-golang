@@ -162,6 +162,59 @@ func (s *MySuite) TestDecoder(c *C) {
 	c.Assert(reader.Close(), IsNil)
 }
 
+type PointerMap struct {
+	MapX map[string]interface{} `maxminddb:"mapX"`
+}
+
+type TestPointerType struct {
+	Array      *[]uint     `maxminddb:"array"`
+	Boolean    *bool       `maxminddb:"boolean"`
+	Bytes      *[]byte     `maxminddb:"bytes"`
+	Double     *float64    `maxminddb:"double"`
+	Float      *float32    `maxminddb:"float"`
+	Int32      *int32      `maxminddb:"int32"`
+	Map        *PointerMap `maxminddb:"map"`
+	Uint16     *uint16     `maxminddb:"uint16"`
+	Uint32     *uint32     `maxminddb:"uint32"`
+	Uint64     *uint64     `maxminddb:"uint64"`
+	Uint128    *big.Int    `maxminddb:"uint128"`
+	Utf8String *string     `maxminddb:"utf8_string"`
+}
+
+func (s *MySuite) TestStructWithPointer(c *C) {
+	reader, err := Open("test-data/test-data/MaxMind-DB-test-decoder.mmdb")
+	c.Assert(err, IsNil)
+
+	var result TestPointerType
+
+	c.Log("Before")
+	reader.Lookup(net.ParseIP("::1.1.1.0"), &result)
+	c.Assert(err, IsNil)
+
+	c.Assert(*result.Array, DeepEquals, []uint{uint(1), uint(2), uint(3)})
+	c.Assert(*result.Boolean, Equals, true)
+	c.Assert(*result.Bytes, DeepEquals, []byte{0x00, 0x00, 0x00, 0x2a})
+	c.Assert(*result.Double, Equals, 42.123456)
+	c.Assert(*result.Float, Equals, float32(1.1))
+	c.Assert(*result.Int32, Equals, int32(-268435456))
+
+	c.Assert(result.Map.MapX, DeepEquals,
+		map[string]interface{}{
+			"arrayX":       []interface{}{uint64(7), uint64(8), uint64(9)},
+			"utf8_stringX": "hello",
+		})
+
+	c.Assert(*result.Uint16, Equals, uint16(100))
+	c.Assert(*result.Uint32, Equals, uint32(268435456))
+	c.Assert(*result.Uint64, Equals, uint64(1152921504606846976))
+	c.Assert(*result.Utf8String, Equals, "unicode! ☯ - ♫")
+	bigInt := new(big.Int)
+	bigInt.SetString("1329227995784915872903807060280344576", 10)
+	c.Assert(result.Uint128, DeepEquals, bigInt)
+
+	c.Assert(reader.Close(), IsNil)
+}
+
 func (s *MySuite) TestNestedOffsetDecode(c *C) {
 	db, err := Open("test-data/test-data/GeoIP2-City-Test.mmdb")
 	c.Assert(err, IsNil)

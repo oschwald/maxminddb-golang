@@ -39,9 +39,8 @@ func (d *decoder) decode(offset uint, result reflect.Value) (uint, error) {
 	if typeNum != _Pointer && result.Kind() == reflect.Uintptr {
 		result.Set(reflect.ValueOf(uintptr(offset)))
 		return d.nextValueOffset(offset, 1), nil
-	} else {
-		return d.decodeFromType(typeNum, size, newOffset, result)
 	}
+	return d.decodeFromType(typeNum, size, newOffset, result)
 }
 
 func (d *decoder) decodeCtrlData(offset uint) (dataType, uint, uint) {
@@ -86,7 +85,10 @@ func (d *decoder) sizeFromCtrlByte(ctrlByte byte, offset uint, typeNum dataType)
 
 func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint, result reflect.Value) (uint, error) {
 	if result.Kind() == reflect.Ptr {
-		result = reflect.Indirect(result)
+		if result.IsNil() {
+			result.Set(reflect.New(result.Type().Elem()))
+		}
+		result = result.Elem()
 	}
 
 	switch dtype {
