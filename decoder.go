@@ -84,10 +84,7 @@ func (d *decoder) sizeFromCtrlByte(ctrlByte byte, offset uint, typeNum dataType)
 }
 
 func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint, result reflect.Value) (uint, error) {
-	for {
-		if result.Kind() != reflect.Ptr {
-			break
-		}
+	for result.Kind() == reflect.Ptr {
 		if result.IsNil() {
 			result.Set(reflect.New(result.Type().Elem()))
 		}
