@@ -167,18 +167,20 @@ type PointerMap struct {
 }
 
 type TestPointerType struct {
-	Array      *[]uint     `maxminddb:"array"`
-	Boolean    *bool       `maxminddb:"boolean"`
-	Bytes      *[]byte     `maxminddb:"bytes"`
-	Double     *float64    `maxminddb:"double"`
-	Float      *float32    `maxminddb:"float"`
-	Int32      *int32      `maxminddb:"int32"`
-	Map        *PointerMap `maxminddb:"map"`
-	Uint16     *uint16     `maxminddb:"uint16"`
-	Uint32     *uint32     `maxminddb:"uint32"`
-	Uint64     *uint64     `maxminddb:"uint64"`
-	Uint128    *big.Int    `maxminddb:"uint128"`
-	Utf8String *string     `maxminddb:"utf8_string"`
+	Array   *[]uint     `maxminddb:"array"`
+	Boolean *bool       `maxminddb:"boolean"`
+	Bytes   *[]byte     `maxminddb:"bytes"`
+	Double  *float64    `maxminddb:"double"`
+	Float   *float32    `maxminddb:"float"`
+	Int32   *int32      `maxminddb:"int32"`
+	Map     *PointerMap `maxminddb:"map"`
+	Uint16  *uint16     `maxminddb:"uint16"`
+	Uint32  *uint32     `maxminddb:"uint32"`
+
+	// Test for pointer to pointer
+	Uint64     **uint64 `maxminddb:"uint64"`
+	Uint128    *big.Int `maxminddb:"uint128"`
+	Utf8String *string  `maxminddb:"utf8_string"`
 }
 
 func (s *MySuite) TestStructWithPointer(c *C) {
@@ -206,7 +208,7 @@ func (s *MySuite) TestStructWithPointer(c *C) {
 
 	c.Assert(*result.Uint16, Equals, uint16(100))
 	c.Assert(*result.Uint32, Equals, uint32(268435456))
-	c.Assert(*result.Uint64, Equals, uint64(1152921504606846976))
+	c.Assert(**result.Uint64, Equals, uint64(1152921504606846976))
 	c.Assert(*result.Utf8String, Equals, "unicode! ☯ - ♫")
 	bigInt := new(big.Int)
 	bigInt.SetString("1329227995784915872903807060280344576", 10)
