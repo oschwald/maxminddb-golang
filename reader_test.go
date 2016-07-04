@@ -162,8 +162,19 @@ func (s *MySuite) TestDecoder(c *C) {
 	c.Assert(reader.Close(), IsNil)
 }
 
+type NestedMapX struct {
+	UTF8StringX string `maxminddb:"utf8_stringX"`
+}
+
+type NestedPointerMapX struct {
+	ArrayX []int `maxminddb:"arrayX"`
+}
+
 type PointerMap struct {
-	MapX map[string]interface{} `maxminddb:"mapX"`
+	MapX struct {
+		NestedMapX
+		*NestedPointerMapX
+	} `maxminddb:"mapX"`
 }
 
 type TestPointerType struct {
@@ -183,14 +194,13 @@ type TestPointerType struct {
 	Utf8String *string  `maxminddb:"utf8_string"`
 }
 
-func (s *MySuite) TestStructWithPointer(c *C) {
+func (s *MySuite) TestComplexStructWithNestingAndPointer(c *C) {
 	reader, err := Open("test-data/test-data/MaxMind-DB-test-decoder.mmdb")
 	c.Assert(err, IsNil)
 
 	var result TestPointerType
 
-	c.Log("Before")
-	reader.Lookup(net.ParseIP("::1.1.1.0"), &result)
+	err = reader.Lookup(net.ParseIP("::1.1.1.0"), &result)
 	c.Assert(err, IsNil)
 
 	c.Assert(*result.Array, DeepEquals, []uint{uint(1), uint(2), uint(3)})
@@ -200,11 +210,9 @@ func (s *MySuite) TestStructWithPointer(c *C) {
 	c.Assert(*result.Float, Equals, float32(1.1))
 	c.Assert(*result.Int32, Equals, int32(-268435456))
 
-	c.Assert(result.Map.MapX, DeepEquals,
-		map[string]interface{}{
-			"arrayX":       []interface{}{uint64(7), uint64(8), uint64(9)},
-			"utf8_stringX": "hello",
-		})
+	c.Assert(result.Map.MapX.ArrayX, DeepEquals, []int{7, 8, 9})
+
+	c.Assert(result.Map.MapX.UTF8StringX, Equals, "hello")
 
 	c.Assert(*result.Uint16, Equals, uint16(100))
 	c.Assert(*result.Uint32, Equals, uint32(268435456))

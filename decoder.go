@@ -250,6 +250,17 @@ func (d *decoder) unmarshalMap(size uint, offset uint, result reflect.Value) (ui
 		newOffset, err := d.decodeMap(size, offset, rv)
 		result.Set(rv)
 		return newOffset, err
+	case reflect.Ptr:
+		// XXX - This duplicate Ptr hanlding code exists because decodeMap
+		// calls unmarshalMap directly when handling embeded structs. It
+		// would be nice to clean this up.
+		for result.Kind() == reflect.Ptr {
+			if result.IsNil() {
+				result.Set(reflect.New(result.Type().Elem()))
+			}
+			result = result.Elem()
+		}
+		return d.unmarshalMap(size, offset, result)
 	}
 }
 
@@ -450,8 +461,13 @@ func (d *decoder) decodeString(size uint, offset uint) (string, uint, error) {
 	return string(d.buffer[offset:newOffset]), newOffset, nil
 }
 
+type fieldsType struct {
+	namedFields     map[string]int
+	anonymousFields []int
+}
+
 var (
-	fieldMap   = map[reflect.Type]map[string]int{}
+	fieldMap   = map[reflect.Type]*fieldsType{}
 	fieldMapMu sync.RWMutex
 )
 
@@ -463,21 +479,39 @@ func (d *decoder) decodeStruct(size uint, offset uint, result reflect.Value) (ui
 	fieldMapMu.RUnlock()
 	if !ok {
 		numFields := resultType.NumField()
-		fields = make(map[string]int, numFields)
+		namedFields := make(map[string]int, numFields)
+		var anonymous []int
 		for i := 0; i < numFields; i++ {
-			fieldType := resultType.Field(i)
+			field := resultType.Field(i)
 
-			fieldName := fieldType.Name
-			if tag := fieldType.Tag.Get("maxminddb"); tag != "" {
+			fieldName := field.Name
+			if tag := field.Tag.Get("maxminddb"); tag != "" {
+				if tag == "-" {
+					continue
+				}
 				fieldName = tag
 			}
-			fields[fieldName] = i
+			if field.Anonymous {
+				anonymous = append(anonymous, i)
+				continue
+			}
+			namedFields[fieldName] = i
 		}
 		fieldMapMu.Lock()
+		fields = &fieldsType{namedFields, anonymous}
 		fieldMap[resultType] = fields
 		fieldMapMu.Unlock()
 	}
 
+	// This fills in embedded structs
+	for i := range fields.anonymousFields {
+		_, err := d.unmarshalMap(size, offset, result.Field(i))
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	// This handles named fields
 	for i := uint(0); i < size; i++ {
 		var (
 			err error
@@ -487,12 +521,13 @@ func (d *decoder) decodeStruct(size uint, offset uint, result reflect.Value) (ui
 		if err != nil {
 			return 0, err
 		}
-		i, ok := fields[key]
+		j, ok := fields.namedFields[key]
 		if !ok {
 			offset = d.nextValueOffset(offset, 1)
 			continue
 		}
-		offset, err = d.decode(offset, result.Field(i))
+
+		offset, err = d.decode(offset, result.Field(j))
 		if err != nil {
 			return 0, err
 		}
