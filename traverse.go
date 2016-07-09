@@ -31,7 +31,7 @@ func (r *Reader) Networks() *Networks {
 	return &Networks{
 		reader: r,
 		nodes: []netNode{
-			netNode{
+			{
 				ip: make(net.IP, s),
 			},
 		},

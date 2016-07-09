@@ -252,7 +252,7 @@ func (d *decoder) unmarshalMap(size uint, offset uint, result reflect.Value) (ui
 		return newOffset, err
 	case reflect.Ptr:
 		// XXX - This duplicate Ptr hanlding code exists because decodeMap
-		// calls unmarshalMap directly when handling embeded structs. It
+		// calls unmarshalMap directly when handling embedded structs. It
 		// would be nice to clean this up.
 		for result.Kind() == reflect.Ptr {
 			if result.IsNil() {
