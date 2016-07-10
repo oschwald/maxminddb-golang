@@ -179,7 +179,41 @@ func (s *MySuite) TestStructInterface(c *C) {
 	c.Assert(reader.Lookup(net.ParseIP("::1.1.1.0"), &result), IsNil)
 
 	c.Assert(result.method(), Equals, true)
+}
 
+func (s *MySuite) TestNonEmptyNilInterface(c *C) {
+	var result TestInterface
+
+	reader, err := Open("test-data/test-data/MaxMind-DB-test-decoder.mmdb")
+	c.Assert(err, IsNil)
+
+	err = reader.Lookup(net.ParseIP("::1.1.1.0"), &result)
+	c.Assert(err.Error(), Equals, "maxminddb: cannot unmarshal map into type maxminddb.TestInterface")
+}
+
+type BoolInterface interface {
+	true() bool
+}
+
+type Bool bool
+
+func (b Bool) true() bool {
+	return bool(b)
+}
+
+type ValueTypeTestType struct {
+	Boolean BoolInterface `maxminddb:"boolean"`
+}
+
+func (s *MySuite) TesValueTypeInterface(c *C) {
+	var result ValueTypeTestType
+	result.Boolean = Bool(false)
+
+	reader, err := Open("test-data/test-data/MaxMind-DB-test-decoder.mmdb")
+	c.Assert(err, IsNil)
+	c.Assert(reader.Lookup(net.ParseIP("::1.1.1.0"), &result), IsNil)
+
+	c.Assert(result.Boolean.true(), Equals, true)
 }
 
 type NestedMapX struct {

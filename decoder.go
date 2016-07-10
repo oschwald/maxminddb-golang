@@ -127,15 +127,16 @@ func (d *decoder) unmarshalBool(size uint, offset uint, result reflect.Value) (u
 		return 0, err
 	}
 	switch result.Kind() {
-	default:
-		return newOffset, newUnmarshalTypeError(value, result.Type())
 	case reflect.Bool:
 		result.SetBool(value)
 		return newOffset, nil
 	case reflect.Interface:
-		result.Set(reflect.ValueOf(value))
-		return newOffset, nil
+		if result.NumMethod() == 0 {
+			result.Set(reflect.ValueOf(value))
+			return newOffset, nil
+		}
 	}
+	return newOffset, newUnmarshalTypeError(value, result.Type())
 }
 
 // follow pointers and create values as necessary
@@ -161,15 +162,16 @@ func (d *decoder) unmarshalBytes(size uint, offset uint, result reflect.Value) (
 		return 0, err
 	}
 	switch result.Kind() {
-	default:
-		return newOffset, newUnmarshalTypeError(value, result.Type())
 	case reflect.Slice:
 		result.SetBytes(value)
 		return newOffset, nil
 	case reflect.Interface:
-		result.Set(reflect.ValueOf(value))
-		return newOffset, nil
+		if result.NumMethod() == 0 {
+			result.Set(reflect.ValueOf(value))
+			return newOffset, nil
+		}
 	}
+	return newOffset, newUnmarshalTypeError(value, result.Type())
 }
 
 func (d *decoder) unmarshalFloat32(size uint, offset uint, result reflect.Value) (uint, error) {
@@ -182,15 +184,16 @@ func (d *decoder) unmarshalFloat32(size uint, offset uint, result reflect.Value)
 	}
 
 	switch result.Kind() {
-	default:
-		return newOffset, newUnmarshalTypeError(value, result.Type())
 	case reflect.Float32, reflect.Float64:
 		result.SetFloat(float64(value))
 		return newOffset, nil
 	case reflect.Interface:
-		result.Set(reflect.ValueOf(value))
-		return newOffset, nil
+		if result.NumMethod() == 0 {
+			result.Set(reflect.ValueOf(value))
+			return newOffset, nil
+		}
 	}
+	return newOffset, newUnmarshalTypeError(value, result.Type())
 }
 
 func (d *decoder) unmarshalFloat64(size uint, offset uint, result reflect.Value) (uint, error) {
@@ -203,8 +206,6 @@ func (d *decoder) unmarshalFloat64(size uint, offset uint, result reflect.Value)
 		return 0, err
 	}
 	switch result.Kind() {
-	default:
-		return newOffset, newUnmarshalTypeError(value, result.Type())
 	case reflect.Float32, reflect.Float64:
 		if result.OverflowFloat(value) {
 			return 0, newUnmarshalTypeError(value, result.Type())
@@ -212,9 +213,12 @@ func (d *decoder) unmarshalFloat64(size uint, offset uint, result reflect.Value)
 		result.SetFloat(value)
 		return newOffset, nil
 	case reflect.Interface:
-		result.Set(reflect.ValueOf(value))
-		return newOffset, nil
+		if result.NumMethod() == 0 {
+			result.Set(reflect.ValueOf(value))
+			return newOffset, nil
+		}
 	}
+	return newOffset, newUnmarshalTypeError(value, result.Type())
 }
 
 func (d *decoder) unmarshalInt32(size uint, offset uint, result reflect.Value) (uint, error) {
@@ -227,26 +231,25 @@ func (d *decoder) unmarshalInt32(size uint, offset uint, result reflect.Value) (
 	}
 
 	switch result.Kind() {
-	default:
-		return newOffset, newUnmarshalTypeError(value, result.Type())
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		n := int64(value)
-		if result.OverflowInt(n) {
-			return 0, newUnmarshalTypeError(value, result.Type())
+		if !result.OverflowInt(n) {
+			result.SetInt(n)
+			return newOffset, nil
 		}
-		result.SetInt(n)
-		return newOffset, nil
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
 		n := uint64(value)
-		if result.OverflowUint(n) {
-			return 0, newUnmarshalTypeError(value, result.Type())
+		if !result.OverflowUint(n) {
+			result.SetUint(n)
+			return newOffset, nil
 		}
-		result.SetUint(n)
-		return newOffset, nil
 	case reflect.Interface:
-		result.Set(reflect.ValueOf(value))
-		return newOffset, nil
+		if result.NumMethod() == 0 {
+			result.Set(reflect.ValueOf(value))
+			return newOffset, nil
+		}
 	}
+	return newOffset, newUnmarshalTypeError(value, result.Type())
 }
 
 func (d *decoder) unmarshalMap(size uint, offset uint, result reflect.Value) (uint, error) {
@@ -259,10 +262,13 @@ func (d *decoder) unmarshalMap(size uint, offset uint, result reflect.Value) (ui
 	case reflect.Map:
 		return d.decodeMap(size, offset, result)
 	case reflect.Interface:
-		rv := reflect.ValueOf(make(map[string]interface{}, size))
-		newOffset, err := d.decodeMap(size, offset, rv)
-		result.Set(rv)
-		return newOffset, err
+		if result.NumMethod() == 0 {
+			rv := reflect.ValueOf(make(map[string]interface{}, size))
+			newOffset, err := d.decodeMap(size, offset, rv)
+			result.Set(rv)
+			return newOffset, err
+		}
+		return 0, newUnmarshalTypeError("map", result.Type())
 	}
 }
 
@@ -273,19 +279,19 @@ func (d *decoder) unmarshalPointer(size uint, offset uint, result reflect.Value)
 }
 
 func (d *decoder) unmarshalSlice(size uint, offset uint, result reflect.Value) (uint, error) {
-
 	switch result.Kind() {
-	default:
-		return 0, newUnmarshalTypeError("array", result.Type())
 	case reflect.Slice:
 		return d.decodeSlice(size, offset, result)
 	case reflect.Interface:
-		a := []interface{}{}
-		rv := reflect.ValueOf(&a).Elem()
-		newOffset, err := d.decodeSlice(size, offset, rv)
-		result.Set(rv)
-		return newOffset, err
+		if result.NumMethod() == 0 {
+			a := []interface{}{}
+			rv := reflect.ValueOf(&a).Elem()
+			newOffset, err := d.decodeSlice(size, offset, rv)
+			result.Set(rv)
+			return newOffset, err
+		}
 	}
+	return 0, newUnmarshalTypeError("array", result.Type())
 }
 
 func (d *decoder) unmarshalString(size uint, offset uint, result reflect.Value) (uint, error) {
@@ -295,15 +301,17 @@ func (d *decoder) unmarshalString(size uint, offset uint, result reflect.Value) 
 		return 0, err
 	}
 	switch result.Kind() {
-	default:
-		return newOffset, newUnmarshalTypeError(value, result.Type())
 	case reflect.String:
 		result.SetString(value)
 		return newOffset, nil
 	case reflect.Interface:
-		result.Set(reflect.ValueOf(value))
-		return newOffset, nil
+		if result.NumMethod() == 0 {
+			result.Set(reflect.ValueOf(value))
+			return newOffset, nil
+		}
 	}
+	return newOffset, newUnmarshalTypeError(value, result.Type())
+
 }
 
 func (d *decoder) unmarshalUint(size uint, offset uint, result reflect.Value, uintType uint) (uint, error) {
@@ -317,25 +325,24 @@ func (d *decoder) unmarshalUint(size uint, offset uint, result reflect.Value, ui
 	}
 
 	switch result.Kind() {
-	default:
-		return newOffset, newUnmarshalTypeError(value, result.Type())
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		n := int64(value)
-		if result.OverflowInt(n) {
-			return 0, newUnmarshalTypeError(value, result.Type())
+		if !result.OverflowInt(n) {
+			result.SetInt(n)
+			return newOffset, nil
 		}
-		result.SetInt(n)
-		return newOffset, nil
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
-		if result.OverflowUint(value) {
-			return 0, newUnmarshalTypeError(value, result.Type())
+		if !result.OverflowUint(value) {
+			result.SetUint(value)
+			return newOffset, nil
 		}
-		result.SetUint(value)
-		return newOffset, nil
 	case reflect.Interface:
-		result.Set(reflect.ValueOf(value))
-		return newOffset, nil
+		if result.NumMethod() == 0 {
+			result.Set(reflect.ValueOf(value))
+			return newOffset, nil
+		}
 	}
+	return newOffset, newUnmarshalTypeError(value, result.Type())
 }
 
 func (d *decoder) unmarshalUint128(size uint, offset uint, result reflect.Value) (uint, error) {
@@ -347,18 +354,17 @@ func (d *decoder) unmarshalUint128(size uint, offset uint, result reflect.Value)
 		return 0, err
 	}
 
-	// XXX - this should allow *big.Int rather than just bigInt
-	// Currently this is reported as invalid
 	switch result.Kind() {
-	default:
-		return newOffset, newUnmarshalTypeError(value, result.Type())
 	case reflect.Struct:
 		result.Set(reflect.ValueOf(*value))
 		return newOffset, nil
-	case reflect.Interface, reflect.Ptr:
-		result.Set(reflect.ValueOf(value))
-		return newOffset, nil
+	case reflect.Interface:
+		if result.NumMethod() == 0 {
+			result.Set(reflect.ValueOf(value))
+			return newOffset, nil
+		}
 	}
+	return newOffset, newUnmarshalTypeError(value, result.Type())
 }
 
 func (d *decoder) decodeBool(size uint, offset uint) (bool, uint, error) {
