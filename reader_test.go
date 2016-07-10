@@ -162,6 +162,26 @@ func (s *MySuite) TestDecoder(c *C) {
 	c.Assert(reader.Close(), IsNil)
 }
 
+type TestInterface interface {
+	method() bool
+}
+
+func (t *TestType) method() bool {
+	return t.Boolean
+}
+
+func (s *MySuite) TestStructInterface(c *C) {
+	var result TestInterface = &TestType{}
+
+	reader, err := Open("test-data/test-data/MaxMind-DB-test-decoder.mmdb")
+	c.Assert(err, IsNil)
+
+	c.Assert(reader.Lookup(net.ParseIP("::1.1.1.0"), &result), IsNil)
+
+	c.Assert(result.method(), Equals, true)
+
+}
+
 type NestedMapX struct {
 	UTF8StringX string `maxminddb:"utf8_stringX"`
 }

@@ -84,12 +84,7 @@ func (d *decoder) sizeFromCtrlByte(ctrlByte byte, offset uint, typeNum dataType)
 }
 
 func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint, result reflect.Value) (uint, error) {
-	for result.Kind() == reflect.Ptr {
-		if result.IsNil() {
-			result.Set(reflect.New(result.Type().Elem()))
-		}
-		result = result.Elem()
-	}
+	result = d.indirect(result)
 
 	switch dtype {
 	case _Bool:
@@ -141,6 +136,23 @@ func (d *decoder) unmarshalBool(size uint, offset uint, result reflect.Value) (u
 		result.Set(reflect.ValueOf(value))
 		return newOffset, nil
 	}
+}
+
+// follow pointers and create values as necessary
+func (d *decoder) indirect(result reflect.Value) reflect.Value {
+	for {
+		if result.Kind() == reflect.Ptr {
+			if result.IsNil() {
+				result.Set(reflect.New(result.Type().Elem()))
+			}
+			result = result.Elem()
+		} else if result.Kind() == reflect.Interface && !result.IsNil() {
+			result = result.Elem()
+		} else {
+			break
+		}
+	}
+	return result
 }
 
 func (d *decoder) unmarshalBytes(size uint, offset uint, result reflect.Value) (uint, error) {
@@ -238,6 +250,7 @@ func (d *decoder) unmarshalInt32(size uint, offset uint, result reflect.Value) (
 }
 
 func (d *decoder) unmarshalMap(size uint, offset uint, result reflect.Value) (uint, error) {
+	result = d.indirect(result)
 	switch result.Kind() {
 	default:
 		return 0, newUnmarshalTypeError("map", result.Type())
@@ -250,17 +263,6 @@ func (d *decoder) unmarshalMap(size uint, offset uint, result reflect.Value) (ui
 		newOffset, err := d.decodeMap(size, offset, rv)
 		result.Set(rv)
 		return newOffset, err
-	case reflect.Ptr:
-		// XXX - This duplicate Ptr hanlding code exists because decodeMap
-		// calls unmarshalMap directly when handling embedded structs. It
-		// would be nice to clean this up.
-		for result.Kind() == reflect.Ptr {
-			if result.IsNil() {
-				result.Set(reflect.New(result.Type().Elem()))
-			}
-			result = result.Elem()
-		}
-		return d.unmarshalMap(size, offset, result)
 	}
 }
 
