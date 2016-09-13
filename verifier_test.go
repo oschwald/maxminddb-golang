@@ -1,8 +1,12 @@
 package maxminddb
 
-import "testing"
+import . "gopkg.in/check.v1"
 
-func TestVerifyOnGoodDatabases(t *testing.T) {
+type VerifierSuite struct{}
+
+var _ = Suite(&VerifierSuite{})
+
+func (s *VerifierSuite) TestVerifyOnGoodDatabases(c *C) {
 	databases := []string{
 		"test-data/test-data/GeoIP2-Anonymous-IP-Test.mmdb",
 		"test-data/test-data/GeoIP2-City-Test.mmdb",
@@ -28,16 +32,13 @@ func TestVerifyOnGoodDatabases(t *testing.T) {
 
 	for _, database := range databases {
 		reader, err := Open(database)
-		if err != nil {
-			t.Error(err)
-		}
-		if err = reader.Verify(); err != nil {
-			t.Errorf("Received error (%v) when verifying %v", err, database)
-		}
+		c.Assert(err, IsNil)
+		err = reader.Verify()
+		c.Assert(err, IsNil)
 	}
 }
 
-func TestVerifyOnBrokenDatabases(t *testing.T) {
+func (s *VerifierSuite) TestVerifyOnBrokenDatabases(c *C) {
 	databases := []string{
 		"test-data/test-data/GeoIP2-City-Test-Broken-Double-Format.mmdb",
 		"test-data/test-data/MaxMind-DB-test-broken-pointers-24.mmdb",
@@ -46,15 +47,8 @@ func TestVerifyOnBrokenDatabases(t *testing.T) {
 
 	for _, database := range databases {
 		reader, err := Open(database)
-		if err != nil {
-			t.Error(err)
-		}
+		c.Assert(err, IsNil)
 		err = reader.Verify()
-		if err == nil {
-			t.Errorf(
-				"Did not receive expected error when verifying %v",
-				database,
-			)
-		}
+		c.Assert(err, NotNil)
 	}
 }

@@ -2,17 +2,21 @@ package maxminddb
 
 import (
 	"fmt"
-	"testing"
+
+	. "gopkg.in/check.v1"
 )
 
-func TestNetworks(t *testing.T) {
+type TraverseSuite struct{}
+
+var _ = Suite(&TraverseSuite{})
+
+func (s *TraverseSuite) TestNetworks(c *C) {
 	for _, recordSize := range []uint{24, 28, 32} {
 		for _, ipVersion := range []uint{4, 6} {
 			fileName := fmt.Sprintf("test-data/test-data/MaxMind-DB-test-ipv%d-%d.mmdb", ipVersion, recordSize)
 			reader, err := Open(fileName)
-			if err != nil {
-				t.Fatalf("unexpected error while opening database: %v", err)
-			}
+			c.Assert(err, IsNil)
+
 			defer reader.Close()
 
 			n := reader.Networks()
@@ -21,39 +25,26 @@ func TestNetworks(t *testing.T) {
 					IP string `maxminddb:"ip"`
 				}{}
 				network, err := n.Network(&record)
-				if err != nil {
-					t.Fatal(err)
-				}
-
-				if record.IP != network.IP.String() {
-					t.Fatalf("expected %s got %s", record.IP, network.IP.String())
-				}
+				c.Assert(err, IsNil)
+				c.Check(record.IP, Equals, network.IP.String())
 			}
-			if n.Err() != nil {
-				t.Fatal(n.Err())
-			}
+			c.Assert(n.Err(), IsNil)
 		}
 	}
 }
 
-func TestNetworksWithInvalidSearchTree(t *testing.T) {
+func (s *TraverseSuite) TestNetworksWithInvalidSearchTree(c *C) {
 	reader, err := Open("test-data/test-data/MaxMind-DB-test-broken-search-tree-24.mmdb")
-	if err != nil {
-		t.Fatalf("unexpected error while opening database: %v", err)
-	}
+	c.Assert(err, IsNil)
 	defer reader.Close()
 
 	n := reader.Networks()
 	for n.Next() {
 		var record interface{}
 		_, err := n.Network(&record)
-		if err != nil {
-			t.Fatal(err)
-		}
+		c.Assert(err, IsNil)
 	}
-	if n.Err() == nil {
-		t.Fatal("no error received when traversing an broken search tree")
-	} else if n.Err().Error() != "invalid search tree at 128.128.128.128/32" {
-		t.Error(n.Err())
-	}
+
+	c.Assert(n.Err(), NotNil)
+	c.Check(n.Err().Error(), Equals, "invalid search tree at 128.128.128.128/32")
 }

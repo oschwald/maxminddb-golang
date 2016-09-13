@@ -6,19 +6,24 @@ import (
 	"math/big"
 	"reflect"
 	"strings"
-	"testing"
+
+	. "gopkg.in/check.v1"
 )
 
-func TestBool(t *testing.T) {
+type DecoderSuite struct{}
+
+var _ = Suite(&DecoderSuite{})
+
+func (s *DecoderSuite) TestBool(c *C) {
 	bools := map[string]interface{}{
 		"0007": false,
 		"0107": true,
 	}
 
-	validateDecoding(t, bools)
+	validateDecoding(c, bools)
 }
 
-func TestDouble(t *testing.T) {
+func (s *DecoderSuite) TestDouble(c *C) {
 	doubles := map[string]interface{}{
 		"680000000000000000": 0.0,
 		"683FE0000000000000": 0.5,
@@ -29,10 +34,10 @@ func TestDouble(t *testing.T) {
 		"68C00921FB54442EEA": -3.14159265359,
 		"68C1D000000007F8F4": -1073741824.12457,
 	}
-	validateDecoding(t, doubles)
+	validateDecoding(c, doubles)
 }
 
-func TestFloat(t *testing.T) {
+func (s *DecoderSuite) TestFloat(c *C) {
 	floats := map[string]interface{}{
 		"040800000000": float32(0.0),
 		"04083F800000": float32(1.0),
@@ -44,10 +49,10 @@ func TestFloat(t *testing.T) {
 		"0408C048F5C3": -float32(3.14),
 		"0408C61C3FF6": float32(-9999.99),
 	}
-	validateDecoding(t, floats)
+	validateDecoding(c, floats)
 }
 
-func TestInt32(t *testing.T) {
+func (s *DecoderSuite) TestInt32(c *C) {
 	int32 := map[string]interface{}{
 		"0001":         0,
 		"0401ffffffff": -1,
@@ -62,10 +67,10 @@ func TestInt32(t *testing.T) {
 		"04017fffffff": 2147483647,
 		"040180000001": -2147483647,
 	}
-	validateDecoding(t, int32)
+	validateDecoding(c, int32)
 }
 
-func TestMap(t *testing.T) {
+func (s *DecoderSuite) TestMap(c *C) {
 	maps := map[string]interface{}{
 		"e0":                                         map[string]interface{}{},
 		"e142656e43466f6f":                           map[string]interface{}{"en": "Foo"},
@@ -73,16 +78,16 @@ func TestMap(t *testing.T) {
 		"e1446e616d65e242656e43466f6f427a6843e4baba": map[string]interface{}{"name": map[string]interface{}{"en": "Foo", "zh": "人"}},
 		"e1496c616e677561676573020442656e427a68":     map[string]interface{}{"languages": []interface{}{"en", "zh"}},
 	}
-	validateDecoding(t, maps)
+	validateDecoding(c, maps)
 }
 
-func TestSlice(t *testing.T) {
+func (s *DecoderSuite) TestSlice(c *C) {
 	slice := map[string]interface{}{
 		"0004":                 []interface{}{},
 		"010443466f6f":         []interface{}{"Foo"},
 		"020443466f6f43e4baba": []interface{}{"Foo", "人"},
 	}
-	validateDecoding(t, slice)
+	validateDecoding(c, slice)
 }
 
 var testStrings = makeTestStrings()
@@ -106,11 +111,11 @@ func makeTestStrings() map[string]interface{} {
 	return str
 }
 
-func TestString(t *testing.T) {
-	validateDecoding(t, testStrings)
+func (s *DecoderSuite) TestString(c *C) {
+	validateDecoding(c, testStrings)
 }
 
-func TestByte(t *testing.T) {
+func (s *DecoderSuite) TestByte(c *C) {
 	b := make(map[string]interface{})
 	for key, val := range testStrings {
 		oldCtrl, _ := hex.DecodeString(key[0:2])
@@ -119,10 +124,10 @@ func TestByte(t *testing.T) {
 		b[key] = []byte(val.(string))
 	}
 
-	validateDecoding(t, b)
+	validateDecoding(c, b)
 }
 
-func TestUint16(t *testing.T) {
+func (s *DecoderSuite) TestUint16(c *C) {
 	uint16 := map[string]interface{}{
 		"a0":     uint64(0),
 		"a1ff":   uint64(255),
@@ -130,10 +135,10 @@ func TestUint16(t *testing.T) {
 		"a22a78": uint64(10872),
 		"a2ffff": uint64(65535),
 	}
-	validateDecoding(t, uint16)
+	validateDecoding(c, uint16)
 }
 
-func TestUint32(t *testing.T) {
+func (s *DecoderSuite) TestUint32(c *C) {
 	uint32 := map[string]interface{}{
 		"c0":         uint64(0),
 		"c1ff":       uint64(255),
@@ -143,10 +148,10 @@ func TestUint32(t *testing.T) {
 		"c3ffffff":   uint64(16777215),
 		"c4ffffffff": uint64(4294967295),
 	}
-	validateDecoding(t, uint32)
+	validateDecoding(c, uint32)
 }
 
-func TestUint64(t *testing.T) {
+func (s *DecoderSuite) TestUint64(c *C) {
 	ctrlByte := "02"
 	bits := uint64(64)
 
@@ -162,11 +167,11 @@ func TestUint64(t *testing.T) {
 		uints[input] = expected
 	}
 
-	validateDecoding(t, uints)
+	validateDecoding(c, uints)
 }
 
 // Dedup with above somehow
-func TestUint128(t *testing.T) {
+func (s *DecoderSuite) TestUint128(c *C) {
 	ctrlByte := "03"
 	bits := uint(128)
 
@@ -183,7 +188,7 @@ func TestUint128(t *testing.T) {
 		uints[input] = expected
 	}
 
-	validateDecoding(t, uints)
+	validateDecoding(c, uints)
 }
 
 // No pow or bit shifting for big int, apparently :-(
@@ -196,28 +201,25 @@ func powBigInt(bi *big.Int, pow uint) *big.Int {
 	return newInt
 }
 
-func validateDecoding(t *testing.T, tests map[string]interface{}) {
+func validateDecoding(c *C, tests map[string]interface{}) {
 	for inputStr, expected := range tests {
 		inputBytes, _ := hex.DecodeString(inputStr)
 		d := decoder{inputBytes}
 
 		var result interface{}
 		_, err := d.decode(0, reflect.ValueOf(&result))
-		if err != nil {
-			t.Error(err)
-		}
+		c.Assert(err, IsNil)
 		if !reflect.DeepEqual(result, expected) {
 			// A big case statement would produce nicer errors
-			t.Errorf("Output was incorrect: %s  %s", inputStr, expected)
+			c.Errorf("Output was incorrect: %s  %s", inputStr, expected)
 		}
 	}
 }
 
-func TestPointers(t *testing.T) {
+func (s *DecoderSuite) TestPointers(c *C) {
 	bytes, err := ioutil.ReadFile("test-data/test-data/maps-with-pointers.raw")
-	if err != nil {
-		t.Error(err)
-	}
+	c.Assert(err, IsNil)
+
 	d := decoder{bytes}
 
 	expected := map[uint]map[string]string{
@@ -232,11 +234,9 @@ func TestPointers(t *testing.T) {
 	for offset, expectedValue := range expected {
 		var actual map[string]string
 		_, err := d.decode(offset, reflect.ValueOf(&actual))
-		if err != nil {
-			t.Error(err)
-		}
+		c.Assert(err, IsNil)
 		if !reflect.DeepEqual(actual, expectedValue) {
-			t.Errorf("Decode for pointer at %d failed", offset)
+			c.Errorf("Decode for pointer at %d failed", offset)
 		}
 	}
 
