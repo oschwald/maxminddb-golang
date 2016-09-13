@@ -13,13 +13,13 @@ import (
 	. "gopkg.in/check.v1"
 )
 
-func TestMaxMindDbReader(t *testing.T) { TestingT(t) }
+func TestMaxMindDb(t *testing.T) { TestingT(t) }
 
-type MySuite struct{}
+type ReaderSuite struct{}
 
-var _ = Suite(&MySuite{})
+var _ = Suite(&ReaderSuite{})
 
-func (s *MySuite) TestReader(c *C) {
+func (s *ReaderSuite) TestReader(c *C) {
 	for _, recordSize := range []uint{24, 28, 32} {
 		for _, ipVersion := range []uint{4, 6} {
 			fileName := fmt.Sprintf("test-data/test-data/MaxMind-DB-test-ipv%d-%d.mmdb", ipVersion, recordSize)
@@ -40,7 +40,7 @@ func (s *MySuite) TestReader(c *C) {
 	}
 }
 
-func (s *MySuite) TestReaderBytes(c *C) {
+func (s *ReaderSuite) TestReaderBytes(c *C) {
 	for _, recordSize := range []uint{24, 28, 32} {
 		for _, ipVersion := range []uint{4, 6} {
 			fileName := fmt.Sprintf("test-data/test-data/MaxMind-DB-test-ipv%d-%d.mmdb", ipVersion, recordSize)
@@ -62,7 +62,7 @@ func (s *MySuite) TestReaderBytes(c *C) {
 	}
 }
 
-func (s *MySuite) TestDecodingToInterface(c *C) {
+func (s *ReaderSuite) TestDecodingToInterface(c *C) {
 	reader, err := Open("test-data/test-data/MaxMind-DB-test-decoder.mmdb")
 	if err != nil {
 		c.Logf("unexpected error while opening database: %v", err)
@@ -114,7 +114,7 @@ type TestType struct {
 	Utf8String string                 `maxminddb:"utf8_string"`
 }
 
-func (s *MySuite) TestDecoder(c *C) {
+func (s *ReaderSuite) TestDecoder(c *C) {
 	reader, err := Open("test-data/test-data/MaxMind-DB-test-decoder.mmdb")
 	c.Assert(err, IsNil)
 
@@ -170,7 +170,7 @@ func (t *TestType) method() bool {
 	return t.Boolean
 }
 
-func (s *MySuite) TestStructInterface(c *C) {
+func (s *ReaderSuite) TestStructInterface(c *C) {
 	var result TestInterface = &TestType{}
 
 	reader, err := Open("test-data/test-data/MaxMind-DB-test-decoder.mmdb")
@@ -181,7 +181,7 @@ func (s *MySuite) TestStructInterface(c *C) {
 	c.Assert(result.method(), Equals, true)
 }
 
-func (s *MySuite) TestNonEmptyNilInterface(c *C) {
+func (s *ReaderSuite) TestNonEmptyNilInterface(c *C) {
 	var result TestInterface
 
 	reader, err := Open("test-data/test-data/MaxMind-DB-test-decoder.mmdb")
@@ -205,7 +205,7 @@ type ValueTypeTestType struct {
 	Boolean BoolInterface `maxminddb:"boolean"`
 }
 
-func (s *MySuite) TesValueTypeInterface(c *C) {
+func (s *ReaderSuite) TesValueTypeInterface(c *C) {
 	var result ValueTypeTestType
 	result.Boolean = Bool(false)
 
@@ -248,7 +248,7 @@ type TestPointerType struct {
 	Utf8String *string  `maxminddb:"utf8_string"`
 }
 
-func (s *MySuite) TestComplexStructWithNestingAndPointer(c *C) {
+func (s *ReaderSuite) TestComplexStructWithNestingAndPointer(c *C) {
 	reader, err := Open("test-data/test-data/MaxMind-DB-test-decoder.mmdb")
 	c.Assert(err, IsNil)
 
@@ -279,7 +279,7 @@ func (s *MySuite) TestComplexStructWithNestingAndPointer(c *C) {
 	c.Assert(reader.Close(), IsNil)
 }
 
-func (s *MySuite) TestNestedOffsetDecode(c *C) {
+func (s *ReaderSuite) TestNestedOffsetDecode(c *C) {
 	db, err := Open("test-data/test-data/GeoIP2-City-Test.mmdb")
 	c.Assert(err, IsNil)
 
@@ -318,7 +318,7 @@ func (s *MySuite) TestNestedOffsetDecode(c *C) {
 	c.Check(db.Close(), IsNil)
 }
 
-func (s *MySuite) TestDecodingUint16IntoInt(c *C) {
+func (s *ReaderSuite) TestDecodingUint16IntoInt(c *C) {
 	reader, err := Open("test-data/test-data/MaxMind-DB-test-decoder.mmdb")
 	if err != nil {
 		c.Logf("unexpected error while opening database: %v", err)
@@ -337,7 +337,7 @@ func (s *MySuite) TestDecodingUint16IntoInt(c *C) {
 	c.Assert(result.Uint16, Equals, 100)
 }
 
-func (s *MySuite) TestIpv6inIpv4(c *C) {
+func (s *ReaderSuite) TestIpv6inIpv4(c *C) {
 	reader, err := Open("test-data/test-data/MaxMind-DB-test-ipv4-24.mmdb")
 	if err != nil {
 		c.Logf("unexpected error while opening database: %v", err)
@@ -357,7 +357,7 @@ func (s *MySuite) TestIpv6inIpv4(c *C) {
 	}
 }
 
-func (s *MySuite) TestBrokenDoubleDatabase(c *C) {
+func (s *ReaderSuite) TestBrokenDoubleDatabase(c *C) {
 	reader, err := Open("test-data/test-data/GeoIP2-City-Test-Broken-Double-Format.mmdb")
 	if err != nil {
 		c.Logf("unexpected error while opening database: %v", err)
@@ -374,14 +374,14 @@ func (s *MySuite) TestBrokenDoubleDatabase(c *C) {
 	}
 }
 
-func (s *MySuite) TestInvalidNodeCountDatabase(c *C) {
+func (s *ReaderSuite) TestInvalidNodeCountDatabase(c *C) {
 	_, err := Open("test-data/test-data/GeoIP2-City-Test-Invalid-Node-Count.mmdb")
 
 	expected := newInvalidDatabaseError("the MaxMind DB contains invalid metadata")
 	c.Assert(err, DeepEquals, expected)
 }
 
-func (s *MySuite) TestMissingDatabase(c *C) {
+func (s *ReaderSuite) TestMissingDatabase(c *C) {
 	reader, err := Open("file-does-not-exist.mmdb")
 	if reader != nil {
 		c.Log("received reader when doing lookups on DB that doesn't exist")
@@ -390,7 +390,7 @@ func (s *MySuite) TestMissingDatabase(c *C) {
 	c.Assert(err, ErrorMatches, "open file-does-not-exist.mmdb.*")
 }
 
-func (s *MySuite) TestNonDatabase(c *C) {
+func (s *ReaderSuite) TestNonDatabase(c *C) {
 	reader, err := Open("README.md")
 	if reader != nil {
 		c.Log("received reader when doing lookups on DB that doesn't exist")
@@ -399,7 +399,7 @@ func (s *MySuite) TestNonDatabase(c *C) {
 	c.Assert(err.Error(), Equals, "error opening database: invalid MaxMind DB file")
 }
 
-func (s *MySuite) TestDecodingToNonPointer(c *C) {
+func (s *ReaderSuite) TestDecodingToNonPointer(c *C) {
 	reader, _ := Open("test-data/test-data/MaxMind-DB-test-decoder.mmdb")
 
 	var recordInterface interface{}
@@ -410,7 +410,7 @@ func (s *MySuite) TestDecodingToNonPointer(c *C) {
 	}
 }
 
-func (s *MySuite) TestNilLookup(c *C) {
+func (s *ReaderSuite) TestNilLookup(c *C) {
 	reader, _ := Open("test-data/test-data/MaxMind-DB-test-decoder.mmdb")
 
 	var recordInterface interface{}
