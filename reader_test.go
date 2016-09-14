@@ -484,7 +484,7 @@ func checkIpv6(t *testing.T, reader *Reader) {
 }
 
 func BenchmarkMaxMindDB(b *testing.B) {
-	db, err := Open("GeoLite2-City.mmdb")
+	db, err := Open("test-data/test-data/GeoIP2-City-Test.mmdb")
 	assert.Nil(b, err)
 
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -499,7 +499,7 @@ func BenchmarkMaxMindDB(b *testing.B) {
 }
 
 func BenchmarkCountryCode(b *testing.B) {
-	db, err := Open("GeoLite2-City.mmdb")
+	db, err := Open("test-data/test-data/GeoIP2-City-Test.mmdb")
 	assert.Nil(b, err)
 
 	type MinCountry struct {
