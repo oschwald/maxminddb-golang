@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNetworks(t *testing.T) {
@@ -12,7 +13,7 @@ func TestNetworks(t *testing.T) {
 		for _, ipVersion := range []uint{4, 6} {
 			fileName := fmt.Sprintf("test-data/test-data/MaxMind-DB-test-ipv%d-%d.mmdb", ipVersion, recordSize)
 			reader, err := Open(fileName)
-			assert.Nil(t, err, "unexpected error while opening database: %v", err)
+			require.Nil(t, err, "unexpected error while opening database: %v", err)
 			defer reader.Close()
 
 			n := reader.Networks()
@@ -33,7 +34,7 @@ func TestNetworks(t *testing.T) {
 
 func TestNetworksWithInvalidSearchTree(t *testing.T) {
 	reader, err := Open("test-data/test-data/MaxMind-DB-test-broken-search-tree-24.mmdb")
-	assert.Nil(t, err, "unexpected error while opening database: %v", err)
+	require.Nil(t, err, "unexpected error while opening database: %v", err)
 	defer reader.Close()
 
 	n := reader.Networks()
