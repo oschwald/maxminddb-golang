@@ -139,19 +139,30 @@ func (d *decoder) unmarshalBool(size uint, offset uint, result reflect.Value) (u
 	return newOffset, newUnmarshalTypeError(value, result.Type())
 }
 
-// follow pointers and create values as necessary
+// indirect follows pointers and create values as necessary. This is
+// heavily based on encoding/json as my original version had a subtle
+// bug. This method should be considered to be licensed under
+// https://golang.org/LICENSE
 func (d *decoder) indirect(result reflect.Value) reflect.Value {
 	for {
-		if result.Kind() == reflect.Ptr {
-			if result.IsNil() {
-				result.Set(reflect.New(result.Type().Elem()))
+		// Load value from interface, but only if the result will be
+		// usefully addressable.
+		if result.Kind() == reflect.Interface && !result.IsNil() {
+			e := result.Elem()
+			if e.Kind() == reflect.Ptr && !e.IsNil() {
+				result = e
+				continue
 			}
-			result = result.Elem()
-		} else if result.Kind() == reflect.Interface && !result.IsNil() {
-			result = result.Elem()
-		} else {
+		}
+
+		if result.Kind() != reflect.Ptr {
 			break
 		}
+
+		if result.IsNil() {
+			result.Set(reflect.New(result.Type().Elem()))
+		}
+		result = result.Elem()
 	}
 	return result
 }

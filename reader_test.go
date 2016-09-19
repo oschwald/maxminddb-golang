@@ -173,6 +173,24 @@ func TestNonEmptyNilInterface(t *testing.T) {
 	assert.Equal(t, err.Error(), "maxminddb: cannot unmarshal map into type maxminddb.TestInterface")
 }
 
+type CityTraits struct {
+	AutonomousSystemNumber uint `json:"autonomous_system_number,omitempty" maxminddb:"autonomous_system_number"`
+}
+
+type City struct {
+	Traits CityTraits `maxminddb:"traits"`
+}
+
+func TestEmbeddedStructAsInterface(t *testing.T) {
+	var city City
+	var result interface{} = city.Traits
+
+	db, err := Open("test-data/test-data/GeoIP2-ISP-Test.mmdb")
+	require.Nil(t, err)
+
+	assert.Nil(t, db.Lookup(net.ParseIP("1.128.0.0"), &result))
+}
+
 type BoolInterface interface {
 	true() bool
 }
