@@ -34,34 +34,43 @@ const (
 )
 
 func (d *decoder) decode(offset uint, result reflect.Value) (uint, error) {
-	typeNum, size, newOffset := d.decodeCtrlData(offset)
+	typeNum, size, newOffset, err := d.decodeCtrlData(offset)
+	if err != nil {
+		return 0, err
+	}
 
 	if typeNum != _Pointer && result.Kind() == reflect.Uintptr {
 		result.Set(reflect.ValueOf(uintptr(offset)))
-		return d.nextValueOffset(offset, 1), nil
+		return d.nextValueOffset(offset, 1)
 	}
 	return d.decodeFromType(typeNum, size, newOffset, result)
 }
 
-func (d *decoder) decodeCtrlData(offset uint) (dataType, uint, uint) {
+func (d *decoder) decodeCtrlData(offset uint) (dataType, uint, uint, error) {
 	newOffset := offset + 1
+	if offset >= uint(len(d.buffer)) {
+		return 0, 0, 0, newOffsetError()
+	}
 	ctrlByte := d.buffer[offset]
 
 	typeNum := dataType(ctrlByte >> 5)
 	if typeNum == _Extended {
+		if newOffset >= uint(len(d.buffer)) {
+			return 0, 0, 0, newOffsetError()
+		}
 		typeNum = dataType(d.buffer[newOffset] + 7)
 		newOffset++
 	}
 
 	var size uint
-	size, newOffset = d.sizeFromCtrlByte(ctrlByte, newOffset, typeNum)
-	return typeNum, size, newOffset
+	size, newOffset, err := d.sizeFromCtrlByte(ctrlByte, newOffset, typeNum)
+	return typeNum, size, newOffset, err
 }
 
-func (d *decoder) sizeFromCtrlByte(ctrlByte byte, offset uint, typeNum dataType) (uint, uint) {
+func (d *decoder) sizeFromCtrlByte(ctrlByte byte, offset uint, typeNum dataType) (uint, uint, error) {
 	size := uint(ctrlByte & 0x1f)
 	if typeNum == _Extended {
-		return size, offset
+		return size, offset, nil
 	}
 
 	var bytesToRead uint
@@ -70,6 +79,9 @@ func (d *decoder) sizeFromCtrlByte(ctrlByte byte, offset uint, typeNum dataType)
 	}
 
 	newOffset := offset + bytesToRead
+	if newOffset > uint(len(d.buffer)) {
+		return 0, 0, newOffsetError()
+	}
 	sizeBytes := d.buffer[offset:newOffset]
 
 	switch {
@@ -80,15 +92,29 @@ func (d *decoder) sizeFromCtrlByte(ctrlByte byte, offset uint, typeNum dataType)
 	case size > 30:
 		size = uint(uintFromBytes(0, sizeBytes)) + 65821
 	}
-	return size, newOffset
+	return size, newOffset, nil
 }
 
 func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint, result reflect.Value) (uint, error) {
 	result = d.indirect(result)
 
+	// For these types, size has a special meaning
 	switch dtype {
 	case _Bool:
 		return d.unmarshalBool(size, offset, result)
+	case _Map:
+		return d.unmarshalMap(size, offset, result)
+	case _Pointer:
+		return d.unmarshalPointer(size, offset, result)
+	case _Slice:
+		return d.unmarshalSlice(size, offset, result)
+	}
+
+	// For the remaining types, size is the byte size
+	if offset+size > uint(len(d.buffer)) {
+		return 0, newOffsetError()
+	}
+	switch dtype {
 	case _Bytes:
 		return d.unmarshalBytes(size, offset, result)
 	case _Float32:
@@ -97,12 +123,6 @@ func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint, result 
 		return d.unmarshalFloat64(size, offset, result)
 	case _Int32:
 		return d.unmarshalInt32(size, offset, result)
-	case _Map:
-		return d.unmarshalMap(size, offset, result)
-	case _Pointer:
-		return d.unmarshalPointer(size, offset, result)
-	case _Slice:
-		return d.unmarshalSlice(size, offset, result)
 	case _String:
 		return d.unmarshalString(size, offset, result)
 	case _Uint16:
@@ -544,7 +564,10 @@ func (d *decoder) decodeStruct(size uint, offset uint, result reflect.Value) (ui
 		// optimization: https://github.com/golang/go/issues/3512
 		j, ok := fields.namedFields[string(key)]
 		if !ok {
-			offset = d.nextValueOffset(offset, 1)
+			offset, err = d.nextValueOffset(offset, 1)
+			if err != nil {
+				return 0, err
+			}
 			continue
 		}
 
@@ -584,7 +607,10 @@ func uintFromBytes(prefix uint64, uintBytes []byte) uint64 {
 // copying the bytes when decoding a struct. Previously, we achieved this by
 // using unsafe.
 func (d *decoder) decodeKey(offset uint) ([]byte, uint, error) {
-	typeNum, size, dataOffset := d.decodeCtrlData(offset)
+	typeNum, size, dataOffset, err := d.decodeCtrlData(offset)
+	if err != nil {
+		return nil, 0, err
+	}
 	if typeNum == _Pointer {
 		pointer, ptrOffset := d.decodePointer(size, dataOffset)
 		key, _, err := d.decodeKey(pointer)
@@ -594,17 +620,23 @@ func (d *decoder) decodeKey(offset uint) ([]byte, uint, error) {
 		return nil, 0, newInvalidDatabaseError("unexpected type when decoding string: %v", typeNum)
 	}
 	newOffset := dataOffset + size
+	if newOffset > uint(len(d.buffer)) {
+		return nil, 0, newOffsetError()
+	}
 	return d.buffer[dataOffset:newOffset], newOffset, nil
 }
 
 // This function is used to skip ahead to the next value without decoding
 // the one at the offset passed in. The size bits have different meanings for
 // different data types
-func (d *decoder) nextValueOffset(offset uint, numberToSkip uint) uint {
+func (d *decoder) nextValueOffset(offset uint, numberToSkip uint) (uint, error) {
 	if numberToSkip == 0 {
-		return offset
+		return offset, nil
 	}
-	typeNum, size, offset := d.decodeCtrlData(offset)
+	typeNum, size, offset, err := d.decodeCtrlData(offset)
+	if err != nil {
+		return 0, err
+	}
 	switch typeNum {
 	case _Pointer:
 		_, offset = d.decodePointer(size, offset)
