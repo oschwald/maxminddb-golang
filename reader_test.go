@@ -509,8 +509,9 @@ func BenchmarkMaxMindDB(b *testing.B) {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	var result interface{}
 
+	ip := make(net.IP, 4, 4)
 	for i := 0; i < b.N; i++ {
-		ip := randomIPv4Address(b, r)
+		randomIPv4Address(b, r, ip)
 		err = db.Lookup(ip, &result)
 		assert.Nil(b, err)
 	}
@@ -530,16 +531,19 @@ func BenchmarkCountryCode(b *testing.B) {
 	r := rand.New(rand.NewSource(0))
 	var result MinCountry
 
+	ip := make(net.IP, 4, 4)
 	for i := 0; i < b.N; i++ {
-		ip := randomIPv4Address(b, r)
+		randomIPv4Address(b, r, ip)
 		err = db.Lookup(ip, &result)
 		assert.Nil(b, err)
 	}
 	assert.Nil(b, db.Close(), "error on close")
 }
 
-func randomIPv4Address(b *testing.B, r *rand.Rand) net.IP {
+func randomIPv4Address(b *testing.B, r *rand.Rand, ip []byte) {
 	num := r.Uint32()
-	return []byte{byte(num >> 24), byte(num >> 16), byte(num >> 8),
-		byte(num)}
+	ip[0] = byte(num >> 24)
+	ip[1] = byte(num >> 16)
+	ip[2] = byte(num >> 8)
+	ip[3] = byte(num)
 }
