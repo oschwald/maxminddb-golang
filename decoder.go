@@ -33,7 +33,15 @@ const (
 	_Float32
 )
 
-func (d *decoder) decode(offset uint, result reflect.Value) (uint, error) {
+const (
+	// This is the value used in libmaxminddb
+	maximumDataStructureDepth = 512
+)
+
+func (d *decoder) decode(offset uint, result reflect.Value, depth int) (uint, error) {
+	if depth > maximumDataStructureDepth {
+		return 0, newInvalidDatabaseError("exceeded maximum data structure depth; database is likely corrupt")
+	}
 	typeNum, size, newOffset, err := d.decodeCtrlData(offset)
 	if err != nil {
 		return 0, err
@@ -43,7 +51,7 @@ func (d *decoder) decode(offset uint, result reflect.Value) (uint, error) {
 		result.Set(reflect.ValueOf(uintptr(offset)))
 		return d.nextValueOffset(offset, 1)
 	}
-	return d.decodeFromType(typeNum, size, newOffset, result)
+	return d.decodeFromType(typeNum, size, newOffset, result, depth+1)
 }
 
 func (d *decoder) decodeCtrlData(offset uint) (dataType, uint, uint, error) {
@@ -95,7 +103,13 @@ func (d *decoder) sizeFromCtrlByte(ctrlByte byte, offset uint, typeNum dataType)
 	return size, newOffset, nil
 }
 
-func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint, result reflect.Value) (uint, error) {
+func (d *decoder) decodeFromType(
+	dtype dataType,
+	size uint,
+	offset uint,
+	result reflect.Value,
+	depth int,
+) (uint, error) {
 	result = d.indirect(result)
 
 	// For these types, size has a special meaning
@@ -103,11 +117,11 @@ func (d *decoder) decodeFromType(dtype dataType, size uint, offset uint, result 
 	case _Bool:
 		return d.unmarshalBool(size, offset, result)
 	case _Map:
-		return d.unmarshalMap(size, offset, result)
+		return d.unmarshalMap(size, offset, result, depth)
 	case _Pointer:
-		return d.unmarshalPointer(size, offset, result)
+		return d.unmarshalPointer(size, offset, result, depth)
 	case _Slice:
-		return d.unmarshalSlice(size, offset, result)
+		return d.unmarshalSlice(size, offset, result, depth)
 	}
 
 	// For the remaining types, size is the byte size
@@ -283,19 +297,24 @@ func (d *decoder) unmarshalInt32(size uint, offset uint, result reflect.Value) (
 	return newOffset, newUnmarshalTypeError(value, result.Type())
 }
 
-func (d *decoder) unmarshalMap(size uint, offset uint, result reflect.Value) (uint, error) {
+func (d *decoder) unmarshalMap(
+	size uint,
+	offset uint,
+	result reflect.Value,
+	depth int,
+) (uint, error) {
 	result = d.indirect(result)
 	switch result.Kind() {
 	default:
 		return 0, newUnmarshalTypeError("map", result.Type())
 	case reflect.Struct:
-		return d.decodeStruct(size, offset, result)
+		return d.decodeStruct(size, offset, result, depth)
 	case reflect.Map:
-		return d.decodeMap(size, offset, result)
+		return d.decodeMap(size, offset, result, depth)
 	case reflect.Interface:
 		if result.NumMethod() == 0 {
 			rv := reflect.ValueOf(make(map[string]interface{}, size))
-			newOffset, err := d.decodeMap(size, offset, rv)
+			newOffset, err := d.decodeMap(size, offset, rv, depth)
 			result.Set(rv)
 			return newOffset, err
 		}
@@ -303,21 +322,26 @@ func (d *decoder) unmarshalMap(size uint, offset uint, result reflect.Value) (ui
 	}
 }
 
-func (d *decoder) unmarshalPointer(size uint, offset uint, result reflect.Value) (uint, error) {
+func (d *decoder) unmarshalPointer(size uint, offset uint, result reflect.Value, depth int) (uint, error) {
 	pointer, newOffset := d.decodePointer(size, offset)
-	_, err := d.decode(pointer, result)
+	_, err := d.decode(pointer, result, depth)
 	return newOffset, err
 }
 
-func (d *decoder) unmarshalSlice(size uint, offset uint, result reflect.Value) (uint, error) {
+func (d *decoder) unmarshalSlice(
+	size uint,
+	offset uint,
+	result reflect.Value,
+	depth int,
+) (uint, error) {
 	switch result.Kind() {
 	case reflect.Slice:
-		return d.decodeSlice(size, offset, result)
+		return d.decodeSlice(size, offset, result, depth)
 	case reflect.Interface:
 		if result.NumMethod() == 0 {
 			a := []interface{}{}
 			rv := reflect.ValueOf(&a).Elem()
-			newOffset, err := d.decodeSlice(size, offset, rv)
+			newOffset, err := d.decodeSlice(size, offset, rv, depth)
 			result.Set(rv)
 			return newOffset, err
 		}
@@ -430,7 +454,12 @@ func (d *decoder) decodeInt(size uint, offset uint) (int, uint, error) {
 	return int(val), newOffset, nil
 }
 
-func (d *decoder) decodeMap(size uint, offset uint, result reflect.Value) (uint, error) {
+func (d *decoder) decodeMap(
+	size uint,
+	offset uint,
+	result reflect.Value,
+	depth int,
+) (uint, error) {
 	if result.IsNil() {
 		result.Set(reflect.MakeMap(result.Type()))
 	}
@@ -445,7 +474,7 @@ func (d *decoder) decodeMap(size uint, offset uint, result reflect.Value) (uint,
 		}
 
 		value := reflect.New(result.Type().Elem())
-		offset, err = d.decode(offset, value)
+		offset, err = d.decode(offset, value, depth)
 		if err != nil {
 			return 0, err
 		}
@@ -483,11 +512,16 @@ func (d *decoder) decodePointer(size uint, offset uint) (uint, uint) {
 	return pointer, newOffset
 }
 
-func (d *decoder) decodeSlice(size uint, offset uint, result reflect.Value) (uint, error) {
+func (d *decoder) decodeSlice(
+	size uint,
+	offset uint,
+	result reflect.Value,
+	depth int,
+) (uint, error) {
 	result.Set(reflect.MakeSlice(result.Type(), int(size), int(size)))
 	for i := 0; i < int(size); i++ {
 		var err error
-		offset, err = d.decode(offset, result.Index(i))
+		offset, err = d.decode(offset, result.Index(i), depth)
 		if err != nil {
 			return 0, err
 		}
@@ -510,7 +544,12 @@ var (
 	fieldMapMu sync.RWMutex
 )
 
-func (d *decoder) decodeStruct(size uint, offset uint, result reflect.Value) (uint, error) {
+func (d *decoder) decodeStruct(
+	size uint,
+	offset uint,
+	result reflect.Value,
+	depth int,
+) (uint, error) {
 	resultType := result.Type()
 
 	fieldMapMu.RLock()
@@ -544,7 +583,7 @@ func (d *decoder) decodeStruct(size uint, offset uint, result reflect.Value) (ui
 
 	// This fills in embedded structs
 	for i := range fields.anonymousFields {
-		_, err := d.unmarshalMap(size, offset, result.Field(i))
+		_, err := d.unmarshalMap(size, offset, result.Field(i), depth)
 		if err != nil {
 			return 0, err
 		}
@@ -571,7 +610,7 @@ func (d *decoder) decodeStruct(size uint, offset uint, result reflect.Value) (ui
 			continue
 		}
 
-		offset, err = d.decode(offset, result.Field(j))
+		offset, err = d.decode(offset, result.Field(j), depth)
 		if err != nil {
 			return 0, err
 		}

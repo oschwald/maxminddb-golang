@@ -59,7 +59,7 @@ func FromBytes(buffer []byte) (*Reader, error) {
 	var metadata Metadata
 
 	rvMetdata := reflect.ValueOf(&metadata)
-	_, err := metadataDecoder.decode(0, rvMetdata)
+	_, err := metadataDecoder.decode(0, rvMetdata, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +149,7 @@ func (r *Reader) Decode(offset uintptr, result interface{}) error {
 		return errors.New("result param must be a pointer")
 	}
 
-	_, err := r.decoder.decode(uint(offset), reflect.ValueOf(result))
+	_, err := r.decoder.decode(uint(offset), reflect.ValueOf(result), 0)
 	return err
 }
 
