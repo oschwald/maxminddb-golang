@@ -201,6 +201,8 @@ func (d *decoder) indirect(result reflect.Value) reflect.Value {
 	return result
 }
 
+var sliceType = reflect.TypeOf([]byte{})
+
 func (d *decoder) unmarshalBytes(size uint, offset uint, result reflect.Value) (uint, error) {
 	value, newOffset, err := d.decodeBytes(size, offset)
 	if err != nil {
@@ -208,8 +210,10 @@ func (d *decoder) unmarshalBytes(size uint, offset uint, result reflect.Value) (
 	}
 	switch result.Kind() {
 	case reflect.Slice:
-		result.SetBytes(value)
-		return newOffset, nil
+		if result.Type() == sliceType {
+			result.SetBytes(value)
+			return newOffset, nil
+		}
 	case reflect.Interface:
 		if result.NumMethod() == 0 {
 			result.Set(reflect.ValueOf(value))
