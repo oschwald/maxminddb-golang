@@ -400,6 +400,8 @@ func (d *decoder) unmarshalUint(size uint, offset uint, result reflect.Value, ui
 	return newOffset, newUnmarshalTypeError(value, result.Type())
 }
 
+var bigIntType = reflect.TypeOf(big.Int{})
+
 func (d *decoder) unmarshalUint128(size uint, offset uint, result reflect.Value) (uint, error) {
 	if size > 16 {
 		return 0, newInvalidDatabaseError("the MaxMind DB file's data section contains bad data (uint128 size of %v)", size)
@@ -411,8 +413,10 @@ func (d *decoder) unmarshalUint128(size uint, offset uint, result reflect.Value)
 
 	switch result.Kind() {
 	case reflect.Struct:
-		result.Set(reflect.ValueOf(*value))
-		return newOffset, nil
+		if result.Type() == bigIntType {
+			result.Set(reflect.ValueOf(*value))
+			return newOffset, nil
+		}
 	case reflect.Interface:
 		if result.NumMethod() == 0 {
 			result.Set(reflect.ValueOf(value))
