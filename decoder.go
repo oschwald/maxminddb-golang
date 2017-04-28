@@ -327,8 +327,11 @@ func (d *decoder) unmarshalMap(
 }
 
 func (d *decoder) unmarshalPointer(size uint, offset uint, result reflect.Value, depth int) (uint, error) {
-	pointer, newOffset := d.decodePointer(size, offset)
-	_, err := d.decode(pointer, result, depth)
+	pointer, newOffset, err := d.decodePointer(size, offset)
+	if err != nil {
+		return 0, err
+	}
+	_, err = d.decode(pointer, result, depth)
 	return newOffset, err
 }
 
@@ -491,9 +494,15 @@ func (d *decoder) decodeMap(
 	return offset, nil
 }
 
-func (d *decoder) decodePointer(size uint, offset uint) (uint, uint) {
+func (d *decoder) decodePointer(
+	size uint,
+	offset uint,
+) (uint, uint, error) {
 	pointerSize := ((size >> 3) & 0x3) + 1
 	newOffset := offset + pointerSize
+	if newOffset > uint(len(d.buffer)) {
+		return 0, 0, newOffsetError()
+	}
 	pointerBytes := d.buffer[offset:newOffset]
 	var prefix uint64
 	if pointerSize == 4 {
@@ -517,7 +526,7 @@ func (d *decoder) decodePointer(size uint, offset uint) (uint, uint) {
 
 	pointer := unpacked + pointerValueOffset
 
-	return pointer, newOffset
+	return pointer, newOffset, nil
 }
 
 func (d *decoder) decodeSlice(
@@ -659,7 +668,10 @@ func (d *decoder) decodeKey(offset uint) ([]byte, uint, error) {
 		return nil, 0, err
 	}
 	if typeNum == _Pointer {
-		pointer, ptrOffset := d.decodePointer(size, dataOffset)
+		pointer, ptrOffset, err := d.decodePointer(size, dataOffset)
+		if err != nil {
+			return nil, 0, err
+		}
 		key, _, err := d.decodeKey(pointer)
 		return key, ptrOffset, err
 	}
@@ -686,7 +698,10 @@ func (d *decoder) nextValueOffset(offset uint, numberToSkip uint) (uint, error) 
 	}
 	switch typeNum {
 	case _Pointer:
-		_, offset = d.decodePointer(size, offset)
+		_, offset, err = d.decodePointer(size, offset)
+		if err != nil {
+			return 0, err
+		}
 	case _Map:
 		numberToSkip += 2 * size
 	case _Slice:
