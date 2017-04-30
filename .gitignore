@@ -1,3 +1,4 @@
 .vscode
 *.out
+*.sw?
 *.test
