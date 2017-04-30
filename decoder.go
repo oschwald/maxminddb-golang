@@ -82,19 +82,22 @@ func (d *decoder) sizeFromCtrlByte(ctrlByte byte, offset uint, typeNum dataType)
 	}
 
 	var bytesToRead uint
-	if size > 28 {
-		bytesToRead = size - 28
+	if size < 29 {
+		return size, offset, nil
 	}
 
+	bytesToRead = size - 28
 	newOffset := offset + bytesToRead
 	if newOffset > uint(len(d.buffer)) {
 		return 0, 0, newOffsetError()
 	}
+	if size == 29 {
+		return 29 + uint(d.buffer[offset]), offset + 1, nil
+	}
+
 	sizeBytes := d.buffer[offset:newOffset]
 
 	switch {
-	case size == 29:
-		size = 29 + uint(sizeBytes[0])
 	case size == 30:
 		size = 285 + uint(uintFromBytes(0, sizeBytes))
 	case size > 30:
