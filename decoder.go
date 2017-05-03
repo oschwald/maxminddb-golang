@@ -99,9 +99,9 @@ func (d *decoder) sizeFromCtrlByte(ctrlByte byte, offset uint, typeNum dataType)
 
 	switch {
 	case size == 30:
-		size = 285 + uint(uintFromBytes(0, sizeBytes))
+		size = 285 + uintFromBytes(0, sizeBytes)
 	case size > 30:
-		size = uint(uintFromBytes(0, sizeBytes)) + 65821
+		size = uintFromBytes(0, sizeBytes) + 65821
 	}
 	return size, newOffset, nil
 }
@@ -507,13 +507,13 @@ func (d *decoder) decodePointer(
 		return 0, 0, newOffsetError()
 	}
 	pointerBytes := d.buffer[offset:newOffset]
-	var prefix uint64
+	var prefix uint
 	if pointerSize == 4 {
 		prefix = 0
 	} else {
-		prefix = uint64(size & 0x7)
+		prefix = uint(size & 0x7)
 	}
-	unpacked := uint(uintFromBytes(prefix, pointerBytes))
+	unpacked := uintFromBytes(prefix, pointerBytes)
 
 	var pointerValueOffset uint
 	switch pointerSize {
@@ -640,8 +640,12 @@ func (d *decoder) decodeStruct(
 
 func (d *decoder) decodeUint(size uint, offset uint) (uint64, uint, error) {
 	newOffset := offset + size
-	val := uintFromBytes(0, d.buffer[offset:newOffset])
+	bytes := d.buffer[offset:newOffset]
 
+	var val uint64
+	for _, b := range bytes {
+		val = (val << 8) | uint64(b)
+	}
 	return val, newOffset, nil
 }
 
@@ -653,10 +657,10 @@ func (d *decoder) decodeUint128(size uint, offset uint) (*big.Int, uint, error) 
 	return val, newOffset, nil
 }
 
-func uintFromBytes(prefix uint64, uintBytes []byte) uint64 {
+func uintFromBytes(prefix uint, uintBytes []byte) uint {
 	val := prefix
 	for _, b := range uintBytes {
-		val = (val << 8) | uint64(b)
+		val = (val << 8) | uint(b)
 	}
 	return val
 }
