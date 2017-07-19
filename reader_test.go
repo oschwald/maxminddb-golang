@@ -29,6 +29,20 @@ func TestReader(t *testing.T) {
 			}
 		}
 	}
+
+	var reader *Reader
+	defer func() {
+		assert.Nil(t, recover(), "unexpected panic")
+	}()
+
+	decodeErr := reader.Decode(0, interface{}(nil))
+	assert.Error(t, decodeErr)
+
+	lookupErr := reader.Lookup(net.IPv4(127, 0, 0, 1), interface{}(nil))
+	assert.Error(t, lookupErr)
+
+	_, offsetErr := reader.LookupOffset(net.IPv4(127, 0, 0, 1))
+	assert.Error(t, offsetErr)
 }
 
 func TestReaderBytes(t *testing.T) {
