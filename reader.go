@@ -212,6 +212,36 @@ func (r *Reader) findAddressInTree(ipAddress net.IP) (uint, error) {
 	return 0, newInvalidDatabaseError("invalid node in search tree")
 }
 
+func (r *Reader) Netmask(ipAddress net.IP) (uint, error) {
+
+	bitCount := uint(len(ipAddress) * 8)
+
+	var node, i uint
+	if bitCount == 32 {
+		node = r.ipv4Start
+	}
+
+	nodeCount := r.Metadata.NodeCount
+
+	for i = uint(0); i < bitCount && node < nodeCount; i++ {
+		bit := uint(1) & (uint(ipAddress[i>>3]) >> (7 - (i % 8)))
+
+		var err error
+		node, err = r.readNode(node, bit)
+		if err != nil {
+			return 0, err
+		}
+	}
+	if node == nodeCount {
+		// Record is empty
+		return 0, nil
+	} else if node > nodeCount {
+		return i, nil
+	}
+
+	return 0, newInvalidDatabaseError("invalid node in search tree")
+}
+
 func (r *Reader) readNode(nodeNumber uint, index uint) (uint, error) {
 	RecordSize := r.Metadata.RecordSize
 
