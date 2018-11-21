@@ -236,6 +236,9 @@ func (r *Reader) Netmask(ipAddress net.IP) (uint, error) {
 		// Record is empty
 		return 0, nil
 	} else if node > nodeCount {
+		if r.Metadata.IPVersion == 6 && ipAddress.To4() != nil {
+			return i - 96, nil
+		}
 		return i, nil
 	}
 
