@@ -2,3 +2,5 @@
 *.out
 *.sw?
 *.test
+# JetBrains GoLand
+.idea/
