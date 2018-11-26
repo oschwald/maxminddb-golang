@@ -110,7 +110,7 @@ func (r *Reader) Lookup(ipAddress net.IP, result interface{}) error {
 	if r.buffer == nil {
 		return errors.New("cannot call Lookup on a closed database")
 	}
-	pointer, err := r.lookupPointer(ipAddress)
+	pointer, _, err := r.lookupPointer(ipAddress)
 	if pointer == 0 || err != nil {
 		return err
 	}
@@ -123,14 +123,20 @@ func (r *Reader) Lookup(ipAddress net.IP, result interface{}) error {
 // is an advanced API, which exists to provide clients with a means to cache
 // previously-decoded records.
 func (r *Reader) LookupOffset(ipAddress net.IP) (uintptr, error) {
+	ptr, _, err := r.LookupOffsetWithNetmask(ipAddress)
+	return ptr, err
+}
+
+func (r *Reader) LookupOffsetWithNetmask(ipAddress net.IP) (uintptr, uint, error) {
 	if r.buffer == nil {
-		return 0, errors.New("cannot call LookupOffset on a closed database")
+		return 0, 0, errors.New("cannot call LookupOffset on a closed database")
 	}
-	pointer, err := r.lookupPointer(ipAddress)
+	pointer, mask, err := r.lookupPointer(ipAddress)
 	if pointer == 0 || err != nil {
-		return NotFound, err
+		return NotFound, 0, err
 	}
-	return r.resolveDataPointer(pointer)
+	ptr, err := r.resolveDataPointer(pointer)
+	return ptr, mask, err
 }
 
 // Decode the record at |offset| into |result|. The result value pointed to
@@ -166,9 +172,9 @@ func (r *Reader) decode(offset uintptr, result interface{}) error {
 	return err
 }
 
-func (r *Reader) lookupPointer(ipAddress net.IP) (uint, error) {
+func (r *Reader) lookupPointer(ipAddress net.IP) (uint, uint, error) {
 	if ipAddress == nil {
-		return 0, errors.New("ipAddress passed to Lookup cannot be nil")
+		return 0, 0, errors.New("ipAddress passed to Lookup cannot be nil")
 	}
 
 	ipV4Address := ipAddress.To4()
@@ -176,40 +182,40 @@ func (r *Reader) lookupPointer(ipAddress net.IP) (uint, error) {
 		ipAddress = ipV4Address
 	}
 	if len(ipAddress) == 16 && r.Metadata.IPVersion == 4 {
-		return 0, fmt.Errorf("error looking up '%s': you attempted to look up an IPv6 address in an IPv4-only database", ipAddress.String())
+		return 0, 0, fmt.Errorf("error looking up '%s': you attempted to look up an IPv6 address in an IPv4-only database", ipAddress.String())
 	}
 
 	return r.findAddressInTree(ipAddress)
 }
 
-func (r *Reader) findAddressInTree(ipAddress net.IP) (uint, error) {
+func (r *Reader) findAddressInTree(ipAddress net.IP) (uint, uint, error) {
 
 	bitCount := uint(len(ipAddress) * 8)
 
-	var node uint
+	var node, i uint
 	if bitCount == 32 {
 		node = r.ipv4Start
 	}
 
 	nodeCount := r.Metadata.NodeCount
 
-	for i := uint(0); i < bitCount && node < nodeCount; i++ {
+	for i = uint(0); i < bitCount && node < nodeCount; i++ {
 		bit := uint(1) & (uint(ipAddress[i>>3]) >> (7 - (i % 8)))
 
 		var err error
 		node, err = r.readNode(node, bit)
 		if err != nil {
-			return 0, err
+			return 0, 0, err
 		}
 	}
 	if node == nodeCount {
 		// Record is empty
-		return 0, nil
+		return 0, 0, nil
 	} else if node > nodeCount {
-		return node, nil
+		return node, i, nil
 	}
 
-	return 0, newInvalidDatabaseError("invalid node in search tree")
+	return 0, 0, newInvalidDatabaseError("invalid node in search tree")
 }
 
 func (r *Reader) Netmask(ipAddress net.IP) (uint, error) {
