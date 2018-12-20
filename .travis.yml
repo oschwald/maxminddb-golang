@@ -8,6 +8,9 @@ go:
  - 1.11
  - tip
 
+env:
+  - GO111MODULE=on
+
 before_install:
   - "if [[ $TRAVIS_GO_VERSION == 1.11 ]]; then go get -u golang.org/x/lint/golint; fi"
 
