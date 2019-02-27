@@ -9,6 +9,11 @@ go:
  - 1.12
  - tip
 
+os:
+  - linux
+  - linux-ppc64le
+
+
 before_install:
   - "if [[ $TRAVIS_GO_VERSION == 1.11 ]]; then go get -u golang.org/x/lint/golint; fi"
 
@@ -16,8 +21,18 @@ install:
   - go get -v -t ./...
 
 script:
-  - go test -race -cpu 1,4 -v
-  - go test -race -v -tags appengine
+  - |
+    if [ $(arch) == "ppc64le" ]; then
+      go test -cpu 1,4 -v
+    else
+      go test -race -cpu 1,4 -v
+    fi
+  - |
+    if [ $(arch) == "ppc64le" ]; then
+      go test -v -tags appengine
+    else
+      go test -race -v -tags appengine
+    fi
   - "if [[ $TRAVIS_GO_VERSION == 1.11 ]]; then go vet ./...; fi"
   - "if [[ $TRAVIS_GO_VERSION == 1.11 ]]; then golint .; fi"
 
