@@ -111,8 +111,11 @@ func (r *Reader) Lookup(ipAddress net.IP, result interface{}) error {
 		return errors.New("cannot call Lookup on a closed database")
 	}
 	pointer, err := r.lookupPointer(ipAddress)
-	if pointer == 0 || err != nil {
+	if err != nil {
 		return err
+	}
+	if pointer == 0 {
+		return errors.New("not found")
 	}
 	return r.retrieveData(pointer, result)
 }
