@@ -162,7 +162,7 @@ func (r *Reader) decode(offset uintptr, result interface{}) error {
 		return errors.New("result param must be a pointer")
 	}
 
-	_, err := r.decoder.decode(uint(offset), reflect.ValueOf(result), 0)
+	_, err := r.decoder.decode(uint(offset), rv, 0)
 	return err
 }
 
