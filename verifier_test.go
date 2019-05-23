@@ -1,8 +1,10 @@
 package maxminddb
 
 import (
-	"github.com/stretchr/testify/assert"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestVerifyOnGoodDatabases(t *testing.T) {
@@ -13,7 +15,7 @@ func TestVerifyOnGoodDatabases(t *testing.T) {
 		"test-data/test-data/GeoIP2-Country-Test.mmdb",
 		"test-data/test-data/GeoIP2-Domain-Test.mmdb",
 		"test-data/test-data/GeoIP2-ISP-Test.mmdb",
-		"test-data/test-data/GeoIP2-Precision-City-Test.mmdb",
+		"test-data/test-data/GeoIP2-Precision-Enterprise-Test.mmdb",
 		"test-data/test-data/MaxMind-DB-no-ipv4-search-tree.mmdb",
 		"test-data/test-data/MaxMind-DB-string-value-entries.mmdb",
 		"test-data/test-data/MaxMind-DB-test-decoder.mmdb",
@@ -30,9 +32,12 @@ func TestVerifyOnGoodDatabases(t *testing.T) {
 	}
 
 	for _, database := range databases {
-		reader, err := Open(database)
-		assert.Nil(t, err)
-		assert.Nil(t, reader.Verify(), "Received error (%v) when verifying %v", err, database)
+		t.Run(database, func(t *testing.T) {
+			reader, err := Open(database)
+			require.NoError(t, err)
+
+			assert.NoError(t, reader.Verify(), "Received error (%v) when verifying %v", err, database)
+		})
 	}
 }
 
