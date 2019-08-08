@@ -3,7 +3,6 @@ package maxminddb
 import (
 	"fmt"
 	"testing"
-	"net"
 	
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
