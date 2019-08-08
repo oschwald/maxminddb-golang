@@ -152,6 +152,6 @@ func ExampleReader_Networks() {
 	// 2002:bb9c:8a00::/40: Cable/DSL
 	// 2002:c9f3:c800::/40: Corporate
 	// 2002:cfb3:3000::/36: Cellular
-	// 2003::/24: Cable/DS
+	// 2003::/24: Cable/DSL
 	
 }
