@@ -97,7 +97,7 @@ func (n *Networks) Network(result interface{}) (*net.IPNet, error) {
 	}
 
 	return &net.IPNet{
-		IP:   n.lastNode.ip,
+		IP:   SanitizeIPv6(n.lastNode.ip),
 		Mask: net.CIDRMask(int(n.lastNode.bit), len(n.lastNode.ip)*8),
 	}, nil
 }
@@ -105,4 +105,30 @@ func (n *Networks) Network(result interface{}) (*net.IPNet, error) {
 // Err returns an error, if any, that was encountered during iteration.
 func (n *Networks) Err() error {
 	return n.err
+}
+
+// Is p all zeros?
+func isZeros(p net.IP) bool {
+	for i := 0; i < len(p); i++ {
+		if p[i] != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// SanitizeIPv6 converts the IPv6 address ip to a 4-byte representation.
+// If ip is not an IPv4 address, SanitizeIPv6 returns the original IP object.
+func SanitizeIPv6(ip net.IP) net.IP {
+	var v4LeadingPrefix bool
+	if isZeros(ip[0:10]) && ip[10] == 0xff && ip[11] == 0xff {
+		v4LeadingPrefix = true
+	}
+	if isZeros(ip[0:12]) {
+		v4LeadingPrefix = true
+	}
+	if len(ip) == net.IPv6len && v4LeadingPrefix {
+		return ip[12:16]
+	}
+	return ip
 }

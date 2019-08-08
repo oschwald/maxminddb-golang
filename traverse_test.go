@@ -23,8 +23,8 @@ func TestNetworks(t *testing.T) {
 				}{}
 				network, err := n.Network(&record)
 				assert.Nil(t, err)
-				assert.Equal(t, record.IP, network.IP.String(),
-					"expected %s got %s", record.IP, network.IP.String(),
+				assert.Equal(t, SanitizeIPv6(net.ParseIP(record.IP)).String(), network.IP.String(),
+					"expected %s got %s", SanitizeIPv6(net.ParseIP(record.IP)).String(), network.IP.String(),
 				)
 			}
 			assert.Nil(t, n.Err())
