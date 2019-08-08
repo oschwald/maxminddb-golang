@@ -121,14 +121,17 @@ func isZeros(p net.IP) bool {
 // If ip is not an IPv4 address, SanitizeIPv6 returns the original IP object.
 func SanitizeIPv6(ip net.IP) net.IP {
 	var v4LeadingPrefix bool
-	if isZeros(ip[0:10]) && ip[10] == 0xff && ip[11] == 0xff {
-		v4LeadingPrefix = true
-	}
-	if isZeros(ip[0:12]) {
-		v4LeadingPrefix = true
-	}
-	if len(ip) == net.IPv6len && v4LeadingPrefix {
-		return ip[12:16]
+	if len(ip) == net.IPv6len {
+		if isZeros(ip[0:10]) && ip[10] == 0xff && ip[11] == 0xff {
+			v4LeadingPrefix = true
+		}
+		if isZeros(ip[0:12]) {
+			v4LeadingPrefix = true
+		}
+		if v4LeadingPrefix {
+			return ip[12:16]
+		}
 	}
 	return ip
 }
+
