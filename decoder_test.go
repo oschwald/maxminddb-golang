@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBool(t *testing.T) {
@@ -205,7 +206,7 @@ func validateDecoding(t *testing.T, tests map[string]interface{}) {
 
 		var result interface{}
 		_, err := d.decode(0, reflect.ValueOf(&result), 0)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 
 		if !reflect.DeepEqual(result, expected) {
 			// A big case statement would produce nicer errors
@@ -216,7 +217,7 @@ func validateDecoding(t *testing.T, tests map[string]interface{}) {
 
 func TestPointers(t *testing.T) {
 	bytes, err := ioutil.ReadFile("test-data/test-data/maps-with-pointers.raw")
-	assert.Nil(t, err)
+	require.NoError(t, err)
 	d := decoder{bytes}
 
 	expected := map[uint]map[string]string{
@@ -231,7 +232,7 @@ func TestPointers(t *testing.T) {
 	for offset, expectedValue := range expected {
 		var actual map[string]string
 		_, err := d.decode(offset, reflect.ValueOf(&actual), 0)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		if !reflect.DeepEqual(actual, expectedValue) {
 			t.Errorf("Decode for pointer at %d failed", offset)
 		}
