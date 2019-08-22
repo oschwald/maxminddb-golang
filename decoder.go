@@ -159,10 +159,8 @@ func (d *decoder) unmarshalBool(size uint, offset uint, result reflect.Value) (u
 	if size > 1 {
 		return 0, newInvalidDatabaseError("the MaxMind DB file's data section contains bad data (bool size of %v)", size)
 	}
-	value, newOffset, err := d.decodeBool(size, offset)
-	if err != nil {
-		return 0, err
-	}
+	value, newOffset := d.decodeBool(size, offset)
+
 	switch result.Kind() {
 	case reflect.Bool:
 		result.SetBool(value)
@@ -207,10 +205,8 @@ func (d *decoder) indirect(result reflect.Value) reflect.Value {
 var sliceType = reflect.TypeOf([]byte{})
 
 func (d *decoder) unmarshalBytes(size uint, offset uint, result reflect.Value) (uint, error) {
-	value, newOffset, err := d.decodeBytes(size, offset)
-	if err != nil {
-		return 0, err
-	}
+	value, newOffset := d.decodeBytes(size, offset)
+
 	switch result.Kind() {
 	case reflect.Slice:
 		if result.Type() == sliceType {
@@ -230,10 +226,7 @@ func (d *decoder) unmarshalFloat32(size uint, offset uint, result reflect.Value)
 	if size != 4 {
 		return 0, newInvalidDatabaseError("the MaxMind DB file's data section contains bad data (float32 size of %v)", size)
 	}
-	value, newOffset, err := d.decodeFloat32(size, offset)
-	if err != nil {
-		return 0, err
-	}
+	value, newOffset := d.decodeFloat32(size, offset)
 
 	switch result.Kind() {
 	case reflect.Float32, reflect.Float64:
@@ -253,10 +246,8 @@ func (d *decoder) unmarshalFloat64(size uint, offset uint, result reflect.Value)
 	if size != 8 {
 		return 0, newInvalidDatabaseError("the MaxMind DB file's data section contains bad data (float 64 size of %v)", size)
 	}
-	value, newOffset, err := d.decodeFloat64(size, offset)
-	if err != nil {
-		return 0, err
-	}
+	value, newOffset := d.decodeFloat64(size, offset)
+
 	switch result.Kind() {
 	case reflect.Float32, reflect.Float64:
 		if result.OverflowFloat(value) {
@@ -277,10 +268,7 @@ func (d *decoder) unmarshalInt32(size uint, offset uint, result reflect.Value) (
 	if size > 4 {
 		return 0, newInvalidDatabaseError("the MaxMind DB file's data section contains bad data (int32 size of %v)", size)
 	}
-	value, newOffset, err := d.decodeInt(size, offset)
-	if err != nil {
-		return 0, err
-	}
+	value, newOffset := d.decodeInt(size, offset)
 
 	switch result.Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
@@ -360,11 +348,8 @@ func (d *decoder) unmarshalSlice(
 }
 
 func (d *decoder) unmarshalString(size uint, offset uint, result reflect.Value) (uint, error) {
-	value, newOffset, err := d.decodeString(size, offset)
+	value, newOffset := d.decodeString(size, offset)
 
-	if err != nil {
-		return 0, err
-	}
 	switch result.Kind() {
 	case reflect.String:
 		result.SetString(value)
@@ -384,10 +369,7 @@ func (d *decoder) unmarshalUint(size uint, offset uint, result reflect.Value, ui
 		return 0, newInvalidDatabaseError("the MaxMind DB file's data section contains bad data (uint%v size of %v)", uintType, size)
 	}
 
-	value, newOffset, err := d.decodeUint(size, offset)
-	if err != nil {
-		return 0, err
-	}
+	value, newOffset := d.decodeUint(size, offset)
 
 	switch result.Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
@@ -416,10 +398,7 @@ func (d *decoder) unmarshalUint128(size uint, offset uint, result reflect.Value)
 	if size > 16 {
 		return 0, newInvalidDatabaseError("the MaxMind DB file's data section contains bad data (uint128 size of %v)", size)
 	}
-	value, newOffset, err := d.decodeUint128(size, offset)
-	if err != nil {
-		return 0, err
-	}
+	value, newOffset := d.decodeUint128(size, offset)
 
 	switch result.Kind() {
 	case reflect.Struct:
@@ -436,36 +415,36 @@ func (d *decoder) unmarshalUint128(size uint, offset uint, result reflect.Value)
 	return newOffset, newUnmarshalTypeError(value, result.Type())
 }
 
-func (d *decoder) decodeBool(size uint, offset uint) (bool, uint, error) {
-	return size != 0, offset, nil
+func (d *decoder) decodeBool(size uint, offset uint) (bool, uint) {
+	return size != 0, offset
 }
 
-func (d *decoder) decodeBytes(size uint, offset uint) ([]byte, uint, error) {
+func (d *decoder) decodeBytes(size uint, offset uint) ([]byte, uint) {
 	newOffset := offset + size
 	bytes := make([]byte, size)
 	copy(bytes, d.buffer[offset:newOffset])
-	return bytes, newOffset, nil
+	return bytes, newOffset
 }
 
-func (d *decoder) decodeFloat64(size uint, offset uint) (float64, uint, error) {
+func (d *decoder) decodeFloat64(size uint, offset uint) (float64, uint) {
 	newOffset := offset + size
 	bits := binary.BigEndian.Uint64(d.buffer[offset:newOffset])
-	return math.Float64frombits(bits), newOffset, nil
+	return math.Float64frombits(bits), newOffset
 }
 
-func (d *decoder) decodeFloat32(size uint, offset uint) (float32, uint, error) {
+func (d *decoder) decodeFloat32(size uint, offset uint) (float32, uint) {
 	newOffset := offset + size
 	bits := binary.BigEndian.Uint32(d.buffer[offset:newOffset])
-	return math.Float32frombits(bits), newOffset, nil
+	return math.Float32frombits(bits), newOffset
 }
 
-func (d *decoder) decodeInt(size uint, offset uint) (int, uint, error) {
+func (d *decoder) decodeInt(size uint, offset uint) (int, uint) {
 	newOffset := offset + size
 	var val int32
 	for _, b := range d.buffer[offset:newOffset] {
 		val = (val << 8) | int32(b)
 	}
-	return int(val), newOffset, nil
+	return int(val), newOffset
 }
 
 func (d *decoder) decodeMap(
@@ -549,9 +528,9 @@ func (d *decoder) decodeSlice(
 	return offset, nil
 }
 
-func (d *decoder) decodeString(size uint, offset uint) (string, uint, error) {
+func (d *decoder) decodeString(size uint, offset uint) (string, uint) {
 	newOffset := offset + size
-	return string(d.buffer[offset:newOffset]), newOffset, nil
+	return string(d.buffer[offset:newOffset]), newOffset
 }
 
 type fieldsType struct {
@@ -638,7 +617,7 @@ func (d *decoder) decodeStruct(
 	return offset, nil
 }
 
-func (d *decoder) decodeUint(size uint, offset uint) (uint64, uint, error) {
+func (d *decoder) decodeUint(size uint, offset uint) (uint64, uint) {
 	newOffset := offset + size
 	bytes := d.buffer[offset:newOffset]
 
@@ -646,15 +625,15 @@ func (d *decoder) decodeUint(size uint, offset uint) (uint64, uint, error) {
 	for _, b := range bytes {
 		val = (val << 8) | uint64(b)
 	}
-	return val, newOffset, nil
+	return val, newOffset
 }
 
-func (d *decoder) decodeUint128(size uint, offset uint) (*big.Int, uint, error) {
+func (d *decoder) decodeUint128(size uint, offset uint) (*big.Int, uint) {
 	newOffset := offset + size
 	val := new(big.Int)
 	val.SetBytes(d.buffer[offset:newOffset])
 
-	return val, newOffset, nil
+	return val, newOffset
 }
 
 func uintFromBytes(prefix uint, uintBytes []byte) uint {
