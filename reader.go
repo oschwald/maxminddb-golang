@@ -110,11 +110,34 @@ func (r *Reader) Lookup(ipAddress net.IP, result interface{}) error {
 	if r.buffer == nil {
 		return errors.New("cannot call Lookup on a closed database")
 	}
-	pointer, err := r.lookupPointer(ipAddress)
+	pointer, _, _, err := r.lookupPointer(ipAddress)
 	if pointer == 0 || err != nil {
 		return err
 	}
 	return r.retrieveData(pointer, result)
+}
+
+// LookupNetwork retrieves the database record for ipAddress and stores it in
+// the value pointed to be result. The network returned is the network
+// associated with the data record in the database. The ok return value
+// indicates whether the database contained a record for the ipAddress.
+//
+// If result is nil or not a pointer, an error is returned. If the data in the
+// database record cannot be stored in result because of type differences, an
+// UnmarshalTypeError is returned. If the database is invalid or otherwise
+// cannot be read, an InvalidDatabaseError is returned.
+func (r *Reader) LookupNetwork(ipAddress net.IP, result interface{}) (network *net.IPNet, ok bool, err error) {
+	if r.buffer == nil {
+		return nil, false, errors.New("cannot call Lookup on a closed database")
+	}
+	pointer, prefixLength, ipAddress, err := r.lookupPointer(ipAddress)
+
+	network = r.cidr(ipAddress, prefixLength)
+	if pointer == 0 || err != nil {
+		return network, false, err
+	}
+
+	return network, true, r.retrieveData(pointer, result)
 }
 
 // LookupOffset maps an argument net.IP to a corresponding record offset in the
@@ -126,11 +149,18 @@ func (r *Reader) LookupOffset(ipAddress net.IP) (uintptr, error) {
 	if r.buffer == nil {
 		return 0, errors.New("cannot call LookupOffset on a closed database")
 	}
-	pointer, err := r.lookupPointer(ipAddress)
+	pointer, _, _, err := r.lookupPointer(ipAddress)
 	if pointer == 0 || err != nil {
 		return NotFound, err
 	}
 	return r.resolveDataPointer(pointer)
+}
+
+func (r *Reader) cidr(ipAddress net.IP, prefixLength int) *net.IPNet {
+	ipBitLength := len(ipAddress) * 8
+	mask := net.CIDRMask(prefixLength, ipBitLength)
+
+	return &net.IPNet{IP: ipAddress.Mask(mask), Mask: mask}
 }
 
 // Decode the record at |offset| into |result|. The result value pointed to
@@ -166,9 +196,9 @@ func (r *Reader) decode(offset uintptr, result interface{}) error {
 	return err
 }
 
-func (r *Reader) lookupPointer(ipAddress net.IP) (uint, error) {
+func (r *Reader) lookupPointer(ipAddress net.IP) (uint, int, net.IP, error) {
 	if ipAddress == nil {
-		return 0, errors.New("ipAddress passed to Lookup cannot be nil")
+		return 0, 0, ipAddress, errors.New("ipAddress passed to Lookup cannot be nil")
 	}
 
 	ipV4Address := ipAddress.To4()
@@ -176,13 +206,8 @@ func (r *Reader) lookupPointer(ipAddress net.IP) (uint, error) {
 		ipAddress = ipV4Address
 	}
 	if len(ipAddress) == 16 && r.Metadata.IPVersion == 4 {
-		return 0, fmt.Errorf("error looking up '%s': you attempted to look up an IPv6 address in an IPv4-only database", ipAddress.String())
+		return 0, 0, ipAddress, fmt.Errorf("error looking up '%s': you attempted to look up an IPv6 address in an IPv4-only database", ipAddress.String())
 	}
-
-	return r.findAddressInTree(ipAddress)
-}
-
-func (r *Reader) findAddressInTree(ipAddress net.IP) (uint, error) {
 
 	bitCount := uint(len(ipAddress) * 8)
 
@@ -193,23 +218,24 @@ func (r *Reader) findAddressInTree(ipAddress net.IP) (uint, error) {
 
 	nodeCount := r.Metadata.NodeCount
 
-	for i := uint(0); i < bitCount && node < nodeCount; i++ {
+	i := uint(0)
+	for ; i < bitCount && node < nodeCount; i++ {
 		bit := uint(1) & (uint(ipAddress[i>>3]) >> (7 - (i % 8)))
 
 		var err error
 		node, err = r.readNode(node, bit)
 		if err != nil {
-			return 0, err
+			return 0, int(i), ipAddress, err
 		}
 	}
 	if node == nodeCount {
 		// Record is empty
-		return 0, nil
+		return 0, int(i), ipAddress, nil
 	} else if node > nodeCount {
-		return node, nil
+		return node, int(i), ipAddress, nil
 	}
 
-	return 0, newInvalidDatabaseError("invalid node in search tree")
+	return 0, int(i), ipAddress, newInvalidDatabaseError("invalid node in search tree")
 }
 
 func (r *Reader) readNode(nodeNumber uint, index uint) (uint, error) {

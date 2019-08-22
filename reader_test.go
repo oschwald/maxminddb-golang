@@ -51,6 +51,119 @@ func TestReaderBytes(t *testing.T) {
 	}
 }
 
+func TestLookupNetwork(t *testing.T) {
+	bigInt := new(big.Int)
+	bigInt.SetString("1329227995784915872903807060280344576", 10)
+	decoderRecord := map[string]interface{}{"array": []interface{}{uint64(1),
+		uint64(2),
+		uint64(3)},
+		"boolean": true,
+		"bytes": []uint8{
+			0x0,
+			0x0,
+			0x0,
+			0x2a,
+		},
+		"double": 42.123456,
+		"float":  float32(1.1),
+		"int32":  -268435456,
+		"map": map[string]interface{}{
+			"mapX": map[string]interface{}{
+				"arrayX": []interface{}{
+					uint64(0x7),
+					uint64(0x8),
+					uint64(0x9)},
+				"utf8_stringX": "hello",
+			},
+		},
+		"uint128":     bigInt,
+		"uint16":      uint64(0x64),
+		"uint32":      uint64(0x10000000),
+		"uint64":      uint64(0x1000000000000000),
+		"utf8_string": "unicode! ☯ - ♫",
+	}
+
+	tests := []struct {
+		IP             net.IP
+		DBFile         string
+		ExpectedCIDR   string
+		ExpectedRecord interface{}
+		ExpectedOK     bool
+	}{
+		// XXX - add test of IPv4 lookup in IPv6 database with no IPv4 subtree
+		{
+			IP:             net.ParseIP("1.1.1.1"),
+			DBFile:         "MaxMind-DB-test-ipv6-32.mmdb",
+			ExpectedCIDR:   "1.0.0.0/8",
+			ExpectedRecord: nil,
+			ExpectedOK:     false,
+		},
+		{
+			IP:             net.ParseIP("::1:ffff:ffff"),
+			DBFile:         "MaxMind-DB-test-ipv6-24.mmdb",
+			ExpectedCIDR:   "::1:ffff:ffff/128",
+			ExpectedRecord: map[string]interface{}{"ip": "::1:ffff:ffff"},
+			ExpectedOK:     true,
+		},
+		{
+			IP:             net.ParseIP("::2:0:1"),
+			DBFile:         "MaxMind-DB-test-ipv6-24.mmdb",
+			ExpectedCIDR:   "::2:0:0/122",
+			ExpectedRecord: map[string]interface{}{"ip": "::2:0:0"},
+			ExpectedOK:     true,
+		},
+		{
+			IP:             net.ParseIP("1.1.1.1"),
+			DBFile:         "MaxMind-DB-test-ipv4-24.mmdb",
+			ExpectedCIDR:   "1.1.1.1/32",
+			ExpectedRecord: map[string]interface{}{"ip": "1.1.1.1"},
+			ExpectedOK:     true,
+		},
+		{
+			IP:             net.ParseIP("1.1.1.3"),
+			DBFile:         "MaxMind-DB-test-ipv4-24.mmdb",
+			ExpectedCIDR:   "1.1.1.2/31",
+			ExpectedRecord: map[string]interface{}{"ip": "1.1.1.2"},
+			ExpectedOK:     true,
+		},
+		{
+			IP:             net.ParseIP("1.1.1.3"),
+			DBFile:         "MaxMind-DB-test-decoder.mmdb",
+			ExpectedCIDR:   "1.1.1.0/24",
+			ExpectedRecord: decoderRecord,
+			ExpectedOK:     true,
+		},
+		{
+			IP:             net.ParseIP("::ffff:1.1.1.128"),
+			DBFile:         "MaxMind-DB-test-decoder.mmdb",
+			ExpectedCIDR:   "1.1.1.0/24",
+			ExpectedRecord: decoderRecord,
+			ExpectedOK:     true,
+		},
+		{
+			IP:             net.ParseIP("::1.1.1.128"),
+			DBFile:         "MaxMind-DB-test-decoder.mmdb",
+			ExpectedCIDR:   "::101:100/120",
+			ExpectedRecord: decoderRecord,
+			ExpectedOK:     true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(fmt.Sprintf("%s - %s", test.DBFile, test.IP), func(t *testing.T) {
+			var record interface{}
+			reader, err := Open(testFile(test.DBFile))
+			require.NoError(t, err)
+
+			network, ok, err := reader.LookupNetwork(test.IP, &record)
+			require.NoError(t, err)
+			assert.Equal(t, test.ExpectedOK, ok)
+			assert.Equal(t, test.ExpectedCIDR, network.String())
+			assert.Equal(t, test.ExpectedRecord, record)
+		})
+	}
+}
+
 func TestDecodingToInterface(t *testing.T) {
 	reader, err := Open(testFile("MaxMind-DB-test-decoder.mmdb"))
 	require.NoError(t, err, "unexpected error while opening database: %v", err)
