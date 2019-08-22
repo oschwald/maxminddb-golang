@@ -27,8 +27,10 @@ const (
 	_Uint64
 	_Uint128
 	_Slice
-	_Container
-	_Marker
+	// We don't use the next two. They are placeholders. See the spec
+	// for more details.
+	_Container // nolint: deadcode, varcheck
+	_Marker    // nolint: deadcode, varcheck
 	_Bool
 	_Float32
 )
