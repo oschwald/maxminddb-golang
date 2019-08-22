@@ -490,7 +490,7 @@ func (d *decoder) decodePointer(
 	if pointerSize == 4 {
 		prefix = 0
 	} else {
-		prefix = uint(size & 0x7)
+		prefix = size & 0x7
 	}
 	unpacked := uintFromBytes(prefix, pointerBytes)
 
