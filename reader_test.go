@@ -81,6 +81,7 @@ func TestDecodingToInterface(t *testing.T) {
 	assert.Equal(t, record["uint128"], bigInt)
 }
 
+// nolint: maligned
 type TestType struct {
 	Array      []uint                 `maxminddb:"array"`
 	Boolean    bool                   `maxminddb:"boolean"`
@@ -526,9 +527,9 @@ func BenchmarkMaxMindDB(b *testing.B) {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	var result interface{}
 
-	ip := make(net.IP, 4, 4)
+	ip := make(net.IP, 4)
 	for i := 0; i < b.N; i++ {
-		randomIPv4Address(b, r, ip)
+		randomIPv4Address(r, ip)
 		err = db.Lookup(ip, &result)
 		assert.Nil(b, err)
 	}
@@ -548,16 +549,16 @@ func BenchmarkCountryCode(b *testing.B) {
 	r := rand.New(rand.NewSource(0))
 	var result MinCountry
 
-	ip := make(net.IP, 4, 4)
+	ip := make(net.IP, 4)
 	for i := 0; i < b.N; i++ {
-		randomIPv4Address(b, r, ip)
+		randomIPv4Address(r, ip)
 		err = db.Lookup(ip, &result)
 		assert.Nil(b, err)
 	}
 	assert.Nil(b, db.Close(), "error on close")
 }
 
-func randomIPv4Address(b *testing.B, r *rand.Rand, ip []byte) {
+func randomIPv4Address(r *rand.Rand, ip []byte) {
 	num := r.Uint32()
 	ip[0] = byte(num >> 24)
 	ip[1] = byte(num >> 16)
