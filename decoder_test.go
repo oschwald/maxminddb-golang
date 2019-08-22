@@ -216,7 +216,7 @@ func validateDecoding(t *testing.T, tests map[string]interface{}) {
 }
 
 func TestPointers(t *testing.T) {
-	bytes, err := ioutil.ReadFile("test-data/test-data/maps-with-pointers.raw")
+	bytes, err := ioutil.ReadFile(testFile("maps-with-pointers.raw"))
 	require.NoError(t, err)
 	d := decoder{bytes}
 

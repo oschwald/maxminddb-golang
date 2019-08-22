@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"math/rand"
 	"net"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -17,7 +18,7 @@ import (
 func TestReader(t *testing.T) {
 	for _, recordSize := range []uint{24, 28, 32} {
 		for _, ipVersion := range []uint{4, 6} {
-			fileName := fmt.Sprintf("test-data/test-data/MaxMind-DB-test-ipv%d-%d.mmdb", ipVersion, recordSize)
+			fileName := fmt.Sprintf(testFile("MaxMind-DB-test-ipv%d-%d.mmdb"), ipVersion, recordSize)
 			reader, err := Open(fileName)
 			require.NoError(t, err, "unexpected error while opening database: %v", err)
 			checkMetadata(t, reader, ipVersion, recordSize)
@@ -34,7 +35,7 @@ func TestReader(t *testing.T) {
 func TestReaderBytes(t *testing.T) {
 	for _, recordSize := range []uint{24, 28, 32} {
 		for _, ipVersion := range []uint{4, 6} {
-			fileName := fmt.Sprintf("test-data/test-data/MaxMind-DB-test-ipv%d-%d.mmdb", ipVersion, recordSize)
+			fileName := fmt.Sprintf(testFile("MaxMind-DB-test-ipv%d-%d.mmdb"), ipVersion, recordSize)
 			bytes, _ := ioutil.ReadFile(fileName)
 			reader, err := FromBytes(bytes)
 			require.NoError(t, err, "unexpected error while opening bytes: %v", err)
@@ -51,7 +52,7 @@ func TestReaderBytes(t *testing.T) {
 }
 
 func TestDecodingToInterface(t *testing.T) {
-	reader, err := Open("test-data/test-data/MaxMind-DB-test-decoder.mmdb")
+	reader, err := Open(testFile("MaxMind-DB-test-decoder.mmdb"))
 	require.NoError(t, err, "unexpected error while opening database: %v", err)
 
 	var recordInterface interface{}
@@ -98,7 +99,7 @@ type TestType struct {
 }
 
 func TestDecoder(t *testing.T) {
-	reader, err := Open("test-data/test-data/MaxMind-DB-test-decoder.mmdb")
+	reader, err := Open(testFile("MaxMind-DB-test-decoder.mmdb"))
 	require.NoError(t, err)
 
 	verify := func(result TestType) {
@@ -156,7 +157,7 @@ func (t *TestType) method() bool {
 func TestStructInterface(t *testing.T) {
 	var result TestInterface = &TestType{}
 
-	reader, err := Open("test-data/test-data/MaxMind-DB-test-decoder.mmdb")
+	reader, err := Open(testFile("MaxMind-DB-test-decoder.mmdb"))
 	require.NoError(t, err)
 
 	require.NoError(t, reader.Lookup(net.ParseIP("::1.1.1.0"), &result))
@@ -167,7 +168,7 @@ func TestStructInterface(t *testing.T) {
 func TestNonEmptyNilInterface(t *testing.T) {
 	var result TestInterface
 
-	reader, err := Open("test-data/test-data/MaxMind-DB-test-decoder.mmdb")
+	reader, err := Open(testFile("MaxMind-DB-test-decoder.mmdb"))
 	require.NoError(t, err)
 
 	err = reader.Lookup(net.ParseIP("::1.1.1.0"), &result)
@@ -186,7 +187,7 @@ func TestEmbeddedStructAsInterface(t *testing.T) {
 	var city City
 	var result interface{} = city.Traits
 
-	db, err := Open("test-data/test-data/GeoIP2-ISP-Test.mmdb")
+	db, err := Open(testFile("GeoIP2-ISP-Test.mmdb"))
 	require.NoError(t, err)
 
 	assert.NoError(t, db.Lookup(net.ParseIP("1.128.0.0"), &result))
@@ -210,7 +211,7 @@ func TesValueTypeInterface(t *testing.T) {
 	var result ValueTypeTestType
 	result.Boolean = Bool(false)
 
-	reader, err := Open("test-data/test-data/MaxMind-DB-test-decoder.mmdb")
+	reader, err := Open(testFile("MaxMind-DB-test-decoder.mmdb"))
 	require.NoError(t, err)
 	require.NoError(t, reader.Lookup(net.ParseIP("::1.1.1.0"), &result))
 
@@ -251,7 +252,7 @@ type TestPointerType struct {
 }
 
 func TestComplexStructWithNestingAndPointer(t *testing.T) {
-	reader, err := Open("test-data/test-data/MaxMind-DB-test-decoder.mmdb")
+	reader, err := Open(testFile("MaxMind-DB-test-decoder.mmdb"))
 	assert.NoError(t, err)
 
 	var result TestPointerType
@@ -282,7 +283,7 @@ func TestComplexStructWithNestingAndPointer(t *testing.T) {
 }
 
 func TestNestedOffsetDecode(t *testing.T) {
-	db, err := Open("test-data/test-data/GeoIP2-City-Test.mmdb")
+	db, err := Open(testFile("GeoIP2-City-Test.mmdb"))
 	require.NoError(t, err)
 
 	off, err := db.LookupOffset(net.ParseIP("81.2.69.142"))
@@ -321,7 +322,7 @@ func TestNestedOffsetDecode(t *testing.T) {
 }
 
 func TestDecodingUint16IntoInt(t *testing.T) {
-	reader, err := Open("test-data/test-data/MaxMind-DB-test-decoder.mmdb")
+	reader, err := Open(testFile("MaxMind-DB-test-decoder.mmdb"))
 	require.NoError(t, err, "unexpected error while opening database: %v", err)
 
 	var result struct {
@@ -334,7 +335,7 @@ func TestDecodingUint16IntoInt(t *testing.T) {
 }
 
 func TestIpv6inIpv4(t *testing.T) {
-	reader, err := Open("test-data/test-data/MaxMind-DB-test-ipv4-24.mmdb")
+	reader, err := Open(testFile("MaxMind-DB-test-ipv4-24.mmdb"))
 	require.NoError(t, err, "unexpected error while opening database: %v", err)
 
 	var result TestType
@@ -349,7 +350,7 @@ func TestIpv6inIpv4(t *testing.T) {
 }
 
 func TestBrokenDoubleDatabase(t *testing.T) {
-	reader, err := Open("test-data/test-data/GeoIP2-City-Test-Broken-Double-Format.mmdb")
+	reader, err := Open(testFile("GeoIP2-City-Test-Broken-Double-Format.mmdb"))
 	require.NoError(t, err, "unexpected error while opening database: %v", err)
 
 	var result interface{}
@@ -361,7 +362,7 @@ func TestBrokenDoubleDatabase(t *testing.T) {
 }
 
 func TestInvalidNodeCountDatabase(t *testing.T) {
-	_, err := Open("test-data/test-data/GeoIP2-City-Test-Invalid-Node-Count.mmdb")
+	_, err := Open(testFile("GeoIP2-City-Test-Invalid-Node-Count.mmdb"))
 
 	expected := newInvalidDatabaseError("the MaxMind DB contains invalid metadata")
 	assert.Equal(t, err, expected)
@@ -380,7 +381,7 @@ func TestNonDatabase(t *testing.T) {
 }
 
 func TestDecodingToNonPointer(t *testing.T) {
-	reader, _ := Open("test-data/test-data/MaxMind-DB-test-decoder.mmdb")
+	reader, _ := Open(testFile("MaxMind-DB-test-decoder.mmdb"))
 
 	var recordInterface interface{}
 	err := reader.Lookup(net.ParseIP("::1.1.1.0"), recordInterface)
@@ -389,7 +390,7 @@ func TestDecodingToNonPointer(t *testing.T) {
 }
 
 func TestNilLookup(t *testing.T) {
-	reader, _ := Open("test-data/test-data/MaxMind-DB-test-decoder.mmdb")
+	reader, _ := Open(testFile("MaxMind-DB-test-decoder.mmdb"))
 
 	var recordInterface interface{}
 	err := reader.Lookup(nil, recordInterface)
@@ -398,7 +399,7 @@ func TestNilLookup(t *testing.T) {
 }
 
 func TestUsingClosedDatabase(t *testing.T) {
-	reader, _ := Open("test-data/test-data/MaxMind-DB-test-decoder.mmdb")
+	reader, _ := Open(testFile("MaxMind-DB-test-decoder.mmdb"))
 	reader.Close()
 
 	var recordInterface interface{}
@@ -564,4 +565,8 @@ func randomIPv4Address(r *rand.Rand, ip []byte) {
 	ip[1] = byte(num >> 16)
 	ip[2] = byte(num >> 8)
 	ip[3] = byte(num)
+}
+
+func testFile(file string) string {
+	return filepath.Join("test-data/test-data", file)
 }
