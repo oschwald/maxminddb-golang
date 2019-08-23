@@ -634,7 +634,7 @@ func checkIpv6(t *testing.T, reader *Reader) {
 	}
 }
 
-func BenchmarkMaxMindDB(b *testing.B) {
+func BenchmarkLookup(b *testing.B) {
 	db, err := Open("GeoLite2-City.mmdb")
 	require.NoError(b, err)
 
