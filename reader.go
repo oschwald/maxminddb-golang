@@ -104,8 +104,12 @@ func (r *Reader) startNode() (uint, error) {
 	return node, err
 }
 
-// Lookup takes an IP address as a net.IP structure and a pointer to the
-// result value to Decode into.
+// Lookup retrieves the database record for ipAddress and stores it in the
+// value pointed to be result. If result is nil or not a pointer, an error
+// is returned. If the data in the database record cannot be stored in
+// result because of type differences, an UnmarshalTypeError is returned.
+// If the database is invalid or otherwise cannot be read, an
+// InvalidDatabaseError is returned.
 func (r *Reader) Lookup(ipAddress net.IP, result interface{}) error {
 	if r.buffer == nil {
 		return errors.New("cannot call Lookup on a closed database")
