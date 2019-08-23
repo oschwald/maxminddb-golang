@@ -652,6 +652,24 @@ func BenchmarkLookup(b *testing.B) {
 	assert.NoError(b, db.Close(), "error on close")
 }
 
+func BenchmarkLookupNetwork(b *testing.B) {
+	db, err := Open("GeoLite2-City.mmdb")
+	require.NoError(b, err)
+
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	var result interface{}
+
+	ip := make(net.IP, 4)
+	for i := 0; i < b.N; i++ {
+		randomIPv4Address(r, ip)
+		_, _, err = db.LookupNetwork(ip, &result)
+		if err != nil {
+			b.Error(err)
+		}
+	}
+	assert.NoError(b, db.Close(), "error on close")
+}
+
 func BenchmarkCountryCode(b *testing.B) {
 	db, err := Open("GeoLite2-City.mmdb")
 	require.NoError(b, err)
