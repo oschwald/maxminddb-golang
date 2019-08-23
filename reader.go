@@ -104,39 +104,39 @@ func (r *Reader) startNode() (uint, error) {
 	return node, err
 }
 
-// Lookup retrieves the database record for ipAddress and stores it in the
-// value pointed to be result. If result is nil or not a pointer, an error
-// is returned. If the data in the database record cannot be stored in
-// result because of type differences, an UnmarshalTypeError is returned.
-// If the database is invalid or otherwise cannot be read, an
-// InvalidDatabaseError is returned.
-func (r *Reader) Lookup(ipAddress net.IP, result interface{}) error {
+// Lookup retrieves the database record for ip and stores it in the value
+// pointed to be result. If result is nil or not a pointer, an error is
+// returned. If the data in the database record cannot be stored in result
+// because of type differences, an UnmarshalTypeError is returned. If the
+// database is invalid or otherwise cannot be read, an InvalidDatabaseError
+// is returned.
+func (r *Reader) Lookup(ip net.IP, result interface{}) error {
 	if r.buffer == nil {
 		return errors.New("cannot call Lookup on a closed database")
 	}
-	pointer, _, _, err := r.lookupPointer(ipAddress)
+	pointer, _, _, err := r.lookupPointer(ip)
 	if pointer == 0 || err != nil {
 		return err
 	}
 	return r.retrieveData(pointer, result)
 }
 
-// LookupNetwork retrieves the database record for ipAddress and stores it in
-// the value pointed to be result. The network returned is the network
-// associated with the data record in the database. The ok return value
-// indicates whether the database contained a record for the ipAddress.
+// LookupNetwork retrieves the database record for ip and stores it in the
+// value pointed to be result. The network returned is the network associated
+// with the data record in the database. The ok return value indicates whether
+// the database contained a record for the ip.
 //
 // If result is nil or not a pointer, an error is returned. If the data in the
 // database record cannot be stored in result because of type differences, an
 // UnmarshalTypeError is returned. If the database is invalid or otherwise
 // cannot be read, an InvalidDatabaseError is returned.
-func (r *Reader) LookupNetwork(ipAddress net.IP, result interface{}) (network *net.IPNet, ok bool, err error) {
+func (r *Reader) LookupNetwork(ip net.IP, result interface{}) (network *net.IPNet, ok bool, err error) {
 	if r.buffer == nil {
 		return nil, false, errors.New("cannot call Lookup on a closed database")
 	}
-	pointer, prefixLength, ipAddress, err := r.lookupPointer(ipAddress)
+	pointer, prefixLength, ip, err := r.lookupPointer(ip)
 
-	network = r.cidr(ipAddress, prefixLength)
+	network = r.cidr(ip, prefixLength)
 	if pointer == 0 || err != nil {
 		return network, false, err
 	}
@@ -149,22 +149,22 @@ func (r *Reader) LookupNetwork(ipAddress net.IP, result interface{}) (network *n
 // otherwise be extracted by passing the returned offset to Decode. LookupOffset
 // is an advanced API, which exists to provide clients with a means to cache
 // previously-decoded records.
-func (r *Reader) LookupOffset(ipAddress net.IP) (uintptr, error) {
+func (r *Reader) LookupOffset(ip net.IP) (uintptr, error) {
 	if r.buffer == nil {
 		return 0, errors.New("cannot call LookupOffset on a closed database")
 	}
-	pointer, _, _, err := r.lookupPointer(ipAddress)
+	pointer, _, _, err := r.lookupPointer(ip)
 	if pointer == 0 || err != nil {
 		return NotFound, err
 	}
 	return r.resolveDataPointer(pointer)
 }
 
-func (r *Reader) cidr(ipAddress net.IP, prefixLength int) *net.IPNet {
-	ipBitLength := len(ipAddress) * 8
+func (r *Reader) cidr(ip net.IP, prefixLength int) *net.IPNet {
+	ipBitLength := len(ip) * 8
 	mask := net.CIDRMask(prefixLength, ipBitLength)
 
-	return &net.IPNet{IP: ipAddress.Mask(mask), Mask: mask}
+	return &net.IPNet{IP: ip.Mask(mask), Mask: mask}
 }
 
 // Decode the record at |offset| into |result|. The result value pointed to
@@ -200,20 +200,20 @@ func (r *Reader) decode(offset uintptr, result interface{}) error {
 	return err
 }
 
-func (r *Reader) lookupPointer(ipAddress net.IP) (uint, int, net.IP, error) {
-	if ipAddress == nil {
-		return 0, 0, ipAddress, errors.New("ipAddress passed to Lookup cannot be nil")
+func (r *Reader) lookupPointer(ip net.IP) (uint, int, net.IP, error) {
+	if ip == nil {
+		return 0, 0, ip, errors.New("IP passed to Lookup cannot be nil")
 	}
 
-	ipV4Address := ipAddress.To4()
+	ipV4Address := ip.To4()
 	if ipV4Address != nil {
-		ipAddress = ipV4Address
+		ip = ipV4Address
 	}
-	if len(ipAddress) == 16 && r.Metadata.IPVersion == 4 {
-		return 0, 0, ipAddress, fmt.Errorf("error looking up '%s': you attempted to look up an IPv6 address in an IPv4-only database", ipAddress.String())
+	if len(ip) == 16 && r.Metadata.IPVersion == 4 {
+		return 0, 0, ip, fmt.Errorf("error looking up '%s': you attempted to look up an IPv6 address in an IPv4-only database", ip.String())
 	}
 
-	bitCount := uint(len(ipAddress) * 8)
+	bitCount := uint(len(ip) * 8)
 
 	var node uint
 	if bitCount == 32 {
@@ -224,22 +224,22 @@ func (r *Reader) lookupPointer(ipAddress net.IP) (uint, int, net.IP, error) {
 
 	i := uint(0)
 	for ; i < bitCount && node < nodeCount; i++ {
-		bit := uint(1) & (uint(ipAddress[i>>3]) >> (7 - (i % 8)))
+		bit := uint(1) & (uint(ip[i>>3]) >> (7 - (i % 8)))
 
 		var err error
 		node, err = r.readNode(node, bit)
 		if err != nil {
-			return 0, int(i), ipAddress, err
+			return 0, int(i), ip, err
 		}
 	}
 	if node == nodeCount {
 		// Record is empty
-		return 0, int(i), ipAddress, nil
+		return 0, int(i), ip, nil
 	} else if node > nodeCount {
-		return node, int(i), ipAddress, nil
+		return node, int(i), ip, nil
 	}
 
-	return 0, int(i), ipAddress, newInvalidDatabaseError("invalid node in search tree")
+	return 0, int(i), ip, newInvalidDatabaseError("invalid node in search tree")
 }
 
 func (r *Reader) readNode(nodeNumber uint, index uint) (uint, error) {

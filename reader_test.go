@@ -507,7 +507,7 @@ func TestNilLookup(t *testing.T) {
 
 	var recordInterface interface{}
 	err := reader.Lookup(nil, recordInterface)
-	assert.Equal(t, err.Error(), "ipAddress passed to Lookup cannot be nil")
+	assert.Equal(t, err.Error(), "IP passed to Lookup cannot be nil")
 	assert.NoError(t, reader.Close(), "error on close")
 }
 
