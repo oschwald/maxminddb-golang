@@ -21,11 +21,12 @@ var metadataStartMarker = []byte("\xAB\xCD\xEFMaxMind.com")
 // Reader holds the data corresponding to the MaxMind DB file. Its only public
 // field is Metadata, which contains the metadata from the MaxMind DB file.
 type Reader struct {
-	hasMappedFile bool
-	buffer        []byte
-	decoder       decoder
-	Metadata      Metadata
-	ipv4Start     uint
+	hasMappedFile     bool
+	buffer            []byte
+	decoder           decoder
+	Metadata          Metadata
+	ipv4Start         uint
+	ipv4StartBitDepth int
 }
 
 // Metadata holds the metadata decoded from the MaxMind DB file. In particular
@@ -81,27 +82,30 @@ func FromBytes(buffer []byte) (*Reader, error) {
 		ipv4Start: 0,
 	}
 
-	reader.ipv4Start, err = reader.startNode()
+	err = reader.setIPv4Start()
 
 	return reader, err
 }
 
-func (r *Reader) startNode() (uint, error) {
+func (r *Reader) setIPv4Start() error {
 	if r.Metadata.IPVersion != 6 {
-		return 0, nil
+		return nil
 	}
 
 	nodeCount := r.Metadata.NodeCount
 
 	node := uint(0)
 	var err error
-	for i := 0; i < 96 && node < nodeCount; i++ {
+	i := 0
+	for ; i < 96 && node < nodeCount; i++ {
 		node, err = r.readNode(node, 0)
 		if err != nil {
-			return 0, err
+			return err
 		}
 	}
-	return node, err
+	r.ipv4Start = node
+	r.ipv4StartBitDepth = i
+	return err
 }
 
 // Lookup retrieves the database record for ip and stores it in the value
@@ -161,9 +165,16 @@ func (r *Reader) LookupOffset(ip net.IP) (uintptr, error) {
 }
 
 func (r *Reader) cidr(ip net.IP, prefixLength int) *net.IPNet {
-	ipBitLength := len(ip) * 8
-	mask := net.CIDRMask(prefixLength, ipBitLength)
+	// This is necessary as the node that the IPv4 start is at may
+	// be at a bit depth that is less that 96, i.e., ipv4Start points
+	// to a leaf node.
+	if r.Metadata.IPVersion == 6 &&
+		len(ip) == net.IPv4len &&
+		r.ipv4StartBitDepth != 96 {
+		return &net.IPNet{IP: net.ParseIP("::"), Mask: net.CIDRMask(r.ipv4StartBitDepth, 128)}
+	}
 
+	mask := net.CIDRMask(prefixLength, len(ip)*8)
 	return &net.IPNet{IP: ip.Mask(mask), Mask: mask}
 }
 

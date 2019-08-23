@@ -90,7 +90,6 @@ func TestLookupNetwork(t *testing.T) {
 		ExpectedRecord interface{}
 		ExpectedOK     bool
 	}{
-		// XXX - add test of IPv4 lookup in IPv6 database with no IPv4 subtree
 		{
 			IP:             net.ParseIP("1.1.1.1"),
 			DBFile:         "MaxMind-DB-test-ipv6-32.mmdb",
@@ -146,6 +145,34 @@ func TestLookupNetwork(t *testing.T) {
 			ExpectedCIDR:   "::101:100/120",
 			ExpectedRecord: decoderRecord,
 			ExpectedOK:     true,
+		},
+		{
+			IP:             net.ParseIP("200.0.2.1"),
+			DBFile:         "MaxMind-DB-no-ipv4-search-tree.mmdb",
+			ExpectedCIDR:   "::/64",
+			ExpectedRecord: "::0/64",
+			ExpectedOK:     true,
+		},
+		{
+			IP:             net.ParseIP("::200.0.2.1"),
+			DBFile:         "MaxMind-DB-no-ipv4-search-tree.mmdb",
+			ExpectedCIDR:   "::/64",
+			ExpectedRecord: "::0/64",
+			ExpectedOK:     true,
+		},
+		{
+			IP:             net.ParseIP("0:0:0:0:ffff:ffff:ffff:ffff"),
+			DBFile:         "MaxMind-DB-no-ipv4-search-tree.mmdb",
+			ExpectedCIDR:   "::/64",
+			ExpectedRecord: "::0/64",
+			ExpectedOK:     true,
+		},
+		{
+			IP:             net.ParseIP("ef00::"),
+			DBFile:         "MaxMind-DB-no-ipv4-search-tree.mmdb",
+			ExpectedCIDR:   "8000::/1",
+			ExpectedRecord: nil,
+			ExpectedOK:     false,
 		},
 	}
 
