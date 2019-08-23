@@ -645,7 +645,9 @@ func BenchmarkLookup(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		randomIPv4Address(r, ip)
 		err = db.Lookup(ip, &result)
-		assert.NoError(b, err)
+		if err != nil {
+			b.Error(err)
+		}
 	}
 	assert.NoError(b, db.Close(), "error on close")
 }
@@ -667,7 +669,9 @@ func BenchmarkCountryCode(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		randomIPv4Address(r, ip)
 		err = db.Lookup(ip, &result)
-		assert.NoError(b, err)
+		if err != nil {
+			b.Error(err)
+		}
 	}
 	assert.NoError(b, db.Close(), "error on close")
 }
