@@ -23,6 +23,7 @@ var metadataStartMarker = []byte("\xAB\xCD\xEFMaxMind.com")
 type Reader struct {
 	hasMappedFile     bool
 	buffer            []byte
+	nodeReader        nodeReader
 	decoder           decoder
 	Metadata          Metadata
 	ipv4Start         uint
@@ -75,37 +76,46 @@ func FromBytes(buffer []byte) (*Reader, error) {
 		buffer[searchTreeSize+dataSectionSeparatorSize : metadataStart-len(metadataStartMarker)],
 	}
 
-	reader := &Reader{
-		buffer:    buffer,
-		decoder:   d,
-		Metadata:  metadata,
-		ipv4Start: 0,
+	nodeBuffer := buffer[:searchTreeSize]
+	var nodeReader nodeReader
+	switch metadata.RecordSize {
+	case 24:
+		nodeReader = nodeReader24{buffer: nodeBuffer}
+	case 28:
+		nodeReader = nodeReader28{buffer: nodeBuffer}
+	case 32:
+		nodeReader = nodeReader32{buffer: nodeBuffer}
+	default:
+		return nil, newInvalidDatabaseError("unknown record size: %d", metadata.RecordSize)
 	}
 
-	err = reader.setIPv4Start()
+	reader := &Reader{
+		buffer:     buffer,
+		nodeReader: nodeReader,
+		decoder:    d,
+		Metadata:   metadata,
+		ipv4Start:  0,
+	}
+
+	reader.setIPv4Start()
 
 	return reader, err
 }
 
-func (r *Reader) setIPv4Start() error {
+func (r *Reader) setIPv4Start() {
 	if r.Metadata.IPVersion != 6 {
-		return nil
+		return
 	}
 
 	nodeCount := r.Metadata.NodeCount
 
 	node := uint(0)
-	var err error
 	i := 0
 	for ; i < 96 && node < nodeCount; i++ {
-		node, err = r.readNode(node, 0)
-		if err != nil {
-			return err
-		}
+		node = r.nodeReader.readLeft(r.nodeOffset(node))
 	}
 	r.ipv4Start = node
 	r.ipv4StartBitDepth = i
-	return err
 }
 
 // Lookup retrieves the database record for ip and stores it in the value
@@ -241,10 +251,11 @@ func (r *Reader) lookupPointer(ip net.IP) (uint, int, net.IP, error) {
 	for ; i < bitCount && node < nodeCount; i++ {
 		bit := uint(1) & (uint(ip[i>>3]) >> (7 - (i % 8)))
 
-		var err error
-		node, err = r.readNode(node, bit)
-		if err != nil {
-			return 0, int(i), ip, err
+		offset := r.nodeOffset(node)
+		if bit == 0 {
+			node = r.nodeReader.readLeft(offset)
+		} else {
+			node = r.nodeReader.readRight(offset)
 		}
 	}
 	if node == nodeCount {
@@ -257,33 +268,8 @@ func (r *Reader) lookupPointer(ip net.IP) (uint, int, net.IP, error) {
 	return 0, int(i), ip, newInvalidDatabaseError("invalid node in search tree")
 }
 
-func (r *Reader) readNode(nodeNumber uint, index uint) (uint, error) {
-	RecordSize := r.Metadata.RecordSize
-
-	baseOffset := nodeNumber * RecordSize / 4
-
-	var nodeBytes []byte
-	var prefix uint
-	switch RecordSize {
-	case 24:
-		offset := baseOffset + index*3
-		nodeBytes = r.buffer[offset : offset+3]
-	case 28:
-		prefix = uint(r.buffer[baseOffset+3])
-		if index != 0 {
-			prefix &= 0x0F
-		} else {
-			prefix = (0xF0 & prefix) >> 4
-		}
-		offset := baseOffset + index*4
-		nodeBytes = r.buffer[offset : offset+3]
-	case 32:
-		offset := baseOffset + index*4
-		nodeBytes = r.buffer[offset : offset+4]
-	default:
-		return 0, newInvalidDatabaseError("unknown record size: %d", RecordSize)
-	}
-	return uintFromBytes(prefix, nodeBytes), nil
+func (r *Reader) nodeOffset(node uint) uint {
+	return node * r.Metadata.RecordSize / 4
 }
 
 func (r *Reader) retrieveData(pointer uint, result interface{}) error {

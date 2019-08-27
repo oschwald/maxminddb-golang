@@ -60,11 +60,8 @@ func (n *Networks) Next() bool {
 			}
 			ipRight[node.bit>>3] |= 1 << (7 - (node.bit % 8))
 
-			rightPointer, err := n.reader.readNode(node.pointer, 1)
-			if err != nil {
-				n.err = err
-				return false
-			}
+			offset := n.reader.nodeOffset(node.pointer)
+			rightPointer := n.reader.nodeReader.readRight(offset)
 
 			node.bit++
 			n.nodes = append(n.nodes, netNode{
@@ -73,11 +70,7 @@ func (n *Networks) Next() bool {
 				bit:     node.bit,
 			})
 
-			node.pointer, err = n.reader.readNode(node.pointer, 0)
-			if err != nil {
-				n.err = err
-				return false
-			}
+			node.pointer = n.reader.nodeReader.readLeft(offset)
 		}
 	}
 
