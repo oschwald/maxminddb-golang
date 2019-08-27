@@ -167,7 +167,11 @@ func (r *Reader) LookupOffset(ip net.IP) (uintptr, error) {
 func (r *Reader) cidr(ip net.IP, prefixLength int) *net.IPNet {
 	// This is necessary as the node that the IPv4 start is at may
 	// be at a bit depth that is less that 96, i.e., ipv4Start points
-	// to a leaf node.
+	// to a leaf node. For instance, if a record was inserted at ::/8,
+	// the ipv4Start would point directly at the leaf node for the
+	// record and would have a bit depth of 8. This would not happen
+	// with databases currently distributed by MaxMind as all of them
+	// have an IPv4 subtree that is greater than a single node.
 	if r.Metadata.IPVersion == 6 &&
 		len(ip) == net.IPv4len &&
 		r.ipv4StartBitDepth != 96 {
