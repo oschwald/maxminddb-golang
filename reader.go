@@ -109,7 +109,7 @@ func (r *Reader) setIPv4Start() error {
 }
 
 // Lookup retrieves the database record for ip and stores it in the value
-// pointed to be result. If result is nil or not a pointer, an error is
+// pointed to by result. If result is nil or not a pointer, an error is
 // returned. If the data in the database record cannot be stored in result
 // because of type differences, an UnmarshalTypeError is returned. If the
 // database is invalid or otherwise cannot be read, an InvalidDatabaseError
@@ -126,7 +126,7 @@ func (r *Reader) Lookup(ip net.IP, result interface{}) error {
 }
 
 // LookupNetwork retrieves the database record for ip and stores it in the
-// value pointed to be result. The network returned is the network associated
+// value pointed to by result. The network returned is the network associated
 // with the data record in the database. The ok return value indicates whether
 // the database contained a record for the ip.
 //
