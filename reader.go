@@ -28,6 +28,7 @@ type Reader struct {
 	Metadata          Metadata
 	ipv4Start         uint
 	ipv4StartBitDepth int
+	nodeOffsetMult    uint
 }
 
 // Metadata holds the metadata decoded from the MaxMind DB file. In particular
@@ -90,11 +91,12 @@ func FromBytes(buffer []byte) (*Reader, error) {
 	}
 
 	reader := &Reader{
-		buffer:     buffer,
-		nodeReader: nodeReader,
-		decoder:    d,
-		Metadata:   metadata,
-		ipv4Start:  0,
+		buffer:         buffer,
+		nodeReader:     nodeReader,
+		decoder:        d,
+		Metadata:       metadata,
+		ipv4Start:      0,
+		nodeOffsetMult: metadata.RecordSize / 4,
 	}
 
 	reader.setIPv4Start()
@@ -112,7 +114,7 @@ func (r *Reader) setIPv4Start() {
 	node := uint(0)
 	i := 0
 	for ; i < 96 && node < nodeCount; i++ {
-		node = r.nodeReader.readLeft(r.nodeOffset(node))
+		node = r.nodeReader.readLeft(node * r.nodeOffsetMult)
 	}
 	r.ipv4Start = node
 	r.ipv4StartBitDepth = i
@@ -251,7 +253,7 @@ func (r *Reader) lookupPointer(ip net.IP) (uint, int, net.IP, error) {
 	for ; i < bitCount && node < nodeCount; i++ {
 		bit := uint(1) & (uint(ip[i>>3]) >> (7 - (i % 8)))
 
-		offset := r.nodeOffset(node)
+		offset := node * r.nodeOffsetMult
 		if bit == 0 {
 			node = r.nodeReader.readLeft(offset)
 		} else {
@@ -266,10 +268,6 @@ func (r *Reader) lookupPointer(ip net.IP) (uint, int, net.IP, error) {
 	}
 
 	return 0, int(i), ip, newInvalidDatabaseError("invalid node in search tree")
-}
-
-func (r *Reader) nodeOffset(node uint) uint {
-	return node * r.Metadata.RecordSize / 4
 }
 
 func (r *Reader) retrieveData(pointer uint, result interface{}) error {

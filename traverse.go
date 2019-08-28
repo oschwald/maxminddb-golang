@@ -60,7 +60,7 @@ func (n *Networks) Next() bool {
 			}
 			ipRight[node.bit>>3] |= 1 << (7 - (node.bit % 8))
 
-			offset := n.reader.nodeOffset(node.pointer)
+			offset := node.pointer * n.reader.nodeOffsetMult
 			rightPointer := n.reader.nodeReader.readRight(offset)
 
 			node.bit++
