@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBool(t *testing.T) {
@@ -69,9 +70,9 @@ func TestInt32(t *testing.T) {
 
 func TestMap(t *testing.T) {
 	maps := map[string]interface{}{
-		"e0":                                         map[string]interface{}{},
-		"e142656e43466f6f":                           map[string]interface{}{"en": "Foo"},
-		"e242656e43466f6f427a6843e4baba":             map[string]interface{}{"en": "Foo", "zh": "人"},
+		"e0":                             map[string]interface{}{},
+		"e142656e43466f6f":               map[string]interface{}{"en": "Foo"},
+		"e242656e43466f6f427a6843e4baba": map[string]interface{}{"en": "Foo", "zh": "人"},
 		"e1446e616d65e242656e43466f6f427a6843e4baba": map[string]interface{}{"name": map[string]interface{}{"en": "Foo", "zh": "人"}},
 		"e1496c616e677561676573020442656e427a68":     map[string]interface{}{"languages": []interface{}{"en", "zh"}},
 	}
@@ -205,7 +206,7 @@ func validateDecoding(t *testing.T, tests map[string]interface{}) {
 
 		var result interface{}
 		_, err := d.decode(0, reflect.ValueOf(&result), 0)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 
 		if !reflect.DeepEqual(result, expected) {
 			// A big case statement would produce nicer errors
@@ -215,8 +216,8 @@ func validateDecoding(t *testing.T, tests map[string]interface{}) {
 }
 
 func TestPointers(t *testing.T) {
-	bytes, err := ioutil.ReadFile("test-data/test-data/maps-with-pointers.raw")
-	assert.Nil(t, err)
+	bytes, err := ioutil.ReadFile(testFile("maps-with-pointers.raw"))
+	require.NoError(t, err)
 	d := decoder{bytes}
 
 	expected := map[uint]map[string]string{
@@ -231,7 +232,7 @@ func TestPointers(t *testing.T) {
 	for offset, expectedValue := range expected {
 		var actual map[string]string
 		_, err := d.decode(offset, reflect.ValueOf(&actual), 0)
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 		if !reflect.DeepEqual(actual, expectedValue) {
 			t.Errorf("Decode for pointer at %d failed", offset)
 		}

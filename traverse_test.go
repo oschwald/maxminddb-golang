@@ -11,7 +11,7 @@ import (
 func TestNetworks(t *testing.T) {
 	for _, recordSize := range []uint{24, 28, 32} {
 		for _, ipVersion := range []uint{4, 6} {
-			fileName := fmt.Sprintf("test-data/test-data/MaxMind-DB-test-ipv%d-%d.mmdb", ipVersion, recordSize)
+			fileName := testFile(fmt.Sprintf("MaxMind-DB-test-ipv%d-%d.mmdb", ipVersion, recordSize))
 			reader, err := Open(fileName)
 			require.Nil(t, err, "unexpected error while opening database: %v", err)
 			defer reader.Close()
@@ -33,7 +33,7 @@ func TestNetworks(t *testing.T) {
 }
 
 func TestNetworksWithInvalidSearchTree(t *testing.T) {
-	reader, err := Open("test-data/test-data/MaxMind-DB-test-broken-search-tree-24.mmdb")
+	reader, err := Open(testFile("MaxMind-DB-test-broken-search-tree-24.mmdb"))
 	require.Nil(t, err, "unexpected error while opening database: %v", err)
 	defer reader.Close()
 
