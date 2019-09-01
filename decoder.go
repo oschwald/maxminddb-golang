@@ -535,52 +535,13 @@ func (d *decoder) decodeString(size uint, offset uint) (string, uint) {
 	return string(d.buffer[offset:newOffset]), newOffset
 }
 
-type fieldsType struct {
-	namedFields     map[string]int
-	anonymousFields []int
-}
-
-var (
-	fieldMap   = map[reflect.Type]*fieldsType{}
-	fieldMapMu sync.RWMutex
-)
-
 func (d *decoder) decodeStruct(
 	size uint,
 	offset uint,
 	result reflect.Value,
 	depth int,
 ) (uint, error) {
-	resultType := result.Type()
-
-	fieldMapMu.RLock()
-	fields, ok := fieldMap[resultType]
-	fieldMapMu.RUnlock()
-	if !ok {
-		numFields := resultType.NumField()
-		namedFields := make(map[string]int, numFields)
-		var anonymous []int
-		for i := 0; i < numFields; i++ {
-			field := resultType.Field(i)
-
-			fieldName := field.Name
-			if tag := field.Tag.Get("maxminddb"); tag != "" {
-				if tag == "-" {
-					continue
-				}
-				fieldName = tag
-			}
-			if field.Anonymous {
-				anonymous = append(anonymous, i)
-				continue
-			}
-			namedFields[fieldName] = i
-		}
-		fieldMapMu.Lock()
-		fields = &fieldsType{namedFields, anonymous}
-		fieldMap[resultType] = fields
-		fieldMapMu.Unlock()
-	}
+	fields := cachedFields(result)
 
 	// This fills in embedded structs
 	for _, i := range fields.anonymousFields {
@@ -617,6 +578,44 @@ func (d *decoder) decodeStruct(
 		}
 	}
 	return offset, nil
+}
+
+type fieldsType struct {
+	namedFields     map[string]int
+	anonymousFields []int
+}
+
+var fieldsMap sync.Map
+
+func cachedFields(result reflect.Value) *fieldsType {
+	resultType := result.Type()
+
+	if fields, ok := fieldsMap.Load(resultType); ok {
+		return fields.(*fieldsType)
+	}
+	numFields := resultType.NumField()
+	namedFields := make(map[string]int, numFields)
+	var anonymous []int
+	for i := 0; i < numFields; i++ {
+		field := resultType.Field(i)
+
+		fieldName := field.Name
+		if tag := field.Tag.Get("maxminddb"); tag != "" {
+			if tag == "-" {
+				continue
+			}
+			fieldName = tag
+		}
+		if field.Anonymous {
+			anonymous = append(anonymous, i)
+			continue
+		}
+		namedFields[fieldName] = i
+	}
+	fields := &fieldsType{namedFields, anonymous}
+	fieldsMap.Store(resultType, fields)
+
+	return fields
 }
 
 func (d *decoder) decodeUint(size uint, offset uint) (uint64, uint) {
