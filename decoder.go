@@ -459,6 +459,8 @@ func (d *decoder) decodeMap(
 		result.Set(reflect.MakeMapWithSize(result.Type(), int(size)))
 	}
 
+	mapType := result.Type()
+	keyValue := reflect.New(mapType.Key()).Elem()
 	for i := uint(0); i < size; i++ {
 		var key []byte
 		var err error
@@ -473,7 +475,9 @@ func (d *decoder) decodeMap(
 		if err != nil {
 			return 0, err
 		}
-		result.SetMapIndex(reflect.ValueOf(string(key)), value.Elem())
+
+		keyValue.SetString(string(key))
+		result.SetMapIndex(keyValue, value.Elem())
 	}
 	return offset, nil
 }
