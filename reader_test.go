@@ -661,7 +661,7 @@ func checkIpv6(t *testing.T, reader *Reader) {
 	}
 }
 
-func BenchmarkLookup(b *testing.B) {
+func BenchmarkInterfaceLookup(b *testing.B) {
 	db, err := Open("GeoLite2-City.mmdb")
 	require.NoError(b, err)
 
@@ -679,7 +679,7 @@ func BenchmarkLookup(b *testing.B) {
 	assert.NoError(b, db.Close(), "error on close")
 }
 
-func BenchmarkLookupNetwork(b *testing.B) {
+func BenchmarkInterfaceLookupNetwork(b *testing.B) {
 	db, err := Open("GeoLite2-City.mmdb")
 	require.NoError(b, err)
 
@@ -758,6 +758,24 @@ func BenchmarkCityLookup(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		randomIPv4Address(r, ip)
 		err = db.Lookup(ip, &result)
+		if err != nil {
+			b.Error(err)
+		}
+	}
+	assert.NoError(b, db.Close(), "error on close")
+}
+
+func BenchmarkCityLookupNetwork(b *testing.B) {
+	db, err := Open("GeoLite2-City.mmdb")
+	require.NoError(b, err)
+
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	var result fullCity
+
+	ip := make(net.IP, 4)
+	for i := 0; i < b.N; i++ {
+		randomIPv4Address(r, ip)
+		_, _, err = db.LookupNetwork(ip, &result)
 		if err != nil {
 			b.Error(err)
 		}
