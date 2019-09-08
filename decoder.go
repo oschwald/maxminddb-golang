@@ -456,7 +456,7 @@ func (d *decoder) decodeMap(
 	depth int,
 ) (uint, error) {
 	if result.IsNil() {
-		result.Set(reflect.MakeMap(result.Type()))
+		result.Set(reflect.MakeMapWithSize(result.Type(), int(size)))
 	}
 
 	for i := uint(0); i < size; i++ {
