@@ -462,6 +462,8 @@ func (d *decoder) decodeMap(
 	mapType := result.Type()
 	keyValue := reflect.New(mapType.Key()).Elem()
 	elemType := mapType.Elem()
+	elemKind := elemType.Kind()
+	var elemValue reflect.Value
 	for i := uint(0); i < size; i++ {
 		var key []byte
 		var err error
@@ -471,7 +473,10 @@ func (d *decoder) decodeMap(
 			return 0, err
 		}
 
-		elemValue := reflect.New(elemType).Elem()
+		if !elemValue.IsValid() || elemKind == reflect.Interface {
+			elemValue = reflect.New(elemType).Elem()
+		}
+
 		offset, err = d.decode(offset, elemValue, depth)
 		if err != nil {
 			return 0, err
