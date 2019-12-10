@@ -21,7 +21,7 @@ type Networks struct {
 // the database.
 //
 // Please note that a MaxMind DB may map IPv4 networks into several locations
-// in in an IPv6 database. This iterator will iterate over all of these
+// in an IPv6 database. This iterator will iterate over all of these
 // locations separately.
 func (r *Reader) Networks() *Networks {
 	s := 4

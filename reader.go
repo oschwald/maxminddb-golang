@@ -32,7 +32,7 @@ type Reader struct {
 }
 
 // Metadata holds the metadata decoded from the MaxMind DB file. In particular
-// in has the format version, the build time as Unix epoch time, the database
+// it has the format version, the build time as Unix epoch time, the database
 // type and description, the IP version supported, and a slice of the natural
 // languages included.
 type Metadata struct {
