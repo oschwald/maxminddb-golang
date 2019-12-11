@@ -281,7 +281,7 @@ func (r *Reader) retrieveData(pointer uint, result interface{}) error {
 func (r *Reader) resolveDataPointer(pointer uint) (uintptr, error) {
 	var resolved = uintptr(pointer - r.Metadata.NodeCount - dataSectionSeparatorSize)
 
-	if resolved > uintptr(len(r.buffer)) {
+	if resolved >= uintptr(len(r.buffer)) {
 		return 0, newInvalidDatabaseError("the MaxMind DB file's search tree is corrupt")
 	}
 	return resolved, nil
