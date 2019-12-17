@@ -11,11 +11,11 @@ type netNode struct {
 
 // Networks represents a set of subnets that we are iterating over.
 type Networks struct {
-	reader            *Reader
-	nodes             []netNode // Nodes we still have to visit.
-	lastNode          netNode
-	containingNetwork *net.IPNet
-	err               error
+	reader   *Reader
+	nodes    []netNode // Nodes we still have to visit.
+	lastNode netNode
+	subnet   *net.IPNet
+	err      error
 }
 
 // Networks returns an iterator that can be used to traverse all networks in
@@ -58,7 +58,7 @@ func (r *Reader) NetworksWithin(network net.IPNet) *Networks {
 				ip: make(net.IP, s),
 			},
 		},
-		containingNetwork: &network,
+		subnet: &network,
 	}
 }
 
@@ -74,8 +74,8 @@ func (n *Networks) Next() bool {
 			if node.pointer > n.reader.Metadata.NodeCount {
 				n.lastNode = node
 
-				if n.containingNetwork != nil {
-					if !n.containingNetwork.Contains(n.lastNode.ip) {
+				if n.subnet != nil {
+					if !n.subnet.Contains(n.lastNode.ip) {
 						n.Next()
 					}
 				}
