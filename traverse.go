@@ -1,6 +1,9 @@
 package maxminddb
 
-import "net"
+import (
+	"fmt"
+	"net"
+)
 
 // Internal structure used to keep track of nodes we still need to visit.
 type netNode struct {
@@ -15,6 +18,7 @@ type Networks struct {
 	nodes    []netNode // Nodes we still have to visit.
 	lastNode netNode
 	subnet   *net.IPNet
+	supernet *net.IPNet
 	err      error
 }
 
@@ -76,6 +80,10 @@ func (n *Networks) Next() bool {
 
 				if n.subnet != nil {
 					if !n.subnet.Contains(n.lastNode.ip) {
+						_, maybeSuperNet, _ := net.ParseCIDR(fmt.Sprintf("%v/%v", node.ip, node.bit))
+						if maybeSuperNet.Contains(n.subnet.IP) {
+							n.supernet = maybeSuperNet
+						}
 						n.Next()
 					}
 				}
