@@ -2,6 +2,7 @@ package maxminddb
 
 import (
 	"fmt"
+	"net"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -29,6 +30,79 @@ func TestNetworks(t *testing.T) {
 			}
 			assert.Nil(t, n.Err())
 		}
+	}
+}
+
+func TestNetworksWithin(t *testing.T) {
+	_, network, error := net.ParseCIDR("1.1.1.0/24")
+
+	assert.Nil(t, error)
+
+	for _, recordSize := range []uint{24, 28, 32} {
+		fileName := testFile(fmt.Sprintf("MaxMind-DB-test-ipv4-%d.mmdb", recordSize))
+		reader, err := Open(fileName)
+		require.Nil(t, err, "unexpected error while opening database: %v", err)
+		defer reader.Close()
+
+		n := reader.NetworksWithin(*network)
+		var innerIPs []string
+
+		for n.Next() {
+			record := struct {
+				IP string `maxminddb:"ip"`
+			}{}
+			network, err := n.Network(&record)
+			assert.Nil(t, err)
+			assert.Equal(t, record.IP, network.IP.String(),
+				"expected %s got %s", record.IP, network.IP.String(),
+			)
+			innerIPs = append(innerIPs, record.IP)
+		}
+
+		expectedIPs := []string([]string{
+			"1.1.1.1",
+			"1.1.1.2",
+			"1.1.1.4",
+			"1.1.1.8",
+			"1.1.1.16",
+			"1.1.1.32",
+		})
+
+		assert.Equal(t, expectedIPs, innerIPs)
+		assert.Nil(t, n.Err())
+	}
+}
+
+func TestNetworksWithinSlash32(t *testing.T) {
+	_, network, error := net.ParseCIDR("1.1.1.32/32")
+
+	assert.Nil(t, error)
+
+	for _, recordSize := range []uint{24, 28, 32} {
+		fileName := testFile(fmt.Sprintf("MaxMind-DB-test-ipv4-%d.mmdb", recordSize))
+		reader, err := Open(fileName)
+		require.Nil(t, err, "unexpected error while opening database: %v", err)
+		defer reader.Close()
+
+		n := reader.NetworksWithin(*network)
+		var innerIPs []string
+
+		for n.Next() {
+			record := struct {
+				IP string `maxminddb:"ip"`
+			}{}
+			network, err := n.Network(&record)
+			assert.Nil(t, err)
+			assert.Equal(t, record.IP, network.IP.String(),
+				"expected %s got %s", record.IP, network.IP.String(),
+			)
+			innerIPs = append(innerIPs, record.IP)
+		}
+
+		expectedIPs := []string([]string{"1.1.1.32"})
+
+		assert.Equal(t, expectedIPs, innerIPs)
+		assert.Nil(t, n.Err())
 	}
 }
 

@@ -11,10 +11,11 @@ type netNode struct {
 
 // Networks represents a set of subnets that we are iterating over.
 type Networks struct {
-	reader   *Reader
-	nodes    []netNode // Nodes we still have to visit.
-	lastNode netNode
-	err      error
+	reader            *Reader
+	nodes             []netNode // Nodes we still have to visit.
+	lastNode          netNode
+	containingNetwork *net.IPNet
+	err               error
 }
 
 // Networks returns an iterator that can be used to traverse all networks in
@@ -38,6 +39,29 @@ func (r *Reader) Networks() *Networks {
 	}
 }
 
+// NetworksWithin returns an iterator that can be used to traverse all networks
+// in the database which are contained in a given network.
+//
+// Please note that a MaxMind DB may map IPv4 networks into several locations
+// in in an IPv6 database. This iterator will iterate over all of these
+// locations separately.
+
+func (r *Reader) NetworksWithin(network net.IPNet) *Networks {
+	s := 4
+	if r.Metadata.IPVersion == 6 {
+		s = 16
+	}
+	return &Networks{
+		reader: r,
+		nodes: []netNode{
+			{
+				ip: make(net.IP, s),
+			},
+		},
+		containingNetwork: &network,
+	}
+}
+
 // Next prepares the next network for reading with the Network method. It
 // returns true if there is another network to be processed and false if there
 // are no more networks or if there is an error.
@@ -49,6 +73,12 @@ func (n *Networks) Next() bool {
 		for node.pointer != n.reader.Metadata.NodeCount {
 			if node.pointer > n.reader.Metadata.NodeCount {
 				n.lastNode = node
+
+				if n.containingNetwork != nil {
+					if !n.containingNetwork.Contains(n.lastNode.ip) {
+						n.Next()
+					}
+				}
 				return true
 			}
 			ipRight := make(net.IP, len(node.ip))
