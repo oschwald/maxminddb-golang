@@ -1,7 +1,6 @@
 package maxminddb
 
 import (
-	"fmt"
 	"net"
 )
 
@@ -80,9 +79,12 @@ func (n *Networks) Next() bool {
 
 				if n.subnet != nil {
 					if !n.subnet.Contains(n.lastNode.ip) {
-						_, maybeSuperNet, _ := net.ParseCIDR(fmt.Sprintf("%v/%v", node.ip, node.bit))
-						if maybeSuperNet.Contains(n.subnet.IP) {
-							n.supernet = maybeSuperNet
+						maybeSupernet := net.IPNet{
+							IP:   n.lastNode.ip,
+							Mask: net.CIDRMask(int(n.lastNode.bit), len(n.lastNode.ip)*8),
+						}
+						if maybeSupernet.Contains(n.subnet.IP) {
+							n.supernet = &maybeSupernet
 						}
 						n.Next()
 					}
