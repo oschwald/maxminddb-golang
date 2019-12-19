@@ -17,7 +17,7 @@ type Networks struct {
 	nodes    []netNode // Nodes we still have to visit.
 	lastNode netNode
 	subnet   *net.IPNet
-	supernet *net.IPNet
+	supernet *netNode
 	err      error
 }
 
@@ -84,7 +84,7 @@ func (n *Networks) Next() bool {
 							Mask: net.CIDRMask(int(n.lastNode.bit), len(n.lastNode.ip)*8),
 						}
 						if maybeSupernet.Contains(n.subnet.IP) {
-							n.supernet = &maybeSupernet
+							n.supernet = &n.lastNode
 						}
 						n.Next()
 					}
@@ -128,6 +128,26 @@ func (n *Networks) Network(result interface{}) (*net.IPNet, error) {
 	return &net.IPNet{
 		IP:   n.lastNode.ip,
 		Mask: net.CIDRMask(int(n.lastNode.bit), len(n.lastNode.ip)*8),
+	}, nil
+}
+
+// Supernet returns nil if no NetworksWithin search has taken place or if no
+// supernet has been found.  It returns the last found supernet or an error if
+// there is a problem decoding the data for the network. It takes a pointer to
+// a result value to decode the network's data into.
+
+func (n *Networks) Supernet(result interface{}) (*net.IPNet, error) {
+	if n.supernet == nil {
+		return nil, nil
+	}
+
+	if err := n.reader.retrieveData(n.supernet.pointer, result); err != nil {
+		return nil, err
+	}
+
+	return &net.IPNet{
+		IP:   n.supernet.ip,
+		Mask: net.CIDRMask(int(n.supernet.bit), len(n.supernet.ip)*8),
 	}, nil
 }
 
