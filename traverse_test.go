@@ -46,6 +46,7 @@ func TestNetworksWithin(t *testing.T) {
 
 		n := reader.NetworksWithin(*network)
 		var innerIPs []string
+		assert.Equal(t, 1, n.NodesRemaining())
 
 		for n.Next() {
 			record := struct {
@@ -70,6 +71,12 @@ func TestNetworksWithin(t *testing.T) {
 
 		assert.Equal(t, expectedIPs, innerIPs)
 		assert.Nil(t, n.Err())
+
+		assert.Equal(t, 0, n.NodesRemaining())
+
+		var superRecord interface{}
+		supernet, _ := n.Supernet(superRecord)
+		assert.Nil(t, supernet)
 	}
 }
 
@@ -103,6 +110,11 @@ func TestNetworksWithinSlash32(t *testing.T) {
 
 		assert.Equal(t, expectedIPs, innerIPs)
 		assert.Nil(t, n.Err())
+		assert.Equal(t, 0, n.NodesRemaining())
+
+		var superRecord interface{}
+		supernet, _ := n.Supernet(superRecord)
+		assert.Nil(t, supernet)
 	}
 }
 
