@@ -151,6 +151,10 @@ func (n *Networks) Supernet(result interface{}) (*net.IPNet, error) {
 	}, nil
 }
 
+func (n *Networks) NodesRemaining() int {
+	return len(n.nodes)
+}
+
 // Err returns an error, if any, that was encountered during iteration.
 func (n *Networks) Err() error {
 	return n.err
