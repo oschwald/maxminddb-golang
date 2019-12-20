@@ -48,7 +48,7 @@ func TestNetworksWithin(t *testing.T) {
 		var innerIPs []string
 		assert.Equal(t, 1, n.NodesRemaining())
 
-		for n.Next() {
+		for n.NextNetworkWithin() {
 			record := struct {
 				IP string `maxminddb:"ip"`
 			}{}
@@ -94,7 +94,7 @@ func TestNetworksWithinSlash32(t *testing.T) {
 		n := reader.NetworksWithin(*network)
 		var innerIPs []string
 
-		for n.Next() {
+		for n.NextNetworkWithin() {
 			record := struct {
 				IP string `maxminddb:"ip"`
 			}{}

@@ -1,6 +1,7 @@
 package maxminddb
 
 import (
+	"fmt"
 	"net"
 )
 
@@ -76,19 +77,6 @@ func (n *Networks) Next() bool {
 		for node.pointer != n.reader.Metadata.NodeCount {
 			if node.pointer > n.reader.Metadata.NodeCount {
 				n.lastNode = node
-
-				if n.subnet != nil {
-					if !n.subnet.Contains(n.lastNode.ip) {
-						maybeSupernet := net.IPNet{
-							IP:   n.lastNode.ip,
-							Mask: net.CIDRMask(int(n.lastNode.bit), len(n.lastNode.ip)*8),
-						}
-						if maybeSupernet.Contains(n.subnet.IP) {
-							n.supernet = &n.lastNode
-						}
-						n.Next()
-					}
-				}
 				return true
 			}
 			ipRight := make(net.IP, len(node.ip))
@@ -114,6 +102,30 @@ func (n *Networks) Next() bool {
 		}
 	}
 
+	return false
+}
+
+func (n *Networks) NextNetworkWithin() bool {
+	if n.subnet == nil {
+		fmt.Println("No network to search within")
+		return false
+	}
+
+	for n.Next() {
+		if n.subnet.Contains(n.lastNode.ip) {
+			return true
+		}
+
+		if n.subnet != nil {
+			maybeSupernet := net.IPNet{
+				IP:   n.lastNode.ip,
+				Mask: net.CIDRMask(int(n.lastNode.bit), len(n.lastNode.ip)*8),
+			}
+			if maybeSupernet.Contains(n.subnet.IP) {
+				n.supernet = &n.lastNode
+			}
+		}
+	}
 	return false
 }
 
