@@ -20,6 +20,9 @@ var metadataStartMarker = []byte("\xAB\xCD\xEFMaxMind.com")
 
 // Reader holds the data corresponding to the MaxMind DB file. Its only public
 // field is Metadata, which contains the metadata from the MaxMind DB file.
+//
+// All of the methods on Reader are thread-safe. The struct may be safely
+// shared across goroutines.
 type Reader struct {
 	hasMappedFile     bool
 	buffer            []byte
