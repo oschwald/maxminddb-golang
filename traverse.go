@@ -17,6 +17,9 @@ type Networks struct {
 	err      error
 }
 
+var allIPv4 = &net.IPNet{IP: make(net.IP, 4), Mask: net.CIDRMask(0, 32)}
+var allIPv6 = &net.IPNet{IP: make(net.IP, 16), Mask: net.CIDRMask(0, 128)}
+
 // Networks returns an iterator that can be used to traverse all networks in
 // the database.
 //
@@ -24,15 +27,26 @@ type Networks struct {
 // in an IPv6 database. This iterator will iterate over all of these
 // locations separately.
 func (r *Reader) Networks() *Networks {
-	s := 4
+	var networks *Networks
 	if r.Metadata.IPVersion == 6 {
-		s = 16
+		networks = r.NetworksWithin(allIPv6)
+	} else {
+		networks = r.NetworksWithin(allIPv4)
 	}
+
+	return networks
+}
+
+func (r *Reader) NetworksWithin(network *net.IPNet) *Networks {
+	prefixLength, _ := network.Mask.Size()
+	pointer, bit := r.traverseTree(network.IP, 0, uint(prefixLength))
 	return &Networks{
 		reader: r,
 		nodes: []netNode{
 			{
-				ip: make(net.IP, s),
+				ip:      network.IP,
+				bit:     uint(bit),
+				pointer: pointer,
 			},
 		},
 	}
