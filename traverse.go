@@ -1,6 +1,8 @@
 package maxminddb
 
-import "net"
+import (
+	"net"
+)
 
 // Internal structure used to keep track of nodes we still need to visit.
 type netNode struct {
@@ -38,13 +40,20 @@ func (r *Reader) Networks() *Networks {
 }
 
 func (r *Reader) NetworksWithin(network *net.IPNet) *Networks {
+	ip := network.IP
 	prefixLength, _ := network.Mask.Size()
-	pointer, bit := r.traverseTree(network.IP, 0, uint(prefixLength))
+
+	if r.Metadata.IPVersion == 6 && len(ip) == net.IPv4len {
+		ip = net.IP.To16(ip)
+		prefixLength += 96
+	}
+
+	pointer, bit := r.traverseTree(ip, 0, uint(prefixLength))
 	return &Networks{
 		reader: r,
 		nodes: []netNode{
 			{
-				ip:      network.IP,
+				ip:      ip,
 				bit:     uint(bit),
 				pointer: pointer,
 			},
