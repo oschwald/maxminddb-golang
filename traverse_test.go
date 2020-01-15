@@ -83,11 +83,21 @@ var tests = []networkTest{
 		},
 	},
 	networkTest{
+		Network:  "255.255.255.0/24",
+		Database: "ipv4",
+		Expected: []string(nil),
+	},
+	networkTest{
 		Network:  "1.1.1.1/32",
 		Database: "mixed",
 		Expected: []string{
 			"1.1.1.1/32",
 		},
+	},
+	networkTest{
+		Network:  "255.255.255.0/24",
+		Database: "mixed",
+		Expected: []string(nil),
 	},
 	networkTest{
 		Network:  "::1:ffff:ffff/128",
@@ -115,6 +125,11 @@ var tests = []networkTest{
 			"::2:0:50/125",
 			"::2:0:58/127",
 		},
+	},
+	networkTest{
+		Network:  "0:0:0:0:0:ffff:ffff:ff00/120",
+		Database: "ipv6",
+		Expected: []string(nil),
 	},
 	networkTest{
 		Network:  "0.0.0.0/0",
