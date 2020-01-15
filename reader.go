@@ -249,7 +249,20 @@ func (r *Reader) lookupPointer(ip net.IP) (uint, int, net.IP, error) {
 	if bitCount == 32 {
 		node = r.ipv4Start
 	}
+	node, prefixLength := r.traverseTree(ip, node, bitCount)
 
+	nodeCount := r.Metadata.NodeCount
+	if node == nodeCount {
+		// Record is empty
+		return 0, prefixLength, ip, nil
+	} else if node > nodeCount {
+		return node, prefixLength, ip, nil
+	}
+
+	return 0, prefixLength, ip, newInvalidDatabaseError("invalid node in search tree")
+}
+
+func (r *Reader) traverseTree(ip net.IP, node uint, bitCount uint) (uint, int) {
 	nodeCount := r.Metadata.NodeCount
 
 	i := uint(0)
@@ -263,14 +276,8 @@ func (r *Reader) lookupPointer(ip net.IP) (uint, int, net.IP, error) {
 			node = r.nodeReader.readRight(offset)
 		}
 	}
-	if node == nodeCount {
-		// Record is empty
-		return 0, int(i), ip, nil
-	} else if node > nodeCount {
-		return node, int(i), ip, nil
-	}
 
-	return 0, int(i), ip, newInvalidDatabaseError("invalid node in search tree")
+	return node, int(i)
 }
 
 func (r *Reader) retrieveData(pointer uint, result interface{}) error {

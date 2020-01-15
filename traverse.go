@@ -1,6 +1,8 @@
 package maxminddb
 
-import "net"
+import (
+	"net"
+)
 
 // Internal structure used to keep track of nodes we still need to visit.
 type netNode struct {
@@ -17,6 +19,9 @@ type Networks struct {
 	err      error
 }
 
+var allIPv4 = &net.IPNet{IP: make(net.IP, 4), Mask: net.CIDRMask(0, 32)}
+var allIPv6 = &net.IPNet{IP: make(net.IP, 16), Mask: net.CIDRMask(0, 128)}
+
 // Networks returns an iterator that can be used to traverse all networks in
 // the database.
 //
@@ -24,15 +29,42 @@ type Networks struct {
 // in an IPv6 database. This iterator will iterate over all of these
 // locations separately.
 func (r *Reader) Networks() *Networks {
-	s := 4
+	var networks *Networks
 	if r.Metadata.IPVersion == 6 {
-		s = 16
+		networks = r.NetworksWithin(allIPv6)
+	} else {
+		networks = r.NetworksWithin(allIPv4)
 	}
+
+	return networks
+}
+
+// NetworksWithin returns an iterator that can be used to traverse all networks
+// in the database which are contained in a given network.
+//
+// Please note that a MaxMind DB may map IPv4 networks into several locations
+// in an IPv6 database. This iterator will iterate over all of these locations
+// separately.
+//
+// If the provided network is contained within a network in the database, the
+// iterator will iterate over exactly one network, the containing network.
+func (r *Reader) NetworksWithin(network *net.IPNet) *Networks {
+	ip := network.IP
+	prefixLength, _ := network.Mask.Size()
+
+	if r.Metadata.IPVersion == 6 && len(ip) == net.IPv4len {
+		ip = net.IP.To16(ip)
+		prefixLength += 96
+	}
+
+	pointer, bit := r.traverseTree(ip, 0, uint(prefixLength))
 	return &Networks{
 		reader: r,
 		nodes: []netNode{
 			{
-				ip: make(net.IP, s),
+				ip:      ip,
+				bit:     uint(bit),
+				pointer: pointer,
 			},
 		},
 	}
