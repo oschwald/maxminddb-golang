@@ -43,8 +43,11 @@ func (r *Reader) Networks() *Networks {
 // in the database which are contained in a given network.
 //
 // Please note that a MaxMind DB may map IPv4 networks into several locations
-// in an IPv6 database. This iterator will iterate over all of these
-// locations separately.
+// in an IPv6 database. This iterator will iterate over all of these locations
+// separately.
+//
+// If the provided network is contained within a network in the database, the
+// iterator will iterate over exactly one network, the containing network.
 func (r *Reader) NetworksWithin(network *net.IPNet) *Networks {
 	ip := network.IP
 	prefixLength, _ := network.Mask.Size()
