@@ -55,7 +55,7 @@ type networkTest struct {
 }
 
 var tests = []networkTest{
-	networkTest{
+	{
 		Network:  "0.0.0.0/0",
 		Database: "ipv4",
 		Expected: []string{
@@ -67,7 +67,7 @@ var tests = []networkTest{
 			"1.1.1.32/32",
 		},
 	},
-	networkTest{
+	{
 		Network:  "1.1.1.1/30",
 		Database: "ipv4",
 		Expected: []string{
@@ -75,38 +75,38 @@ var tests = []networkTest{
 			"1.1.1.2/31",
 		},
 	},
-	networkTest{
+	{
 		Network:  "1.1.1.1/32",
 		Database: "ipv4",
 		Expected: []string{
 			"1.1.1.1/32",
 		},
 	},
-	networkTest{
+	{
 		Network:  "255.255.255.0/24",
 		Database: "ipv4",
 		Expected: []string(nil),
 	},
-	networkTest{
+	{
 		Network:  "1.1.1.1/32",
 		Database: "mixed",
 		Expected: []string{
 			"1.1.1.1/32",
 		},
 	},
-	networkTest{
+	{
 		Network:  "255.255.255.0/24",
 		Database: "mixed",
 		Expected: []string(nil),
 	},
-	networkTest{
+	{
 		Network:  "::1:ffff:ffff/128",
 		Database: "ipv6",
 		Expected: []string{
 			"::1:ffff:ffff/128",
 		},
 	},
-	networkTest{
+	{
 		Network:  "::/0",
 		Database: "ipv6",
 		Expected: []string{
@@ -117,7 +117,7 @@ var tests = []networkTest{
 			"::2:0:58/127",
 		},
 	},
-	networkTest{
+	{
 		Network:  "::2:0:40/123",
 		Database: "ipv6",
 		Expected: []string{
@@ -126,12 +126,12 @@ var tests = []networkTest{
 			"::2:0:58/127",
 		},
 	},
-	networkTest{
+	{
 		Network:  "0:0:0:0:0:ffff:ffff:ff00/120",
 		Database: "ipv6",
 		Expected: []string(nil),
 	},
-	networkTest{
+	{
 		Network:  "0.0.0.0/0",
 		Database: "mixed",
 		Expected: []string{
@@ -143,14 +143,14 @@ var tests = []networkTest{
 			"1.1.1.32/32",
 		},
 	},
-	networkTest{
+	{
 		Network:  "1.1.1.16/28",
 		Database: "mixed",
 		Expected: []string{
 			"1.1.1.16/28",
 		},
 	},
-	networkTest{
+	{
 		Network:  "::/0",
 		Database: "ipv4",
 		Expected: []string{
@@ -162,7 +162,7 @@ var tests = []networkTest{
 			"101:120::/32",
 		},
 	},
-	networkTest{
+	{
 		Network:  "101:104::/30",
 		Database: "ipv4",
 		Expected: []string{
@@ -200,7 +200,7 @@ func TestNetworksWithin(t *testing.T) {
 }
 
 var geoIPTests = []networkTest{
-	networkTest{
+	{
 		Network:  "81.2.69.128/26",
 		Database: "GeoIP2-Country-Test.mmdb",
 		Expected: []string{
