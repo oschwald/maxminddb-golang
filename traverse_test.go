@@ -45,7 +45,7 @@ func TestNetworksWithInvalidSearchTree(t *testing.T) {
 		assert.Nil(t, err)
 	}
 	assert.NotNil(t, n.Err(), "no error received when traversing an broken search tree")
-	assert.Equal(t, n.Err().Error(), "invalid search tree at 128.128.128.128/32")
+	assert.Equal(t, "invalid search tree at 128.128.128.128/32", n.Err().Error())
 }
 
 type networkTest struct {

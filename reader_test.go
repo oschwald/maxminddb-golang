@@ -200,26 +200,28 @@ func TestDecodingToInterface(t *testing.T) {
 	require.NoError(t, err, "unexpected error while doing lookup: %v", err)
 
 	record := recordInterface.(map[string]interface{})
-	assert.Equal(t, record["array"], []interface{}{uint64(1), uint64(2), uint64(3)})
-	assert.Equal(t, record["boolean"], true)
-	assert.Equal(t, record["bytes"], []byte{0x00, 0x00, 0x00, 0x2a})
-	assert.Equal(t, record["double"], 42.123456)
-	assert.Equal(t, record["float"], float32(1.1))
-	assert.Equal(t, record["int32"], -268435456)
-	assert.Equal(t, record["map"],
+	assert.Equal(t, []interface{}{uint64(1), uint64(2), uint64(3)}, record["array"])
+	assert.Equal(t, true, record["boolean"])
+	assert.Equal(t, []byte{0x00, 0x00, 0x00, 0x2a}, record["bytes"])
+	assert.Equal(t, 42.123456, record["double"])
+	assert.Equal(t, float32(1.1), record["float"])
+	assert.Equal(t, -268435456, record["int32"])
+	assert.Equal(t,
 		map[string]interface{}{
 			"mapX": map[string]interface{}{
 				"arrayX":       []interface{}{uint64(7), uint64(8), uint64(9)},
 				"utf8_stringX": "hello",
-			}})
+			}},
+		record["map"],
+	)
 
-	assert.Equal(t, record["uint16"], uint64(100))
-	assert.Equal(t, record["uint32"], uint64(268435456))
-	assert.Equal(t, record["uint64"], uint64(1152921504606846976))
-	assert.Equal(t, record["utf8_string"], "unicode! ☯ - ♫")
+	assert.Equal(t, uint64(100), record["uint16"])
+	assert.Equal(t, uint64(268435456), record["uint32"])
+	assert.Equal(t, uint64(1152921504606846976), record["uint64"])
+	assert.Equal(t, "unicode! ☯ - ♫", record["utf8_string"])
 	bigInt := new(big.Int)
 	bigInt.SetString("1329227995784915872903807060280344576", 10)
-	assert.Equal(t, record["uint128"], bigInt)
+	assert.Equal(t, bigInt, record["uint128"])
 }
 
 // nolint: maligned
@@ -243,27 +245,29 @@ func TestDecoder(t *testing.T) {
 	require.NoError(t, err)
 
 	verify := func(result TestType) {
-		assert.Equal(t, result.Array, []uint{uint(1), uint(2), uint(3)})
-		assert.Equal(t, result.Boolean, true)
-		assert.Equal(t, result.Bytes, []byte{0x00, 0x00, 0x00, 0x2a})
-		assert.Equal(t, result.Double, 42.123456)
-		assert.Equal(t, result.Float, float32(1.1))
-		assert.Equal(t, result.Int32, int32(-268435456))
+		assert.Equal(t, []uint{uint(1), uint(2), uint(3)}, result.Array)
+		assert.Equal(t, true, result.Boolean)
+		assert.Equal(t, []byte{0x00, 0x00, 0x00, 0x2a}, result.Bytes)
+		assert.Equal(t, 42.123456, result.Double)
+		assert.Equal(t, float32(1.1), result.Float)
+		assert.Equal(t, int32(-268435456), result.Int32)
 
-		assert.Equal(t, result.Map,
+		assert.Equal(t,
 			map[string]interface{}{
 				"mapX": map[string]interface{}{
 					"arrayX":       []interface{}{uint64(7), uint64(8), uint64(9)},
 					"utf8_stringX": "hello",
-				}})
+				}},
+			result.Map,
+		)
 
-		assert.Equal(t, result.Uint16, uint16(100))
-		assert.Equal(t, result.Uint32, uint32(268435456))
-		assert.Equal(t, result.Uint64, uint64(1152921504606846976))
-		assert.Equal(t, result.Utf8String, "unicode! ☯ - ♫")
+		assert.Equal(t, uint16(100), result.Uint16)
+		assert.Equal(t, uint32(268435456), result.Uint32)
+		assert.Equal(t, uint64(1152921504606846976), result.Uint64)
+		assert.Equal(t, "unicode! ☯ - ♫", result.Utf8String)
 		bigInt := new(big.Int)
 		bigInt.SetString("1329227995784915872903807060280344576", 10)
-		assert.Equal(t, &result.Uint128, bigInt)
+		assert.Equal(t, bigInt, &result.Uint128)
 	}
 
 	{
@@ -277,7 +281,7 @@ func TestDecoder(t *testing.T) {
 		var result TestType
 		offset, err := reader.LookupOffset(net.ParseIP("::1.1.1.0"))
 		require.NoError(t, err)
-		assert.NotEqual(t, offset, NotFound)
+		assert.NotEqual(t, NotFound, offset)
 
 		assert.NoError(t, reader.Decode(offset, &result))
 		verify(result)
@@ -302,7 +306,7 @@ func TestStructInterface(t *testing.T) {
 
 	require.NoError(t, reader.Lookup(net.ParseIP("::1.1.1.0"), &result))
 
-	assert.Equal(t, result.method(), true)
+	assert.Equal(t, true, result.method())
 }
 
 func TestNonEmptyNilInterface(t *testing.T) {
@@ -312,7 +316,7 @@ func TestNonEmptyNilInterface(t *testing.T) {
 	require.NoError(t, err)
 
 	err = reader.Lookup(net.ParseIP("::1.1.1.0"), &result)
-	assert.Equal(t, err.Error(), "maxminddb: cannot unmarshal map into type maxminddb.TestInterface")
+	assert.Equal(t, "maxminddb: cannot unmarshal map into type maxminddb.TestInterface", err.Error())
 }
 
 type CityTraits struct {
@@ -355,7 +359,7 @@ func TesValueTypeInterface(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, reader.Lookup(net.ParseIP("::1.1.1.0"), &result))
 
-	assert.Equal(t, result.Boolean.true(), true)
+	assert.Equal(t, true, result.Boolean.true())
 }
 
 type NestedMapX struct {
@@ -400,24 +404,24 @@ func TestComplexStructWithNestingAndPointer(t *testing.T) {
 	err = reader.Lookup(net.ParseIP("::1.1.1.0"), &result)
 	require.NoError(t, err)
 
-	assert.Equal(t, *result.Array, []uint{uint(1), uint(2), uint(3)})
-	assert.Equal(t, *result.Boolean, true)
-	assert.Equal(t, *result.Bytes, []byte{0x00, 0x00, 0x00, 0x2a})
-	assert.Equal(t, *result.Double, 42.123456)
-	assert.Equal(t, *result.Float, float32(1.1))
-	assert.Equal(t, *result.Int32, int32(-268435456))
+	assert.Equal(t, []uint{uint(1), uint(2), uint(3)}, *result.Array)
+	assert.Equal(t, true, *result.Boolean)
+	assert.Equal(t, []byte{0x00, 0x00, 0x00, 0x2a}, *result.Bytes)
+	assert.Equal(t, 42.123456, *result.Double)
+	assert.Equal(t, float32(1.1), *result.Float)
+	assert.Equal(t, int32(-268435456), *result.Int32)
 
-	assert.Equal(t, result.Map.MapX.ArrayX, []int{7, 8, 9})
+	assert.Equal(t, []int{7, 8, 9}, result.Map.MapX.ArrayX)
 
-	assert.Equal(t, result.Map.MapX.UTF8StringX, "hello")
+	assert.Equal(t, "hello", result.Map.MapX.UTF8StringX)
 
-	assert.Equal(t, *result.Uint16, uint16(100))
-	assert.Equal(t, *result.Uint32, uint32(268435456))
-	assert.Equal(t, **result.Uint64, uint64(1152921504606846976))
-	assert.Equal(t, *result.Utf8String, "unicode! ☯ - ♫")
+	assert.Equal(t, uint16(100), *result.Uint16)
+	assert.Equal(t, uint32(268435456), *result.Uint32)
+	assert.Equal(t, uint64(1152921504606846976), **result.Uint64)
+	assert.Equal(t, "unicode! ☯ - ♫", *result.Utf8String)
 	bigInt := new(big.Int)
 	bigInt.SetString("1329227995784915872903807060280344576", 10)
-	assert.Equal(t, result.Uint128, bigInt)
+	assert.Equal(t, bigInt, result.Uint128)
 
 	assert.NoError(t, reader.Close())
 }
@@ -442,21 +446,21 @@ func TestNestedOffsetDecode(t *testing.T) {
 		} `maxminddb:"location"`
 	}
 	assert.NoError(t, db.Decode(off, &root))
-	assert.Equal(t, root.Location.Latitude, 51.5142)
+	assert.Equal(t, 51.5142, root.Location.Latitude)
 
 	var longitude float64
 	assert.NoError(t, db.Decode(root.Location.LongitudeOffset, &longitude))
-	assert.Equal(t, longitude, -0.0931)
+	assert.Equal(t, -0.0931, longitude)
 
 	var timeZone string
 	assert.NoError(t, db.Decode(root.Location.TimeZoneOffset, &timeZone))
-	assert.Equal(t, timeZone, "Europe/London")
+	assert.Equal(t, "Europe/London", timeZone)
 
 	var country struct {
 		IsoCode string `maxminddb:"iso_code"`
 	}
 	assert.NoError(t, db.Decode(root.CountryOffset, &country))
-	assert.Equal(t, country.IsoCode, "GB")
+	assert.Equal(t, "GB", country.IsoCode)
 
 	assert.NoError(t, db.Close())
 }
@@ -471,7 +475,7 @@ func TestDecodingUint16IntoInt(t *testing.T) {
 	err = reader.Lookup(net.ParseIP("::1.1.1.0"), &result)
 	require.NoError(t, err)
 
-	assert.Equal(t, result.Uint16, 100)
+	assert.Equal(t, 100, result.Uint16)
 }
 
 func TestIpv6inIpv4(t *testing.T) {
@@ -482,10 +486,10 @@ func TestIpv6inIpv4(t *testing.T) {
 	err = reader.Lookup(net.ParseIP("2001::"), &result)
 
 	var emptyResult TestType
-	assert.Equal(t, result, emptyResult)
+	assert.Equal(t, emptyResult, result)
 
 	expected := errors.New("error looking up '2001::': you attempted to look up an IPv6 address in an IPv4-only database")
-	assert.Equal(t, err, expected)
+	assert.Equal(t, expected, err)
 	assert.NoError(t, reader.Close(), "error on close")
 }
 
@@ -497,7 +501,7 @@ func TestBrokenDoubleDatabase(t *testing.T) {
 	err = reader.Lookup(net.ParseIP("2001:220::"), &result)
 
 	expected := newInvalidDatabaseError("the MaxMind DB file's data section contains bad data (float 64 size of 2)")
-	assert.Equal(t, err, expected)
+	assert.Equal(t, expected, err)
 	assert.NoError(t, reader.Close(), "error on close")
 }
 
@@ -505,7 +509,7 @@ func TestInvalidNodeCountDatabase(t *testing.T) {
 	_, err := Open(testFile("GeoIP2-City-Test-Invalid-Node-Count.mmdb"))
 
 	expected := newInvalidDatabaseError("the MaxMind DB contains invalid metadata")
-	assert.Equal(t, err, expected)
+	assert.Equal(t, expected, err)
 }
 
 func TestMissingDatabase(t *testing.T) {
@@ -517,7 +521,7 @@ func TestMissingDatabase(t *testing.T) {
 func TestNonDatabase(t *testing.T) {
 	reader, err := Open("README.md")
 	assert.Nil(t, reader, "received reader when doing lookups on DB that doesn't exist")
-	assert.Equal(t, err.Error(), "error opening database: invalid MaxMind DB file")
+	assert.Equal(t, "error opening database: invalid MaxMind DB file", err.Error())
 }
 
 func TestDecodingToNonPointer(t *testing.T) {
@@ -525,7 +529,7 @@ func TestDecodingToNonPointer(t *testing.T) {
 
 	var recordInterface interface{}
 	err := reader.Lookup(net.ParseIP("::1.1.1.0"), recordInterface)
-	assert.Equal(t, err.Error(), "result param must be a pointer")
+	assert.Equal(t, "result param must be a pointer", err.Error())
 	assert.NoError(t, reader.Close(), "error on close")
 }
 
@@ -534,7 +538,7 @@ func TestNilLookup(t *testing.T) {
 
 	var recordInterface interface{}
 	err := reader.Lookup(nil, recordInterface)
-	assert.Equal(t, err.Error(), "IP passed to Lookup cannot be nil")
+	assert.Equal(t, "IP passed to Lookup cannot be nil", err.Error())
 	assert.NoError(t, reader.Close(), "error on close")
 }
 
@@ -545,39 +549,39 @@ func TestUsingClosedDatabase(t *testing.T) {
 	var recordInterface interface{}
 
 	err := reader.Lookup(nil, recordInterface)
-	assert.Equal(t, err.Error(), "cannot call Lookup on a closed database")
+	assert.Equal(t, "cannot call Lookup on a closed database", err.Error())
 
 	_, err = reader.LookupOffset(nil)
-	assert.Equal(t, err.Error(), "cannot call LookupOffset on a closed database")
+	assert.Equal(t, "cannot call LookupOffset on a closed database", err.Error())
 
 	err = reader.Decode(0, recordInterface)
-	assert.Equal(t, err.Error(), "cannot call Decode on a closed database")
+	assert.Equal(t, "cannot call Decode on a closed database", err.Error())
 }
 
 func checkMetadata(t *testing.T, reader *Reader, ipVersion uint, recordSize uint) {
 	metadata := reader.Metadata
 
-	assert.Equal(t, metadata.BinaryFormatMajorVersion, uint(2))
+	assert.Equal(t, uint(2), metadata.BinaryFormatMajorVersion)
 
-	assert.Equal(t, metadata.BinaryFormatMinorVersion, uint(0))
+	assert.Equal(t, uint(0), metadata.BinaryFormatMinorVersion)
 	assert.IsType(t, uint(0), metadata.BuildEpoch)
-	assert.Equal(t, metadata.DatabaseType, "Test")
+	assert.Equal(t, "Test", metadata.DatabaseType)
 
 	assert.Equal(t, metadata.Description,
 		map[string]string{
 			"en": "Test Database",
 			"zh": "Test Database Chinese",
 		})
-	assert.Equal(t, metadata.IPVersion, ipVersion)
-	assert.Equal(t, metadata.Languages, []string{"en", "zh"})
+	assert.Equal(t, ipVersion, metadata.IPVersion)
+	assert.Equal(t, []string{"en", "zh"}, metadata.Languages)
 
 	if ipVersion == 4 {
-		assert.Equal(t, metadata.NodeCount, uint(164))
+		assert.Equal(t, uint(164), metadata.NodeCount)
 	} else {
-		assert.Equal(t, metadata.NodeCount, uint(416))
+		assert.Equal(t, uint(416), metadata.NodeCount)
 	}
 
-	assert.Equal(t, metadata.RecordSize, recordSize)
+	assert.Equal(t, recordSize, metadata.RecordSize)
 }
 
 func checkIpv4(t *testing.T, reader *Reader) {
@@ -589,7 +593,7 @@ func checkIpv4(t *testing.T, reader *Reader) {
 		var result map[string]string
 		err := reader.Lookup(ip, &result)
 		assert.NoError(t, err, "unexpected error while doing lookup: %v", err)
-		assert.Equal(t, result, map[string]string{"ip": address})
+		assert.Equal(t, map[string]string{"ip": address}, result)
 	}
 	pairs := map[string]string{
 		"1.1.1.3":  "1.1.1.2",
@@ -609,7 +613,7 @@ func checkIpv4(t *testing.T, reader *Reader) {
 		var result map[string]string
 		err := reader.Lookup(ip, &result)
 		assert.NoError(t, err, "unexpected error while doing lookup: %v", err)
-		assert.Equal(t, result, data)
+		assert.Equal(t, data, result)
 	}
 
 	for _, address := range []string{"1.1.1.33", "255.254.253.123"} {
@@ -631,7 +635,7 @@ func checkIpv6(t *testing.T, reader *Reader) {
 		var result map[string]string
 		err := reader.Lookup(net.ParseIP(address), &result)
 		assert.NoError(t, err, "unexpected error while doing lookup: %v", err)
-		assert.Equal(t, result, map[string]string{"ip": address})
+		assert.Equal(t, map[string]string{"ip": address}, result)
 	}
 
 	pairs := map[string]string{
@@ -650,7 +654,7 @@ func checkIpv6(t *testing.T, reader *Reader) {
 		var result map[string]string
 		err := reader.Lookup(net.ParseIP(keyAddress), &result)
 		assert.NoError(t, err, "unexpected error while doing lookup: %v", err)
-		assert.Equal(t, result, data)
+		assert.Equal(t, data, result)
 	}
 
 	for _, address := range []string{"1.1.1.33", "255.254.253.123", "89fa::"} {
