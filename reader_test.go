@@ -665,6 +665,19 @@ func checkIpv6(t *testing.T, reader *Reader) {
 	}
 }
 
+func BenchmarkOpen(b *testing.B) {
+	var db *Reader
+	var err error
+	for i := 0; i < b.N; i++ {
+		db, err = Open("GeoLite2-City.mmdb")
+		if err != nil {
+			b.Error(err)
+		}
+	}
+	assert.NotNil(b, db)
+	assert.NoError(b, db.Close(), "error on close")
+}
+
 func BenchmarkInterfaceLookup(b *testing.B) {
 	db, err := Open("GeoLite2-City.mmdb")
 	require.NoError(b, err)
