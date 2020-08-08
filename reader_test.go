@@ -363,9 +363,10 @@ func TestValueTypeInterface(t *testing.T) {
 
 	reader, err := Open(testFile("MaxMind-DB-test-decoder.mmdb"))
 	require.NoError(t, err)
-	require.NoError(t, reader.Lookup(net.ParseIP("::1.1.1.0"), &result))
 
-	assert.Equal(t, true, result.Boolean.true())
+	// although it would be nice to support cases like this, I am not sure it
+	// is possible to do so in a general way.
+	assert.Error(t, reader.Lookup(net.ParseIP("::1.1.1.0"), &result))
 }
 
 type NestedMapX struct {
