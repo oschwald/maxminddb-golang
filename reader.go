@@ -262,7 +262,7 @@ func (r *Reader) lookupPointer(ip net.IP) (uint, int, net.IP, error) {
 	return 0, prefixLength, ip, newInvalidDatabaseError("invalid node in search tree")
 }
 
-func (r *Reader) traverseTree(ip net.IP, node uint, bitCount uint) (uint, int) {
+func (r *Reader) traverseTree(ip net.IP, node, bitCount uint) (uint, int) {
 	nodeCount := r.Metadata.NodeCount
 
 	i := uint(0)
@@ -289,7 +289,7 @@ func (r *Reader) retrieveData(pointer uint, result interface{}) error {
 }
 
 func (r *Reader) resolveDataPointer(pointer uint) (uintptr, error) {
-	var resolved = uintptr(pointer - r.Metadata.NodeCount - dataSectionSeparatorSize)
+	resolved := uintptr(pointer - r.Metadata.NodeCount - dataSectionSeparatorSize)
 
 	if resolved >= uintptr(len(r.buffer)) {
 		return 0, newInvalidDatabaseError("the MaxMind DB file's search tree is corrupt")

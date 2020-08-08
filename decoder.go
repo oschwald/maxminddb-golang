@@ -157,7 +157,7 @@ func (d *decoder) decodeFromType(
 	}
 }
 
-func (d *decoder) unmarshalBool(size uint, offset uint, result reflect.Value) (uint, error) {
+func (d *decoder) unmarshalBool(size, offset uint, result reflect.Value) (uint, error) {
 	if size > 1 {
 		return 0, newInvalidDatabaseError("the MaxMind DB file's data section contains bad data (bool size of %v)", size)
 	}
@@ -206,7 +206,7 @@ func (d *decoder) indirect(result reflect.Value) reflect.Value {
 
 var sliceType = reflect.TypeOf([]byte{})
 
-func (d *decoder) unmarshalBytes(size uint, offset uint, result reflect.Value) (uint, error) {
+func (d *decoder) unmarshalBytes(size, offset uint, result reflect.Value) (uint, error) {
 	value, newOffset := d.decodeBytes(size, offset)
 
 	switch result.Kind() {
@@ -224,7 +224,7 @@ func (d *decoder) unmarshalBytes(size uint, offset uint, result reflect.Value) (
 	return newOffset, newUnmarshalTypeError(value, result.Type())
 }
 
-func (d *decoder) unmarshalFloat32(size uint, offset uint, result reflect.Value) (uint, error) {
+func (d *decoder) unmarshalFloat32(size, offset uint, result reflect.Value) (uint, error) {
 	if size != 4 {
 		return 0, newInvalidDatabaseError("the MaxMind DB file's data section contains bad data (float32 size of %v)", size)
 	}
@@ -243,8 +243,7 @@ func (d *decoder) unmarshalFloat32(size uint, offset uint, result reflect.Value)
 	return newOffset, newUnmarshalTypeError(value, result.Type())
 }
 
-func (d *decoder) unmarshalFloat64(size uint, offset uint, result reflect.Value) (uint, error) {
-
+func (d *decoder) unmarshalFloat64(size, offset uint, result reflect.Value) (uint, error) {
 	if size != 8 {
 		return 0, newInvalidDatabaseError("the MaxMind DB file's data section contains bad data (float 64 size of %v)", size)
 	}
@@ -266,7 +265,7 @@ func (d *decoder) unmarshalFloat64(size uint, offset uint, result reflect.Value)
 	return newOffset, newUnmarshalTypeError(value, result.Type())
 }
 
-func (d *decoder) unmarshalInt32(size uint, offset uint, result reflect.Value) (uint, error) {
+func (d *decoder) unmarshalInt32(size, offset uint, result reflect.Value) (uint, error) {
 	if size > 4 {
 		return 0, newInvalidDatabaseError("the MaxMind DB file's data section contains bad data (int32 size of %v)", size)
 	}
@@ -319,7 +318,7 @@ func (d *decoder) unmarshalMap(
 	}
 }
 
-func (d *decoder) unmarshalPointer(size uint, offset uint, result reflect.Value, depth int) (uint, error) {
+func (d *decoder) unmarshalPointer(size, offset uint, result reflect.Value, depth int) (uint, error) {
 	pointer, newOffset, err := d.decodePointer(size, offset)
 	if err != nil {
 		return 0, err
@@ -349,7 +348,7 @@ func (d *decoder) unmarshalSlice(
 	return 0, newUnmarshalTypeError("array", result.Type())
 }
 
-func (d *decoder) unmarshalString(size uint, offset uint, result reflect.Value) (uint, error) {
+func (d *decoder) unmarshalString(size, offset uint, result reflect.Value) (uint, error) {
 	value, newOffset := d.decodeString(size, offset)
 
 	switch result.Kind() {
@@ -363,10 +362,9 @@ func (d *decoder) unmarshalString(size uint, offset uint, result reflect.Value) 
 		}
 	}
 	return newOffset, newUnmarshalTypeError(value, result.Type())
-
 }
 
-func (d *decoder) unmarshalUint(size uint, offset uint, result reflect.Value, uintType uint) (uint, error) {
+func (d *decoder) unmarshalUint(size, offset uint, result reflect.Value, uintType uint) (uint, error) {
 	if size > uintType/8 {
 		return 0, newInvalidDatabaseError("the MaxMind DB file's data section contains bad data (uint%v size of %v)", uintType, size)
 	}
@@ -396,7 +394,7 @@ func (d *decoder) unmarshalUint(size uint, offset uint, result reflect.Value, ui
 
 var bigIntType = reflect.TypeOf(big.Int{})
 
-func (d *decoder) unmarshalUint128(size uint, offset uint, result reflect.Value) (uint, error) {
+func (d *decoder) unmarshalUint128(size, offset uint, result reflect.Value) (uint, error) {
 	if size > 16 {
 		return 0, newInvalidDatabaseError("the MaxMind DB file's data section contains bad data (uint128 size of %v)", size)
 	}
@@ -417,30 +415,30 @@ func (d *decoder) unmarshalUint128(size uint, offset uint, result reflect.Value)
 	return newOffset, newUnmarshalTypeError(value, result.Type())
 }
 
-func (d *decoder) decodeBool(size uint, offset uint) (bool, uint) {
+func (d *decoder) decodeBool(size, offset uint) (bool, uint) {
 	return size != 0, offset
 }
 
-func (d *decoder) decodeBytes(size uint, offset uint) ([]byte, uint) {
+func (d *decoder) decodeBytes(size, offset uint) ([]byte, uint) {
 	newOffset := offset + size
 	bytes := make([]byte, size)
 	copy(bytes, d.buffer[offset:newOffset])
 	return bytes, newOffset
 }
 
-func (d *decoder) decodeFloat64(size uint, offset uint) (float64, uint) {
+func (d *decoder) decodeFloat64(size, offset uint) (float64, uint) {
 	newOffset := offset + size
 	bits := binary.BigEndian.Uint64(d.buffer[offset:newOffset])
 	return math.Float64frombits(bits), newOffset
 }
 
-func (d *decoder) decodeFloat32(size uint, offset uint) (float32, uint) {
+func (d *decoder) decodeFloat32(size, offset uint) (float32, uint) {
 	newOffset := offset + size
 	bits := binary.BigEndian.Uint32(d.buffer[offset:newOffset])
 	return math.Float32frombits(bits), newOffset
 }
 
-func (d *decoder) decodeInt(size uint, offset uint) (int, uint) {
+func (d *decoder) decodeInt(size, offset uint) (int, uint) {
 	newOffset := offset + size
 	var val int32
 	for _, b := range d.buffer[offset:newOffset] {
@@ -540,7 +538,7 @@ func (d *decoder) decodeSlice(
 	return offset, nil
 }
 
-func (d *decoder) decodeString(size uint, offset uint) (string, uint) {
+func (d *decoder) decodeString(size, offset uint) (string, uint) {
 	newOffset := offset + size
 	return string(d.buffer[offset:newOffset]), newOffset
 }
@@ -628,7 +626,7 @@ func cachedFields(result reflect.Value) *fieldsType {
 	return fields
 }
 
-func (d *decoder) decodeUint(size uint, offset uint) (uint64, uint) {
+func (d *decoder) decodeUint(size, offset uint) (uint64, uint) {
 	newOffset := offset + size
 	bytes := d.buffer[offset:newOffset]
 
@@ -639,7 +637,7 @@ func (d *decoder) decodeUint(size uint, offset uint) (uint64, uint) {
 	return val, newOffset
 }
 
-func (d *decoder) decodeUint128(size uint, offset uint) (*big.Int, uint) {
+func (d *decoder) decodeUint128(size, offset uint) (*big.Int, uint) {
 	newOffset := offset + size
 	val := new(big.Int)
 	val.SetBytes(d.buffer[offset:newOffset])
@@ -685,7 +683,7 @@ func (d *decoder) decodeKey(offset uint) ([]byte, uint, error) {
 // This function is used to skip ahead to the next value without decoding
 // the one at the offset passed in. The size bits have different meanings for
 // different data types
-func (d *decoder) nextValueOffset(offset uint, numberToSkip uint) (uint, error) {
+func (d *decoder) nextValueOffset(offset, numberToSkip uint) (uint, error) {
 	if numberToSkip == 0 {
 		return offset, nil
 	}

@@ -54,9 +54,12 @@ func TestReaderBytes(t *testing.T) {
 func TestLookupNetwork(t *testing.T) {
 	bigInt := new(big.Int)
 	bigInt.SetString("1329227995784915872903807060280344576", 10)
-	decoderRecord := map[string]interface{}{"array": []interface{}{uint64(1),
-		uint64(2),
-		uint64(3)},
+	decoderRecord := map[string]interface{}{
+		"array": []interface{}{
+			uint64(1),
+			uint64(2),
+			uint64(3),
+		},
 		"boolean": true,
 		"bytes": []uint8{
 			0x0,
@@ -72,7 +75,8 @@ func TestLookupNetwork(t *testing.T) {
 				"arrayX": []interface{}{
 					uint64(0x7),
 					uint64(0x8),
-					uint64(0x9)},
+					uint64(0x9),
+				},
 				"utf8_stringX": "hello",
 			},
 		},
@@ -211,7 +215,8 @@ func TestDecodingToInterface(t *testing.T) {
 			"mapX": map[string]interface{}{
 				"arrayX":       []interface{}{uint64(7), uint64(8), uint64(9)},
 				"utf8_stringX": "hello",
-			}},
+			},
+		},
 		record["map"],
 	)
 
@@ -257,7 +262,8 @@ func TestDecoder(t *testing.T) {
 				"mapX": map[string]interface{}{
 					"arrayX":       []interface{}{uint64(7), uint64(8), uint64(9)},
 					"utf8_stringX": "hello",
-				}},
+				},
+			},
 			result.Map,
 		)
 
@@ -351,7 +357,7 @@ type ValueTypeTestType struct {
 	Boolean BoolInterface `maxminddb:"boolean"`
 }
 
-func TesValueTypeInterface(t *testing.T) {
+func TestValueTypeInterface(t *testing.T) {
 	var result ValueTypeTestType
 	result.Boolean = Bool(false)
 
@@ -558,7 +564,7 @@ func TestUsingClosedDatabase(t *testing.T) {
 	assert.Equal(t, "cannot call Decode on a closed database", err.Error())
 }
 
-func checkMetadata(t *testing.T, reader *Reader, ipVersion uint, recordSize uint) {
+func checkMetadata(t *testing.T, reader *Reader, ipVersion, recordSize uint) {
 	metadata := reader.Metadata
 
 	assert.Equal(t, uint(2), metadata.BinaryFormatMajorVersion)
@@ -585,7 +591,6 @@ func checkMetadata(t *testing.T, reader *Reader, ipVersion uint, recordSize uint
 }
 
 func checkIpv4(t *testing.T, reader *Reader) {
-
 	for i := uint(0); i < 6; i++ {
 		address := fmt.Sprintf("1.1.1.%d", uint(1)<<i)
 		ip := net.ParseIP(address)
@@ -627,9 +632,10 @@ func checkIpv4(t *testing.T, reader *Reader) {
 }
 
 func checkIpv6(t *testing.T, reader *Reader) {
-
-	subnets := []string{"::1:ffff:ffff", "::2:0:0",
-		"::2:0:40", "::2:0:50", "::2:0:58"}
+	subnets := []string{
+		"::1:ffff:ffff", "::2:0:0",
+		"::2:0:40", "::2:0:50", "::2:0:58",
+	}
 
 	for _, address := range subnets {
 		var result map[string]string

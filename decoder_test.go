@@ -237,5 +237,4 @@ func TestPointers(t *testing.T) {
 			t.Errorf("Decode for pointer at %d failed", offset)
 		}
 	}
-
 }

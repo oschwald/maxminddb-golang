@@ -153,7 +153,6 @@ func ExampleReader_Networks() {
 	// 2002:c9f3:c800::/40: Corporate
 	// 2002:cfb3:3000::/36: Cellular
 	// 2003::/24: Cable/DSL
-
 }
 
 // This example demonstrates how to iterate over all networks in the
@@ -187,14 +186,13 @@ func ExampleReader_NetworksWithin() {
 	}
 
 	// Output:
-	//1.0.0.0/24: Dialup
-	//1.0.1.0/24: Cable/DSL
-	//1.0.2.0/23: Dialup
-	//1.0.4.0/22: Dialup
-	//1.0.8.0/21: Dialup
-	//1.0.16.0/20: Dialup
-	//1.0.32.0/19: Dialup
-	//1.0.64.0/18: Dialup
-	//1.0.128.0/17: Dialup
-
+	// 1.0.0.0/24: Dialup
+	// 1.0.1.0/24: Cable/DSL
+	// 1.0.2.0/23: Dialup
+	// 1.0.4.0/22: Dialup
+	// 1.0.8.0/21: Dialup
+	// 1.0.16.0/20: Dialup
+	// 1.0.32.0/19: Dialup
+	// 1.0.64.0/18: Dialup
+	// 1.0.128.0/17: Dialup
 }
