@@ -551,7 +551,7 @@ func TestNilLookup(t *testing.T) {
 
 func TestUsingClosedDatabase(t *testing.T) {
 	reader, _ := Open(testFile("MaxMind-DB-test-decoder.mmdb"))
-	reader.Close()
+	require.NoError(t, reader.Close())
 
 	var recordInterface interface{}
 

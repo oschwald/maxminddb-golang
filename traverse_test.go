@@ -15,7 +15,6 @@ func TestNetworks(t *testing.T) {
 			fileName := testFile(fmt.Sprintf("MaxMind-DB-test-ipv%d-%d.mmdb", ipVersion, recordSize))
 			reader, err := Open(fileName)
 			require.Nil(t, err, "unexpected error while opening database: %v", err)
-			defer reader.Close()
 
 			n := reader.Networks()
 			for n.Next() {
@@ -29,6 +28,7 @@ func TestNetworks(t *testing.T) {
 				)
 			}
 			assert.Nil(t, n.Err())
+			assert.NoError(t, reader.Close())
 		}
 	}
 }
@@ -36,7 +36,6 @@ func TestNetworks(t *testing.T) {
 func TestNetworksWithInvalidSearchTree(t *testing.T) {
 	reader, err := Open(testFile("MaxMind-DB-test-broken-search-tree-24.mmdb"))
 	require.Nil(t, err, "unexpected error while opening database: %v", err)
-	defer reader.Close()
 
 	n := reader.Networks()
 	for n.Next() {
@@ -46,6 +45,8 @@ func TestNetworksWithInvalidSearchTree(t *testing.T) {
 	}
 	assert.NotNil(t, n.Err(), "no error received when traversing an broken search tree")
 	assert.Equal(t, "invalid search tree at 128.128.128.128/32", n.Err().Error())
+
+	assert.NoError(t, reader.Close())
 }
 
 type networkTest struct {
@@ -177,7 +178,6 @@ func TestNetworksWithin(t *testing.T) {
 			fileName := testFile(fmt.Sprintf("MaxMind-DB-test-%s-%d.mmdb", v.Database, recordSize))
 			reader, err := Open(fileName)
 			require.Nil(t, err, "unexpected error while opening database: %v", err)
-			defer reader.Close()
 
 			_, network, err := net.ParseCIDR(v.Network)
 			assert.Nil(t, err)
@@ -195,6 +195,8 @@ func TestNetworksWithin(t *testing.T) {
 
 			assert.Equal(t, v.Expected, innerIPs)
 			assert.Nil(t, n.Err())
+
+			assert.NoError(t, reader.Close())
 		}
 	}
 }
@@ -216,7 +218,6 @@ func TestGeoIPNetworksWithin(t *testing.T) {
 		fileName := testFile(v.Database)
 		reader, err := Open(fileName)
 		require.Nil(t, err, "unexpected error while opening database: %v", err)
-		defer reader.Close()
 
 		_, network, err := net.ParseCIDR(v.Network)
 		assert.Nil(t, err)
@@ -234,5 +235,7 @@ func TestGeoIPNetworksWithin(t *testing.T) {
 
 		assert.Equal(t, v.Expected, innerIPs)
 		assert.Nil(t, n.Err())
+
+		assert.NoError(t, reader.Close())
 	}
 }

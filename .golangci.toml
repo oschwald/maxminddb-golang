@@ -36,6 +36,9 @@
     "vetshadow",
   ]
 
+[linters-settings.errcheck]
+    ignore = "Close,fmt:.*"
+
 [linters-settings.gofumpt]
     extra-rules = true
 
@@ -47,6 +50,7 @@ exclude-use-default = false
     "gosec"
   ]
 
+  # G304 - Potential file inclusion via variable (gosec)
   # G404 - "Use of weak random number generator (math/rand instead of crypto/rand)"
   #        We only use this in tests.
-  text = "G404"
+  text = "G304|G404"

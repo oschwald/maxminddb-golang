@@ -1,3 +1,4 @@
+// Package maxminddb provides a reader for the MaxMind DB file format.
 package maxminddb
 
 import (
