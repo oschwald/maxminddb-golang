@@ -2,10 +2,13 @@ package maxminddb
 
 import (
 	"encoding/binary"
+	"fmt"
 	"math"
 	"math/big"
 	"reflect"
 	"sync"
+
+	"github.com/maxmind/mmdbwriter/mmdbtype"
 )
 
 type decoder struct {
@@ -39,6 +42,8 @@ const (
 	// This is the value used in libmaxminddb
 	maximumDataStructureDepth = 512
 )
+
+var mmdbtypeDataType = reflect.TypeOf([]mmdbtype.DataType{}).Elem()
 
 func (d *decoder) decode(offset uint, result reflect.Value, depth int) (uint, error) {
 	if depth > maximumDataStructureDepth {
@@ -168,7 +173,11 @@ func (d *decoder) unmarshalBool(size, offset uint, result reflect.Value) (uint, 
 		result.SetBool(value)
 		return newOffset, nil
 	case reflect.Interface:
-		if result.NumMethod() == 0 {
+		switch {
+		case result.Type() == mmdbtypeDataType:
+			result.Set(reflect.ValueOf(mmdbtype.Bool(value)))
+			return newOffset, nil
+		case result.NumMethod() == 0:
 			result.Set(reflect.ValueOf(value))
 			return newOffset, nil
 		}
@@ -216,7 +225,11 @@ func (d *decoder) unmarshalBytes(size, offset uint, result reflect.Value) (uint,
 			return newOffset, nil
 		}
 	case reflect.Interface:
-		if result.NumMethod() == 0 {
+		switch {
+		case result.Type() == mmdbtypeDataType:
+			result.Set(reflect.ValueOf(mmdbtype.Bytes(value)))
+			return newOffset, nil
+		case result.NumMethod() == 0:
 			result.Set(reflect.ValueOf(value))
 			return newOffset, nil
 		}
@@ -235,7 +248,11 @@ func (d *decoder) unmarshalFloat32(size, offset uint, result reflect.Value) (uin
 		result.SetFloat(float64(value))
 		return newOffset, nil
 	case reflect.Interface:
-		if result.NumMethod() == 0 {
+		switch {
+		case result.Type() == mmdbtypeDataType:
+			result.Set(reflect.ValueOf(mmdbtype.Float32(value)))
+			return newOffset, nil
+		case result.NumMethod() == 0:
 			result.Set(reflect.ValueOf(value))
 			return newOffset, nil
 		}
@@ -257,7 +274,11 @@ func (d *decoder) unmarshalFloat64(size, offset uint, result reflect.Value) (uin
 		result.SetFloat(value)
 		return newOffset, nil
 	case reflect.Interface:
-		if result.NumMethod() == 0 {
+		switch {
+		case result.Type() == mmdbtypeDataType:
+			result.Set(reflect.ValueOf(mmdbtype.Float64(value)))
+			return newOffset, nil
+		case result.NumMethod() == 0:
 			result.Set(reflect.ValueOf(value))
 			return newOffset, nil
 		}
@@ -285,7 +306,11 @@ func (d *decoder) unmarshalInt32(size, offset uint, result reflect.Value) (uint,
 			return newOffset, nil
 		}
 	case reflect.Interface:
-		if result.NumMethod() == 0 {
+		switch {
+		case result.Type() == mmdbtypeDataType:
+			result.Set(reflect.ValueOf(mmdbtype.Int32(value)))
+			return newOffset, nil
+		case result.NumMethod() == 0:
 			result.Set(reflect.ValueOf(value))
 			return newOffset, nil
 		}
@@ -308,13 +333,20 @@ func (d *decoder) unmarshalMap(
 	case reflect.Map:
 		return d.decodeMap(size, offset, result, depth)
 	case reflect.Interface:
-		if result.NumMethod() == 0 {
-			rv := reflect.ValueOf(make(map[string]interface{}, size))
-			newOffset, err := d.decodeMap(size, offset, rv, depth)
-			result.Set(rv)
-			return newOffset, err
+		var v interface{}
+		switch {
+		case result.Type() == mmdbtypeDataType:
+			v = make(mmdbtype.Map, size)
+		case result.NumMethod() == 0:
+			v = make(map[string]interface{}, size)
+		default:
+			return 0, newUnmarshalTypeError("map", result.Type())
 		}
-		return 0, newUnmarshalTypeError("map", result.Type())
+
+		rv := reflect.ValueOf(v)
+		newOffset, err := d.decodeMap(size, offset, rv, depth)
+		result.Set(rv)
+		return newOffset, err
 	}
 }
 
@@ -337,13 +369,20 @@ func (d *decoder) unmarshalSlice(
 	case reflect.Slice:
 		return d.decodeSlice(size, offset, result, depth)
 	case reflect.Interface:
-		if result.NumMethod() == 0 {
+		var rv reflect.Value
+		switch {
+		case result.Type() == mmdbtypeDataType:
+			a := mmdbtype.Slice{}
+			rv = reflect.ValueOf(&a).Elem()
+		case result.NumMethod() == 0:
 			a := []interface{}{}
-			rv := reflect.ValueOf(&a).Elem()
-			newOffset, err := d.decodeSlice(size, offset, rv, depth)
-			result.Set(rv)
-			return newOffset, err
+			rv = reflect.ValueOf(&a).Elem()
+		default:
+			return 0, newUnmarshalTypeError("map", result.Type())
 		}
+		newOffset, err := d.decodeSlice(size, offset, rv, depth)
+		result.Set(rv)
+		return newOffset, err
 	}
 	return 0, newUnmarshalTypeError("array", result.Type())
 }
@@ -356,7 +395,11 @@ func (d *decoder) unmarshalString(size, offset uint, result reflect.Value) (uint
 		result.SetString(value)
 		return newOffset, nil
 	case reflect.Interface:
-		if result.NumMethod() == 0 {
+		switch {
+		case result.Type() == mmdbtypeDataType:
+			result.Set(reflect.ValueOf(mmdbtype.String(value)))
+			return newOffset, nil
+		case result.NumMethod() == 0:
 			result.Set(reflect.ValueOf(value))
 			return newOffset, nil
 		}
@@ -384,7 +427,20 @@ func (d *decoder) unmarshalUint(size, offset uint, result reflect.Value, uintTyp
 			return newOffset, nil
 		}
 	case reflect.Interface:
-		if result.NumMethod() == 0 {
+		switch {
+		case result.Type() == mmdbtypeDataType:
+			switch uintType {
+			case 16:
+				result.Set(reflect.ValueOf(mmdbtype.Uint16(value)))
+			case 32:
+				result.Set(reflect.ValueOf(mmdbtype.Uint32(value)))
+			case 64:
+				result.Set(reflect.ValueOf(mmdbtype.Uint64(value)))
+			default:
+				return 0, fmt.Errorf("unknown uint type: %d", uintType)
+			}
+			return newOffset, nil
+		case result.NumMethod() == 0:
 			result.Set(reflect.ValueOf(value))
 			return newOffset, nil
 		}
@@ -407,7 +463,12 @@ func (d *decoder) unmarshalUint128(size, offset uint, result reflect.Value) (uin
 			return newOffset, nil
 		}
 	case reflect.Interface:
-		if result.NumMethod() == 0 {
+		switch {
+		case result.Type() == mmdbtypeDataType:
+			v := mmdbtype.Uint128(*value)
+			result.Set(reflect.ValueOf(&v))
+			return newOffset, nil
+		case result.NumMethod() == 0:
 			result.Set(reflect.ValueOf(value))
 			return newOffset, nil
 		}

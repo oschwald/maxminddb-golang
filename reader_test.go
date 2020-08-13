@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/maxmind/mmdbwriter/mmdbtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -294,6 +295,48 @@ func TestDecoder(t *testing.T) {
 	}
 
 	assert.NoError(t, reader.Close())
+}
+
+func TestDecoderToDataType(t *testing.T) {
+	reader, err := Open(testFile("MaxMind-DB-test-decoder.mmdb"))
+	require.NoError(t, err)
+
+	var result mmdbtype.DataType
+	require.NoError(t, reader.Lookup(net.ParseIP("::1.1.1.0"), &result))
+
+	bigInt := big.Int{}
+	bigInt.SetString("1329227995784915872903807060280344576", 10)
+	mmdbBigInt := mmdbtype.Uint128(bigInt)
+	assert.Equal(
+		t,
+		mmdbtype.Map{
+			"array": mmdbtype.Slice{
+				mmdbtype.Uint32(1),
+				mmdbtype.Uint32(2),
+				mmdbtype.Uint32(3),
+			},
+			"boolean": mmdbtype.Bool(true),
+			"bytes":   mmdbtype.Bytes{0x0, 0x0, 0x0, 0x2a},
+			"double":  mmdbtype.Float64(42.123456),
+			"float":   mmdbtype.Float32(1.1),
+			"int32":   mmdbtype.Int32(-268435456),
+			"map": mmdbtype.Map{"mapX": mmdbtype.Map{
+				"arrayX": mmdbtype.Slice{
+					mmdbtype.Uint32(7),
+					mmdbtype.Uint32(8),
+					mmdbtype.Uint32(9),
+				},
+				"utf8_stringX": mmdbtype.String("hello"),
+			}},
+			"uint128":     &mmdbBigInt,
+			"uint16":      mmdbtype.Uint16(0x64),
+			"uint32":      mmdbtype.Uint32(0x10000000),
+			"uint64":      mmdbtype.Uint64(0x1000000000000000),
+			"utf8_string": mmdbtype.String("unicode! ☯ - ♫"),
+		},
+
+		result,
+	)
 }
 
 type TestInterface interface {
