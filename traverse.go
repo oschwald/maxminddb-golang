@@ -113,10 +113,12 @@ func (n *Networks) Next() bool {
 
 // Network returns the current network or an error if there is a problem
 // decoding the data for the network. It takes a pointer to a result value to
-// decode the network's data into.
+// decode the network's data into. If result is nil, decoding will be skipped.
 func (n *Networks) Network(result interface{}) (*net.IPNet, error) {
-	if err := n.reader.retrieveData(n.lastNode.pointer, result); err != nil {
-		return nil, err
+	if result != nil {
+		if err := n.reader.retrieveData(n.lastNode.pointer, result); err != nil {
+			return nil, err
+		}
 	}
 
 	return &net.IPNet{
