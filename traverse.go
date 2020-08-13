@@ -125,6 +125,12 @@ func (n *Networks) Network(result interface{}) (*net.IPNet, error) {
 	}, nil
 }
 
+// Offset returns the offset of the record for the current network or an error
+// if there is a problem.
+func (n *Networks) Offset() (uintptr, error) {
+	return n.reader.resolveDataPointer(n.lastNode.pointer)
+}
+
 // Err returns an error, if any, that was encountered during iteration.
 func (n *Networks) Err() error {
 	return n.err
