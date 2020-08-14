@@ -22,6 +22,8 @@ type Networks struct {
 var (
 	allIPv4 = &net.IPNet{IP: make(net.IP, 4), Mask: net.CIDRMask(0, 32)}
 	allIPv6 = &net.IPNet{IP: make(net.IP, 16), Mask: net.CIDRMask(0, 128)}
+
+	ipv4Subtree = &net.IPNet{IP: make(net.IP, 16), Mask: net.CIDRMask(96, 128)}
 )
 
 // Networks returns an iterator that can be used to traverse all networks in
@@ -81,6 +83,20 @@ func (n *Networks) Next() bool {
 		n.nodes = n.nodes[:len(n.nodes)-1]
 
 		for node.pointer != n.reader.Metadata.NodeCount {
+			// XXX - this is just a proof-of concept hack. This should probably
+			// be made an option so that we don't break people's code
+			//
+			// The intent is to not traverse IPv4 aliases without hardcoding
+			// the networks that the writer currently aliases.
+			//
+			// Also, if we do this, we should adjust the IPNets for the IPv4
+			// subtree so that they are less surprising (e.g., make them proper
+			// IPv4 network)
+			if n.reader.ipv4Start != 0 && node.pointer == n.reader.ipv4Start &&
+				!ipv4Subtree.Contains(node.ip) {
+				break
+			}
+
 			if node.pointer > n.reader.Metadata.NodeCount {
 				n.lastNode = node
 				return true
