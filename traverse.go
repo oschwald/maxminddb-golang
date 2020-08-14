@@ -44,8 +44,9 @@ func SkipAliasedNetworks(networks *Networks) {
 // the database.
 //
 // Please note that a MaxMind DB may map IPv4 networks into several locations
-// in an IPv6 database. This iterator will iterate over all of these
-// locations separately.
+// in an IPv6 database. This iterator will iterate over all of these locations
+// separately. To only iterate over the IPv4 networks once, use the
+// SkipAliasedNetworks option.
 func (r *Reader) Networks(options ...NetworksOption) *Networks {
 	var networks *Networks
 	if r.Metadata.IPVersion == 6 {
@@ -62,7 +63,8 @@ func (r *Reader) Networks(options ...NetworksOption) *Networks {
 //
 // Please note that a MaxMind DB may map IPv4 networks into several locations
 // in an IPv6 database. This iterator will iterate over all of these locations
-// separately.
+// separately. To only iterate over the IPv4 networks once, use the
+// SkipAliasedNetworks option.
 //
 // If the provided network is contained within a network in the database, the
 // iterator will iterate over exactly one network, the containing network.
