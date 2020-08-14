@@ -1,6 +1,7 @@
 package maxminddb
 
 import (
+	"fmt"
 	"net"
 )
 
@@ -51,6 +52,15 @@ func (r *Reader) Networks() *Networks {
 // If the provided network is contained within a network in the database, the
 // iterator will iterate over exactly one network, the containing network.
 func (r *Reader) NetworksWithin(network *net.IPNet) *Networks {
+	if r.Metadata.IPVersion == 4 && network.IP.To4() == nil {
+		return &Networks{
+			err: fmt.Errorf(
+				"error getting networks with '%s': you attempted to use an IPv6 network in an IPv4-only database",
+				network.String(),
+			),
+		}
+	}
+
 	ip := network.IP
 	prefixLength, _ := network.Mask.Size()
 
@@ -76,6 +86,9 @@ func (r *Reader) NetworksWithin(network *net.IPNet) *Networks {
 // returns true if there is another network to be processed and false if there
 // are no more networks or if there is an error.
 func (n *Networks) Next() bool {
+	if n.err != nil {
+		return false
+	}
 	for len(n.nodes) > 0 {
 		node := n.nodes[len(n.nodes)-1]
 		n.nodes = n.nodes[:len(n.nodes)-1]
@@ -115,6 +128,9 @@ func (n *Networks) Next() bool {
 // decoding the data for the network. It takes a pointer to a result value to
 // decode the network's data into.
 func (n *Networks) Network(result interface{}) (*net.IPNet, error) {
+	if n.err != nil {
+		return nil, n.err
+	}
 	if err := n.reader.retrieveData(n.lastNode.pointer, result); err != nil {
 		return nil, err
 	}
