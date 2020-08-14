@@ -53,6 +53,7 @@ type networkTest struct {
 	Network  string
 	Database string
 	Expected []string
+	Options  []NetworksOption
 }
 
 var tests = []networkTest{
@@ -106,6 +107,7 @@ var tests = []networkTest{
 		Expected: []string{
 			"::1:ffff:ffff/128",
 		},
+		Options: []NetworksOption{SkipAliasedNetworks},
 	},
 	{
 		Network:  "::/0",
@@ -117,6 +119,7 @@ var tests = []networkTest{
 			"::2:0:50/125",
 			"::2:0:58/127",
 		},
+		Options: []NetworksOption{SkipAliasedNetworks},
 	},
 	{
 		Network:  "::2:0:40/123",
@@ -126,6 +129,7 @@ var tests = []networkTest{
 			"::2:0:50/125",
 			"::2:0:58/127",
 		},
+		Options: []NetworksOption{SkipAliasedNetworks},
 	},
 	{
 		Network:  "0:0:0:0:0:ffff:ffff:ff00/120",
@@ -145,11 +149,70 @@ var tests = []networkTest{
 		},
 	},
 	{
-		Network:  "1.1.1.16/28",
+		Network:  "0.0.0.0/0",
 		Database: "mixed",
 		Expected: []string{
+			"1.1.1.1/32",
+			"1.1.1.2/31",
+			"1.1.1.4/30",
+			"1.1.1.8/29",
 			"1.1.1.16/28",
+			"1.1.1.32/32",
 		},
+		Options: []NetworksOption{SkipAliasedNetworks},
+	},
+	{
+		Network:  "::/0",
+		Database: "mixed",
+		Expected: []string{
+			"::101:101/128",
+			"::101:102/127",
+			"::101:104/126",
+			"::101:108/125",
+			"::101:110/124",
+			"::101:120/128",
+			"::1:ffff:ffff/128",
+			"::2:0:0/122",
+			"::2:0:40/124",
+			"::2:0:50/125",
+			"::2:0:58/127",
+			"1.1.1.1/32",
+			"1.1.1.2/31",
+			"1.1.1.4/30",
+			"1.1.1.8/29",
+			"1.1.1.16/28",
+			"1.1.1.32/32",
+			"2001:0:101:101::/64",
+			"2001:0:101:102::/63",
+			"2001:0:101:104::/62",
+			"2001:0:101:108::/61",
+			"2001:0:101:110::/60",
+			"2001:0:101:120::/64",
+			"2002:101:101::/48",
+			"2002:101:102::/47",
+			"2002:101:104::/46",
+			"2002:101:108::/45",
+			"2002:101:110::/44",
+			"2002:101:120::/48",
+		},
+	},
+	{
+		Network:  "::/0",
+		Database: "mixed",
+		Expected: []string{
+			"1.1.1.1/32",
+			"1.1.1.2/31",
+			"1.1.1.4/30",
+			"1.1.1.8/29",
+			"1.1.1.16/28",
+			"1.1.1.32/32",
+			"::1:ffff:ffff/128",
+			"::2:0:0/122",
+			"::2:0:40/124",
+			"::2:0:50/125",
+			"::2:0:58/127",
+		},
+		Options: []NetworksOption{SkipAliasedNetworks},
 	},
 	{
 		Network:  "1.1.1.16/28",
@@ -176,7 +239,7 @@ func TestNetworksWithin(t *testing.T) {
 
 			_, network, err := net.ParseCIDR(v.Network)
 			assert.Nil(t, err)
-			n := reader.NetworksWithin(network)
+			n := reader.NetworksWithin(network, v.Options...)
 			var innerIPs []string
 
 			for n.Next() {
