@@ -56,6 +56,18 @@ func (d *decoder) decode(offset uint, result reflect.Value, depth int) (uint, er
 	return d.decodeFromType(typeNum, size, newOffset, result, depth+1)
 }
 
+func (d *decoder) decodeToDeserializer(offset uint, dser Deserializer, depth int) (uint, error) {
+	if depth > maximumDataStructureDepth {
+		return 0, newInvalidDatabaseError("exceeded maximum data structure depth; database is likely corrupt")
+	}
+	typeNum, size, newOffset, err := d.decodeCtrlData(offset)
+	if err != nil {
+		return 0, err
+	}
+
+	return d.decodeFromTypeToDeserializer(typeNum, size, newOffset, dser, depth+1)
+}
+
 func (d *decoder) decodeCtrlData(offset uint) (dataType, uint, uint, error) {
 	newOffset := offset + 1
 	if offset >= uint(len(d.buffer)) {
@@ -157,6 +169,68 @@ func (d *decoder) decodeFromType(
 	}
 }
 
+func (d *decoder) decodeFromTypeToDeserializer(
+	dtype dataType,
+	size uint,
+	offset uint,
+	dser Deserializer,
+	depth int,
+) (uint, error) {
+	// For these types, size has a special meaning
+	switch dtype {
+	case _Bool:
+		v, offset := d.decodeBool(size, offset)
+		return offset, dser.Bool(v)
+	case _Map:
+		return d.decodeMapToDeserializer(size, offset, dser, depth)
+	case _Pointer:
+		pointer, newOffset, err := d.decodePointer(size, offset)
+		if err != nil {
+			return 0, err
+		}
+		_, err = d.decodeToDeserializer(pointer, dser, depth)
+		return newOffset, err
+	case _Slice:
+		return d.decodeSliceToDeserializer(size, offset, dser, depth)
+	}
+
+	// For the remaining types, size is the byte size
+	if offset+size > uint(len(d.buffer)) {
+		return 0, newOffsetError()
+	}
+	switch dtype {
+	case _Bytes:
+		v, offset := d.decodeBytes(size, offset)
+		return offset, dser.Bytes(v)
+	case _Float32:
+		v, offset := d.decodeFloat32(size, offset)
+		return offset, dser.Float32(v)
+	case _Float64:
+		v, offset := d.decodeFloat64(size, offset)
+		return offset, dser.Float64(v)
+	case _Int32:
+		v, offset := d.decodeInt(size, offset)
+		return offset, dser.Int32(int32(v))
+	case _String:
+		v, offset := d.decodeString(size, offset)
+		return offset, dser.String(v)
+	case _Uint16:
+		v, offset := d.decodeUint(size, offset)
+		return offset, dser.Uint16(uint16(v))
+	case _Uint32:
+		v, offset := d.decodeUint(size, offset)
+		return offset, dser.Uint32(uint32(v))
+	case _Uint64:
+		v, offset := d.decodeUint(size, offset)
+		return offset, dser.Uint64(v)
+	case _Uint128:
+		v, offset := d.decodeUint128(size, offset)
+		return offset, dser.Uint128(v)
+	default:
+		return 0, newInvalidDatabaseError("unknown type: %d", dtype)
+	}
+}
+
 func (d *decoder) unmarshalBool(size, offset uint, result reflect.Value) (uint, error) {
 	if size > 1 {
 		return 0, newInvalidDatabaseError("the MaxMind DB file's data section contains bad data (bool size of %v)", size)
@@ -199,6 +273,7 @@ func (d *decoder) indirect(result reflect.Value) reflect.Value {
 		if result.IsNil() {
 			result.Set(reflect.New(result.Type().Elem()))
 		}
+
 		result = result.Elem()
 	}
 	return result
@@ -486,6 +561,35 @@ func (d *decoder) decodeMap(
 	return offset, nil
 }
 
+func (d *decoder) decodeMapToDeserializer(
+	size uint,
+	offset uint,
+	dser Deserializer,
+	depth int,
+) (uint, error) {
+	err := dser.StartMap(size)
+	if err != nil {
+		return 0, err
+	}
+	for i := uint(0); i < size; i++ {
+		// TODO - implement key/value skipping?
+		offset, err = d.decodeToDeserializer(offset, dser, depth)
+		if err != nil {
+			return 0, err
+		}
+
+		offset, err = d.decodeToDeserializer(offset, dser, depth)
+		if err != nil {
+			return 0, err
+		}
+	}
+	err = dser.End()
+	if err != nil {
+		return 0, err
+	}
+	return offset, nil
+}
+
 func (d *decoder) decodePointer(
 	size uint,
 	offset uint,
@@ -534,6 +638,29 @@ func (d *decoder) decodeSlice(
 		if err != nil {
 			return 0, err
 		}
+	}
+	return offset, nil
+}
+
+func (d *decoder) decodeSliceToDeserializer(
+	size uint,
+	offset uint,
+	dser Deserializer,
+	depth int,
+) (uint, error) {
+	err := dser.StartSlice(size)
+	if err != nil {
+		return 0, err
+	}
+	for i := uint(0); i < size; i++ {
+		offset, err = d.decodeToDeserializer(offset, dser, depth)
+		if err != nil {
+			return 0, err
+		}
+	}
+	err = dser.End()
+	if err != nil {
+		return 0, err
 	}
 	return offset, nil
 }
