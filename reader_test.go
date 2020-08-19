@@ -203,6 +203,10 @@ func TestDecodingToInterface(t *testing.T) {
 	err = reader.Lookup(net.ParseIP("::1.1.1.0"), &recordInterface)
 	require.NoError(t, err, "unexpected error while doing lookup: %v", err)
 
+	checkDecodingToInterface(t, recordInterface)
+}
+
+func checkDecodingToInterface(t *testing.T, recordInterface interface{}) {
 	record := recordInterface.(map[string]interface{})
 	assert.Equal(t, []interface{}{uint64(1), uint64(2), uint64(3)}, record["array"])
 	assert.Equal(t, true, record["boolean"])
