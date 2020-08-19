@@ -2,7 +2,7 @@ package maxminddb
 
 import "math/big"
 
-// Deserializer is an interface for a type that deserializes an MaxMind DB
+// deserializer is an interface for a type that deserializes an MaxMind DB
 // data record to some other type. This exists as an alternative to the
 // standard reflection API.
 //
@@ -13,7 +13,7 @@ import "math/big"
 // This interface and the associated unmarshaling code is EXPERIMENTAL!
 // It is not currently covered by any Semantic Versioning guarantees.
 // Use at your own risk.
-type Deserializer interface {
+type deserializer interface {
 	StartSlice(uint) error
 	StartMap(uint) error
 	End() error

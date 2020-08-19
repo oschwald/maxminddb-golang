@@ -56,7 +56,7 @@ func (d *decoder) decode(offset uint, result reflect.Value, depth int) (uint, er
 	return d.decodeFromType(typeNum, size, newOffset, result, depth+1)
 }
 
-func (d *decoder) decodeToDeserializer(offset uint, dser Deserializer, depth int) (uint, error) {
+func (d *decoder) decodeToDeserializer(offset uint, dser deserializer, depth int) (uint, error) {
 	if depth > maximumDataStructureDepth {
 		return 0, newInvalidDatabaseError("exceeded maximum data structure depth; database is likely corrupt")
 	}
@@ -173,7 +173,7 @@ func (d *decoder) decodeFromTypeToDeserializer(
 	dtype dataType,
 	size uint,
 	offset uint,
-	dser Deserializer,
+	dser deserializer,
 	depth int,
 ) (uint, error) {
 	// For these types, size has a special meaning
@@ -564,7 +564,7 @@ func (d *decoder) decodeMap(
 func (d *decoder) decodeMapToDeserializer(
 	size uint,
 	offset uint,
-	dser Deserializer,
+	dser deserializer,
 	depth int,
 ) (uint, error) {
 	err := dser.StartMap(size)
@@ -645,7 +645,7 @@ func (d *decoder) decodeSlice(
 func (d *decoder) decodeSliceToDeserializer(
 	size uint,
 	offset uint,
-	dser Deserializer,
+	dser deserializer,
 	depth int,
 ) (uint, error) {
 	err := dser.StartSlice(size)
