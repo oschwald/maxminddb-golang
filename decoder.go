@@ -65,6 +65,14 @@ func (d *decoder) decodeToDeserializer(offset uint, dser deserializer, depth int
 		return 0, err
 	}
 
+	skip, err := dser.ShouldSkip(uintptr(offset))
+	if err != nil {
+		return 0, err
+	}
+	if skip {
+		return d.nextValueOffset(offset, 1)
+	}
+
 	return d.decodeFromTypeToDeserializer(typeNum, size, newOffset, dser, depth+1)
 }
 

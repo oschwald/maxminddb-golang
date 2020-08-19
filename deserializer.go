@@ -14,8 +14,9 @@ import "math/big"
 // It is not currently covered by any Semantic Versioning guarantees.
 // Use at your own risk.
 type deserializer interface {
-	StartSlice(uint) error
-	StartMap(uint) error
+	ShouldSkip(offset uintptr) (bool, error)
+	StartSlice(size uint) error
+	StartMap(size uint) error
 	End() error
 	String(string) error
 	Float64(float64) error
