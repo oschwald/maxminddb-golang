@@ -227,6 +227,11 @@ func (r *Reader) decode(offset uintptr, result interface{}) error {
 		return errors.New("result param must be a pointer")
 	}
 
+	if dser, ok := result.(deserializer); ok {
+		_, err := r.decoder.decodeToDeserializer(uint(offset), dser, 0)
+		return err
+	}
+
 	_, err := r.decoder.decode(uint(offset), rv, 0)
 	return err
 }
