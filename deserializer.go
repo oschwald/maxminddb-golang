@@ -17,6 +17,7 @@ type deserializer interface {
 	ShouldSkip(offset uintptr) (bool, error)
 	StartSlice(size uint) error
 	StartMap(size uint) error
+	Key([]byte) error
 	End() error
 	String(string) error
 	Float64(float64) error

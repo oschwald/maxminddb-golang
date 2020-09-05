@@ -549,7 +549,6 @@ func (d *decoder) decodeMap(
 		var key []byte
 		var err error
 		key, offset, err = d.decodeKey(offset)
-
 		if err != nil {
 			return 0, err
 		}
@@ -580,8 +579,14 @@ func (d *decoder) decodeMapToDeserializer(
 		return 0, err
 	}
 	for i := uint(0); i < size; i++ {
-		// TODO - implement key/value skipping?
-		offset, err = d.decodeToDeserializer(offset, dser, depth)
+		var key []byte
+
+		key, offset, err = d.decodeKey(offset)
+		if err != nil {
+			return 0, err
+		}
+
+		err = dser.Key(key)
 		if err != nil {
 			return 0, err
 		}
