@@ -26,7 +26,7 @@ func ExampleReader_Lookup_struct() {
 
 	err = db.Lookup(ip, &record)
 	if err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 	fmt.Print(record.Country.ISOCode)
 	// Output:
@@ -46,7 +46,7 @@ func ExampleReader_Lookup_interface() {
 	var record interface{}
 	err = db.Lookup(ip, &record)
 	if err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 	fmt.Printf("%v", record)
 }
@@ -68,12 +68,12 @@ func ExampleReader_Networks() {
 	for networks.Next() {
 		subnet, err := networks.Network(&record)
 		if err != nil {
-			log.Fatal(err)
+			log.Panic(err)
 		}
 		fmt.Printf("%s: %s\n", subnet.String(), record.Domain)
 	}
 	if networks.Err() != nil {
-		log.Fatal(networks.Err())
+		log.Panic(networks.Err())
 	}
 	// Output:
 	// 1.0.0.0/24: Dialup
@@ -113,19 +113,19 @@ func ExampleReader_NetworksWithin() {
 
 	_, network, err := net.ParseCIDR("1.0.0.0/8")
 	if err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 
 	networks := db.NetworksWithin(network, maxminddb.SkipAliasedNetworks)
 	for networks.Next() {
 		subnet, err := networks.Network(&record)
 		if err != nil {
-			log.Fatal(err)
+			log.Panic(err)
 		}
 		fmt.Printf("%s: %s\n", subnet.String(), record.Domain)
 	}
 	if networks.Err() != nil {
-		log.Fatal(networks.Err())
+		log.Panic(networks.Err())
 	}
 
 	// Output:
