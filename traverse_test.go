@@ -299,3 +299,35 @@ func TestGeoIPNetworksWithin(t *testing.T) {
 		assert.NoError(t, reader.Close())
 	}
 }
+
+func TestData(t *testing.T) {
+	db, err := Open(testFile("MaxMind-DB-test-decoder.mmdb"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var all []any
+	iter := db.Data()
+	for iter.Next() {
+		if iter.Err() != nil {
+			t.Fatal(err)
+		}
+
+		var r any
+		err := iter.Data(&r)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		all = append(all, r)
+	}
+
+	want := "" +
+		"map[array:[] boolean:false bytes:[] double:0 float:0 int32:0 map:map[] uint128:0 uint16:0 uint32:0 uint64:0 utf8_string:]\n" +
+		"map[array:[1 2 3] boolean:true bytes:[0 0 0 42] double:42.123456 float:1.1 int32:-268435456 map:map[mapX:map[arrayX:[7 8 9] utf8_stringX:hello]] uint128:1329227995784915872903807060280344576 uint16:100 uint32:268435456 uint64:1152921504606846976 utf8_string:unicode! ☯ - ♫]\n" +
+		"map[double:+Inf float:+Inf int32:2147483647 uint128:340282366920938463463374607431768211455 uint16:65535 uint32:4294967295 uint64:18446744073709551615]"
+	got := fmt.Sprintf("%v\n%v\n%v", all...)
+	if got != want {
+		t.Errorf("didn't get all three records; output:\n%s\n\nwant:\n%s", got, want)
+	}
+}
