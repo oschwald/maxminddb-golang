@@ -206,6 +206,11 @@ func TestDecodingToInterface(t *testing.T) {
 	checkDecodingToInterface(t, recordInterface)
 }
 
+func TestMetadataPointer(t *testing.T) {
+	_, err := Open(testFile("MaxMind-DB-test-metadata-pointers.mmdb"))
+	require.NoError(t, err, "unexpected error while opening database: %v", err)
+}
+
 func checkDecodingToInterface(t *testing.T, recordInterface interface{}) {
 	record := recordInterface.(map[string]interface{})
 	assert.Equal(t, []interface{}{uint64(1), uint64(2), uint64(3)}, record["array"])
