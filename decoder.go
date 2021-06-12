@@ -56,21 +56,24 @@ func (d *decoder) decode(offset uint, result reflect.Value, depth int) (uint, er
 	return d.decodeFromType(typeNum, size, newOffset, result, depth+1)
 }
 
-func (d *decoder) decodeToDeserializer(offset uint, dser deserializer, depth int) (uint, error) {
+func (d *decoder) decodeToDeserializer(offset uint, dser deserializer, depth int, getNext bool) (uint, error) {
 	if depth > maximumDataStructureDepth {
 		return 0, newInvalidDatabaseError("exceeded maximum data structure depth; database is likely corrupt")
 	}
-	typeNum, size, newOffset, err := d.decodeCtrlData(offset)
-	if err != nil {
-		return 0, err
-	}
-
 	skip, err := dser.ShouldSkip(uintptr(offset))
 	if err != nil {
 		return 0, err
 	}
 	if skip {
-		return d.nextValueOffset(offset, 1)
+		if getNext {
+			return d.nextValueOffset(offset, 1)
+		}
+		return 0, nil
+	}
+
+	typeNum, size, newOffset, err := d.decodeCtrlData(offset)
+	if err != nil {
+		return 0, err
 	}
 
 	return d.decodeFromTypeToDeserializer(typeNum, size, newOffset, dser, depth+1)
@@ -196,7 +199,7 @@ func (d *decoder) decodeFromTypeToDeserializer(
 		if err != nil {
 			return 0, err
 		}
-		_, err = d.decodeToDeserializer(pointer, dser, depth)
+		_, err = d.decodeToDeserializer(pointer, dser, depth, false)
 		return newOffset, err
 	case _Slice:
 		return d.decodeSliceToDeserializer(size, offset, dser, depth)
@@ -581,12 +584,12 @@ func (d *decoder) decodeMapToDeserializer(
 	}
 	for i := uint(0); i < size; i++ {
 		// TODO - implement key/value skipping?
-		offset, err = d.decodeToDeserializer(offset, dser, depth)
+		offset, err = d.decodeToDeserializer(offset, dser, depth, true)
 		if err != nil {
 			return 0, err
 		}
 
-		offset, err = d.decodeToDeserializer(offset, dser, depth)
+		offset, err = d.decodeToDeserializer(offset, dser, depth, true)
 		if err != nil {
 			return 0, err
 		}
@@ -661,7 +664,7 @@ func (d *decoder) decodeSliceToDeserializer(
 		return 0, err
 	}
 	for i := uint(0); i < size; i++ {
-		offset, err = d.decodeToDeserializer(offset, dser, depth)
+		offset, err = d.decodeToDeserializer(offset, dser, depth, true)
 		if err != nil {
 			return 0, err
 		}

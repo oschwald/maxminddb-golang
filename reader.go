@@ -228,7 +228,7 @@ func (r *Reader) decode(offset uintptr, result interface{}) error {
 	}
 
 	if dser, ok := result.(deserializer); ok {
-		_, err := r.decoder.decodeToDeserializer(uint(offset), dser, 0)
+		_, err := r.decoder.decodeToDeserializer(uint(offset), dser, 0, false)
 		return err
 	}
 
