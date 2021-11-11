@@ -238,7 +238,7 @@ func checkDecodingToInterface(t *testing.T, recordInterface interface{}) {
 	assert.Equal(t, bigInt, record["uint128"])
 }
 
-// nolint: maligned
+//nolint: maligned
 type TestType struct {
 	Array      []uint                 `maxminddb:"array"`
 	Boolean    bool                   `maxminddb:"boolean"`

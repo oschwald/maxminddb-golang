@@ -168,7 +168,7 @@ func TestUint64(t *testing.T) {
 	validateDecoding(t, uints)
 }
 
-// Dedup with above somehow
+// Dedup with above somehow.
 func TestUint128(t *testing.T) {
 	ctrlByte := "03"
 	bits := uint(128)
@@ -190,7 +190,7 @@ func TestUint128(t *testing.T) {
 }
 
 // No pow or bit shifting for big int, apparently :-(
-// This is _not_ meant to be a comprehensive power function
+// This is _not_ meant to be a comprehensive power function.
 func powBigInt(bi *big.Int, pow uint) *big.Int {
 	newInt := big.NewInt(1)
 	for i := uint(0); i < pow; i++ {

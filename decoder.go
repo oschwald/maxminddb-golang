@@ -29,14 +29,14 @@ const (
 	_Slice
 	// We don't use the next two. They are placeholders. See the spec
 	// for more details.
-	_Container // nolint: deadcode, varcheck
-	_Marker    // nolint: deadcode, varcheck
+	_Container //nolint: deadcode, varcheck
+	_Marker    //nolint: deadcode, varcheck
 	_Bool
 	_Float32
 )
 
 const (
-	// This is the value used in libmaxminddb
+	// This is the value used in libmaxminddb.
 	maximumDataStructureDepth = 512
 )
 
@@ -820,7 +820,7 @@ func (d *decoder) decodeKey(offset uint) ([]byte, uint, error) {
 
 // This function is used to skip ahead to the next value without decoding
 // the one at the offset passed in. The size bits have different meanings for
-// different data types
+// different data types.
 func (d *decoder) nextValueOffset(offset, numberToSkip uint) (uint, error) {
 	if numberToSkip == 0 {
 		return offset, nil

@@ -8,7 +8,7 @@ import (
 	"github.com/oschwald/maxminddb-golang"
 )
 
-// This example shows how to decode to a struct
+// This example shows how to decode to a struct.
 func ExampleReader_Lookup_struct() {
 	db, err := maxminddb.Open("test-data/test-data/GeoIP2-City-Test.mmdb")
 	if err != nil {
@@ -33,7 +33,7 @@ func ExampleReader_Lookup_struct() {
 	// GB
 }
 
-// This example demonstrates how to decode to an interface{}
+// This example demonstrates how to decode to an interface{}.
 func ExampleReader_Lookup_interface() {
 	db, err := maxminddb.Open("test-data/test-data/GeoIP2-City-Test.mmdb")
 	if err != nil {
@@ -52,7 +52,7 @@ func ExampleReader_Lookup_interface() {
 }
 
 // This example demonstrates how to iterate over all networks in the
-// database
+// database.
 func ExampleReader_Networks() {
 	db, err := maxminddb.Open("test-data/test-data/GeoIP2-Connection-Type-Test.mmdb")
 	if err != nil {
