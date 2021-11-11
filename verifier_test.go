@@ -36,7 +36,13 @@ func TestVerifyOnGoodDatabases(t *testing.T) {
 			reader, err := Open(testFile(database))
 			require.NoError(t, err)
 
-			assert.NoError(t, reader.Verify(), "Received error (%v) when verifying %v", err, database)
+			assert.NoError(
+				t,
+				reader.Verify(),
+				"Received error (%v) when verifying %v",
+				err,
+				database,
+			)
 		})
 	}
 }

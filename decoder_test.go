@@ -73,8 +73,12 @@ func TestMap(t *testing.T) {
 		"e0":                             map[string]interface{}{},
 		"e142656e43466f6f":               map[string]interface{}{"en": "Foo"},
 		"e242656e43466f6f427a6843e4baba": map[string]interface{}{"en": "Foo", "zh": "人"},
-		"e1446e616d65e242656e43466f6f427a6843e4baba": map[string]interface{}{"name": map[string]interface{}{"en": "Foo", "zh": "人"}},
-		"e1496c616e677561676573020442656e427a68":     map[string]interface{}{"languages": []interface{}{"en", "zh"}},
+		"e1446e616d65e242656e43466f6f427a6843e4baba": map[string]interface{}{
+			"name": map[string]interface{}{"en": "Foo", "zh": "人"},
+		},
+		"e1496c616e677561676573020442656e427a68": map[string]interface{}{
+			"languages": []interface{}{"en", "zh"},
+		},
 	}
 	validateDecoding(t, maps)
 }

@@ -18,7 +18,11 @@ import (
 func TestReader(t *testing.T) {
 	for _, recordSize := range []uint{24, 28, 32} {
 		for _, ipVersion := range []uint{4, 6} {
-			fileName := fmt.Sprintf(testFile("MaxMind-DB-test-ipv%d-%d.mmdb"), ipVersion, recordSize)
+			fileName := fmt.Sprintf(
+				testFile("MaxMind-DB-test-ipv%d-%d.mmdb"),
+				ipVersion,
+				recordSize,
+			)
 			reader, err := Open(fileName)
 			require.NoError(t, err, "unexpected error while opening database: %v", err)
 			checkMetadata(t, reader, ipVersion, recordSize)
@@ -35,7 +39,11 @@ func TestReader(t *testing.T) {
 func TestReaderBytes(t *testing.T) {
 	for _, recordSize := range []uint{24, 28, 32} {
 		for _, ipVersion := range []uint{4, 6} {
-			fileName := fmt.Sprintf(testFile("MaxMind-DB-test-ipv%d-%d.mmdb"), ipVersion, recordSize)
+			fileName := fmt.Sprintf(
+				testFile("MaxMind-DB-test-ipv%d-%d.mmdb"),
+				ipVersion,
+				recordSize,
+			)
 			bytes, _ := ioutil.ReadFile(fileName)
 			reader, err := FromBytes(bytes)
 			require.NoError(t, err, "unexpected error while opening bytes: %v", err)
@@ -331,7 +339,11 @@ func TestNonEmptyNilInterface(t *testing.T) {
 	require.NoError(t, err)
 
 	err = reader.Lookup(net.ParseIP("::1.1.1.0"), &result)
-	assert.Equal(t, "maxminddb: cannot unmarshal map into type maxminddb.TestInterface", err.Error())
+	assert.Equal(
+		t,
+		"maxminddb: cannot unmarshal map into type maxminddb.TestInterface",
+		err.Error(),
+	)
 }
 
 type CityTraits struct {
@@ -504,7 +516,9 @@ func TestIpv6inIpv4(t *testing.T) {
 	var emptyResult TestType
 	assert.Equal(t, emptyResult, result)
 
-	expected := errors.New("error looking up '2001::': you attempted to look up an IPv6 address in an IPv4-only database")
+	expected := errors.New(
+		"error looking up '2001::': you attempted to look up an IPv6 address in an IPv4-only database",
+	)
 	assert.Equal(t, expected, err)
 	assert.NoError(t, reader.Close(), "error on close")
 }
@@ -516,7 +530,9 @@ func TestBrokenDoubleDatabase(t *testing.T) {
 	var result interface{}
 	err = reader.Lookup(net.ParseIP("2001:220::"), &result)
 
-	expected := newInvalidDatabaseError("the MaxMind DB file's data section contains bad data (float 64 size of 2)")
+	expected := newInvalidDatabaseError(
+		"the MaxMind DB file's data section contains bad data (float 64 size of 2)",
+	)
 	assert.Equal(t, expected, err)
 	assert.NoError(t, reader.Close(), "error on close")
 }

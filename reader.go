@@ -150,7 +150,10 @@ func (r *Reader) Lookup(ip net.IP, result interface{}) error {
 // database record cannot be stored in result because of type differences, an
 // UnmarshalTypeError is returned. If the database is invalid or otherwise
 // cannot be read, an InvalidDatabaseError is returned.
-func (r *Reader) LookupNetwork(ip net.IP, result interface{}) (network *net.IPNet, ok bool, err error) {
+func (r *Reader) LookupNetwork(
+	ip net.IP,
+	result interface{},
+) (network *net.IPNet, ok bool, err error) {
 	if r.buffer == nil {
 		return nil, false, errors.New("cannot call Lookup on a closed database")
 	}
@@ -246,7 +249,10 @@ func (r *Reader) lookupPointer(ip net.IP) (uint, int, net.IP, error) {
 		ip = ipV4Address
 	}
 	if len(ip) == 16 && r.Metadata.IPVersion == 4 {
-		return 0, 0, ip, fmt.Errorf("error looking up '%s': you attempted to look up an IPv6 address in an IPv4-only database", ip.String())
+		return 0, 0, ip, fmt.Errorf(
+			"error looking up '%s': you attempted to look up an IPv6 address in an IPv4-only database",
+			ip.String(),
+		)
 	}
 
 	bitCount := uint(len(ip) * 8)
