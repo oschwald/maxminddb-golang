@@ -1,5 +1,3 @@
-// +build !appengine,!plan9
-
 package maxminddb
 
 import (

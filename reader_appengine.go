@@ -1,5 +1,3 @@
-// +build appengine plan9
-
 package maxminddb
 
 import "io/ioutil"
@@ -9,7 +7,7 @@ import "io/ioutil"
 // except on Google App Engine where mmap is not supported; there the database
 // is loaded into memory. Use the Close method on the Reader object to return
 // the resources to the system.
-func Open(file string) (*Reader, error) {
+func OpenInMem(file string) (*Reader, error) {
 	bytes, err := ioutil.ReadFile(file)
 	if err != nil {
 		return nil, err
@@ -22,7 +20,7 @@ func Open(file string) (*Reader, error) {
 // resources to the system. If called on a Reader opened using FromBytes
 // or Open on Google App Engine, this method sets the underlying buffer
 // to nil, returning the resources to the system.
-func (r *Reader) Close() error {
-	r.buffer = nil
-	return nil
-}
+//func (r *Reader) Close() error {
+//	r.buffer = nil
+//	return nil
+//}
