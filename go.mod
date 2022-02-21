@@ -1,4 +1,4 @@
-module github.com/oschwald/maxminddb-golang
+module github.com/lightjameslyy/maxminddb-golang
 
 go 1.9
 
