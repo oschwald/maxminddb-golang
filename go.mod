@@ -4,7 +4,7 @@ go 1.17
 
 require (
 	github.com/stretchr/testify v1.7.0
-	golang.org/x/sys v0.0.0-20211111213525-f221eed1c01e
+	golang.org/x/sys v0.0.0-20220319134239-a9b59b0215f8
 )
 
 require (
