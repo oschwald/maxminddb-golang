@@ -76,25 +76,29 @@ func ExampleReader_Networks() {
 		log.Panic(networks.Err())
 	}
 	// Output:
-	// 1.0.0.0/24: Dialup
-	// 1.0.1.0/24: Cable/DSL
-	// 1.0.2.0/23: Dialup
-	// 1.0.4.0/22: Dialup
-	// 1.0.8.0/21: Dialup
-	// 1.0.16.0/20: Dialup
-	// 1.0.32.0/19: Dialup
-	// 1.0.64.0/18: Dialup
-	// 1.0.128.0/17: Dialup
+	// 1.0.0.0/24: Cable/DSL
+	// 1.0.1.0/24: Cellular
+	// 1.0.2.0/23: Cable/DSL
+	// 1.0.4.0/22: Cable/DSL
+	// 1.0.8.0/21: Cable/DSL
+	// 1.0.16.0/20: Cable/DSL
+	// 1.0.32.0/19: Cable/DSL
+	// 1.0.64.0/18: Cable/DSL
+	// 1.0.128.0/17: Cable/DSL
+	// 2.125.160.216/29: Cable/DSL
+	// 67.43.156.0/24: Cellular
 	// 80.214.0.0/20: Cellular
 	// 96.1.0.0/16: Cable/DSL
 	// 96.10.0.0/15: Cable/DSL
 	// 96.69.0.0/16: Cable/DSL
 	// 96.94.0.0/15: Cable/DSL
 	// 108.96.0.0/11: Cellular
-	// 175.16.199.0/24: Dialup
+	// 149.101.100.0/28: Cellular
+	// 175.16.199.0/24: Cable/DSL
 	// 187.156.138.0/24: Cable/DSL
 	// 201.243.200.0/24: Corporate
 	// 207.179.48.0/20: Cellular
+	// 216.160.83.56/29: Corporate
 	// 2003::/24: Cable/DSL
 }
 
@@ -129,13 +133,13 @@ func ExampleReader_NetworksWithin() {
 	}
 
 	// Output:
-	// 1.0.0.0/24: Dialup
-	// 1.0.1.0/24: Cable/DSL
-	// 1.0.2.0/23: Dialup
-	// 1.0.4.0/22: Dialup
-	// 1.0.8.0/21: Dialup
-	// 1.0.16.0/20: Dialup
-	// 1.0.32.0/19: Dialup
-	// 1.0.64.0/18: Dialup
-	// 1.0.128.0/17: Dialup
+	// 1.0.0.0/24: Cable/DSL
+	// 1.0.1.0/24: Cellular
+	// 1.0.2.0/23: Cable/DSL
+	// 1.0.4.0/22: Cable/DSL
+	// 1.0.8.0/21: Cable/DSL
+	// 1.0.16.0/20: Cable/DSL
+	// 1.0.32.0/19: Cable/DSL
+	// 1.0.64.0/18: Cable/DSL
+	// 1.0.128.0/17: Cable/DSL
 }

@@ -3,10 +3,10 @@ package maxminddb
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"math/big"
 	"math/rand"
 	"net"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -44,7 +44,8 @@ func TestReaderBytes(t *testing.T) {
 				ipVersion,
 				recordSize,
 			)
-			bytes, _ := ioutil.ReadFile(fileName)
+			bytes, err := os.ReadFile(fileName)
+			require.NoError(t, err)
 			reader, err := FromBytes(bytes)
 			require.NoError(t, err, "unexpected error while opening bytes: %v", err)
 
@@ -246,7 +247,6 @@ func checkDecodingToInterface(t *testing.T, recordInterface interface{}) {
 	assert.Equal(t, bigInt, record["uint128"])
 }
 
-//nolint: maligned
 type TestType struct {
 	Array      []uint                 `maxminddb:"array"`
 	Boolean    bool                   `maxminddb:"boolean"`
@@ -557,30 +557,33 @@ func TestNonDatabase(t *testing.T) {
 }
 
 func TestDecodingToNonPointer(t *testing.T) {
-	reader, _ := Open(testFile("MaxMind-DB-test-decoder.mmdb"))
+	reader, err := Open(testFile("MaxMind-DB-test-decoder.mmdb"))
+	require.NoError(t, err)
 
 	var recordInterface interface{}
-	err := reader.Lookup(net.ParseIP("::1.1.1.0"), recordInterface)
+	err = reader.Lookup(net.ParseIP("::1.1.1.0"), recordInterface)
 	assert.Equal(t, "result param must be a pointer", err.Error())
 	assert.NoError(t, reader.Close(), "error on close")
 }
 
 func TestNilLookup(t *testing.T) {
-	reader, _ := Open(testFile("MaxMind-DB-test-decoder.mmdb"))
+	reader, err := Open(testFile("MaxMind-DB-test-decoder.mmdb"))
+	require.NoError(t, err)
 
 	var recordInterface interface{}
-	err := reader.Lookup(nil, recordInterface)
+	err = reader.Lookup(nil, recordInterface)
 	assert.Equal(t, "IP passed to Lookup cannot be nil", err.Error())
 	assert.NoError(t, reader.Close(), "error on close")
 }
 
 func TestUsingClosedDatabase(t *testing.T) {
-	reader, _ := Open(testFile("MaxMind-DB-test-decoder.mmdb"))
+	reader, err := Open(testFile("MaxMind-DB-test-decoder.mmdb"))
+	require.NoError(t, err)
 	require.NoError(t, reader.Close())
 
 	var recordInterface interface{}
 
-	err := reader.Lookup(nil, recordInterface)
+	err = reader.Lookup(nil, recordInterface)
 	assert.Equal(t, "cannot call Lookup on a closed database", err.Error())
 
 	_, err = reader.LookupOffset(nil)
@@ -714,6 +717,7 @@ func BenchmarkInterfaceLookup(b *testing.B) {
 	db, err := Open("GeoLite2-City.mmdb")
 	require.NoError(b, err)
 
+	//nolint:gosec // this is a test
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	var result interface{}
 
@@ -732,6 +736,7 @@ func BenchmarkInterfaceLookupNetwork(b *testing.B) {
 	db, err := Open("GeoLite2-City.mmdb")
 	require.NoError(b, err)
 
+	//nolint:gosec // this is a test
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	var result interface{}
 
@@ -800,6 +805,7 @@ func BenchmarkCityLookup(b *testing.B) {
 	db, err := Open("GeoLite2-City.mmdb")
 	require.NoError(b, err)
 
+	//nolint:gosec // this is a test
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	var result fullCity
 
@@ -818,6 +824,7 @@ func BenchmarkCityLookupNetwork(b *testing.B) {
 	db, err := Open("GeoLite2-City.mmdb")
 	require.NoError(b, err)
 
+	//nolint:gosec // this is a test
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	var result fullCity
 
@@ -842,6 +849,7 @@ func BenchmarkCountryCode(b *testing.B) {
 		} `maxminddb:"country"`
 	}
 
+	//nolint:gosec // this is a test
 	r := rand.New(rand.NewSource(0))
 	var result MinCountry
 

@@ -30,7 +30,7 @@ type testDeserializer struct {
 	key   *string
 }
 
-func (d *testDeserializer) ShouldSkip(offset uintptr) (bool, error) {
+func (d *testDeserializer) ShouldSkip(_ uintptr) (bool, error) {
 	return false, nil
 }
 
@@ -38,10 +38,11 @@ func (d *testDeserializer) StartSlice(size uint) error {
 	return d.add(make([]interface{}, size))
 }
 
-func (d *testDeserializer) StartMap(size uint) error {
+func (d *testDeserializer) StartMap(_ uint) error {
 	return d.add(map[string]interface{}{})
 }
 
+//nolint:unparam // This is to meet the requirements of the interface.
 func (d *testDeserializer) End() error {
 	d.stack = d.stack[:len(d.stack)-1]
 	return nil
