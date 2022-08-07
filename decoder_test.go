@@ -2,8 +2,8 @@ package maxminddb
 
 import (
 	"encoding/hex"
-	"io/ioutil"
 	"math/big"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -51,7 +51,7 @@ func TestFloat(t *testing.T) {
 }
 
 func TestInt32(t *testing.T) {
-	int32 := map[string]interface{}{
+	int32s := map[string]interface{}{
 		"0001":         0,
 		"0401ffffffff": -1,
 		"0101ff":       255,
@@ -65,7 +65,7 @@ func TestInt32(t *testing.T) {
 		"04017fffffff": 2147483647,
 		"040180000001": -2147483647,
 	}
-	validateDecoding(t, int32)
+	validateDecoding(t, int32s)
 }
 
 func TestMap(t *testing.T) {
@@ -120,7 +120,8 @@ func TestString(t *testing.T) {
 func TestByte(t *testing.T) {
 	b := make(map[string]interface{})
 	for key, val := range testStrings {
-		oldCtrl, _ := hex.DecodeString(key[0:2])
+		oldCtrl, err := hex.DecodeString(key[0:2])
+		require.NoError(t, err)
 		newCtrl := []byte{oldCtrl[0] ^ 0xc0}
 		key = strings.Replace(key, hex.EncodeToString(oldCtrl), hex.EncodeToString(newCtrl), 1)
 		b[key] = []byte(val.(string))
@@ -130,18 +131,18 @@ func TestByte(t *testing.T) {
 }
 
 func TestUint16(t *testing.T) {
-	uint16 := map[string]interface{}{
+	uint16s := map[string]interface{}{
 		"a0":     uint64(0),
 		"a1ff":   uint64(255),
 		"a201f4": uint64(500),
 		"a22a78": uint64(10872),
 		"a2ffff": uint64(65535),
 	}
-	validateDecoding(t, uint16)
+	validateDecoding(t, uint16s)
 }
 
 func TestUint32(t *testing.T) {
-	uint32 := map[string]interface{}{
+	uint32s := map[string]interface{}{
 		"c0":         uint64(0),
 		"c1ff":       uint64(255),
 		"c201f4":     uint64(500),
@@ -150,7 +151,7 @@ func TestUint32(t *testing.T) {
 		"c3ffffff":   uint64(16777215),
 		"c4ffffffff": uint64(4294967295),
 	}
-	validateDecoding(t, uint32)
+	validateDecoding(t, uint32s)
 }
 
 func TestUint64(t *testing.T) {
@@ -205,11 +206,12 @@ func powBigInt(bi *big.Int, pow uint) *big.Int {
 
 func validateDecoding(t *testing.T, tests map[string]interface{}) {
 	for inputStr, expected := range tests {
-		inputBytes, _ := hex.DecodeString(inputStr)
+		inputBytes, err := hex.DecodeString(inputStr)
+		require.NoError(t, err)
 		d := decoder{inputBytes}
 
 		var result interface{}
-		_, err := d.decode(0, reflect.ValueOf(&result), 0)
+		_, err = d.decode(0, reflect.ValueOf(&result), 0)
 		assert.NoError(t, err)
 
 		if !reflect.DeepEqual(result, expected) {
@@ -220,7 +222,7 @@ func validateDecoding(t *testing.T, tests map[string]interface{}) {
 }
 
 func TestPointers(t *testing.T) {
-	bytes, err := ioutil.ReadFile(testFile("maps-with-pointers.raw"))
+	bytes, err := os.ReadFile(testFile("maps-with-pointers.raw"))
 	require.NoError(t, err)
 	d := decoder{bytes}
 
