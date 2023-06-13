@@ -895,3 +895,12 @@ func (d *decoder) nextValueOffset(offset, numberToSkip uint) (uint, error) {
 	}
 	return d.nextValueOffset(offset, numberToSkip-1)
 }
+
+// getBuffer for faster way to search data
+func (d *decoder) getBuffer() []byte {
+	return d.buffer
+}
+
+func (d *decoder) DecodeKey(offset uint) ([]byte, uint, error) {
+	return d.decodeKey(offset)
+}

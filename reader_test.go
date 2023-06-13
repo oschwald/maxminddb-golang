@@ -875,3 +875,26 @@ func randomIPv4Address(r *rand.Rand, ip []byte) {
 func testFile(file string) string {
 	return filepath.Join("test-data/test-data", file)
 }
+
+func TestGetCountry(t *testing.T) {
+	db := "test-data/test-data"
+	mmdb, err := Open(db)
+	if err != nil {
+		t.Error(err.Error())
+		return
+	}
+	defer mmdb.Close()
+	// 220.255.1.166 singapore
+	// 116.179.33.17  cn
+	ip := net.ParseIP("220.255.1.166")
+	result, err := mmdb.FastGetCountry(ip)
+	if err != nil {
+		t.Error(err.Error())
+		return
+	}
+	if result == nil {
+		t.Error("not found")
+		return
+	}
+	t.Logf("%+v", string(result))
+}
