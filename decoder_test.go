@@ -13,7 +13,7 @@ import (
 )
 
 func TestBool(t *testing.T) {
-	bools := map[string]interface{}{
+	bools := map[string]any{
 		"0007": false,
 		"0107": true,
 	}
@@ -22,7 +22,7 @@ func TestBool(t *testing.T) {
 }
 
 func TestDouble(t *testing.T) {
-	doubles := map[string]interface{}{
+	doubles := map[string]any{
 		"680000000000000000": 0.0,
 		"683FE0000000000000": 0.5,
 		"68400921FB54442EEA": 3.14159265359,
@@ -36,7 +36,7 @@ func TestDouble(t *testing.T) {
 }
 
 func TestFloat(t *testing.T) {
-	floats := map[string]interface{}{
+	floats := map[string]any{
 		"040800000000": float32(0.0),
 		"04083F800000": float32(1.0),
 		"04083F8CCCCD": float32(1.1),
@@ -51,7 +51,7 @@ func TestFloat(t *testing.T) {
 }
 
 func TestInt32(t *testing.T) {
-	int32s := map[string]interface{}{
+	int32s := map[string]any{
 		"0001":         0,
 		"0401ffffffff": -1,
 		"0101ff":       255,
@@ -69,33 +69,33 @@ func TestInt32(t *testing.T) {
 }
 
 func TestMap(t *testing.T) {
-	maps := map[string]interface{}{
-		"e0":                             map[string]interface{}{},
-		"e142656e43466f6f":               map[string]interface{}{"en": "Foo"},
-		"e242656e43466f6f427a6843e4baba": map[string]interface{}{"en": "Foo", "zh": "人"},
-		"e1446e616d65e242656e43466f6f427a6843e4baba": map[string]interface{}{
-			"name": map[string]interface{}{"en": "Foo", "zh": "人"},
+	maps := map[string]any{
+		"e0":                             map[string]any{},
+		"e142656e43466f6f":               map[string]any{"en": "Foo"},
+		"e242656e43466f6f427a6843e4baba": map[string]any{"en": "Foo", "zh": "人"},
+		"e1446e616d65e242656e43466f6f427a6843e4baba": map[string]any{
+			"name": map[string]any{"en": "Foo", "zh": "人"},
 		},
-		"e1496c616e677561676573020442656e427a68": map[string]interface{}{
-			"languages": []interface{}{"en", "zh"},
+		"e1496c616e677561676573020442656e427a68": map[string]any{
+			"languages": []any{"en", "zh"},
 		},
 	}
 	validateDecoding(t, maps)
 }
 
 func TestSlice(t *testing.T) {
-	slice := map[string]interface{}{
-		"0004":                 []interface{}{},
-		"010443466f6f":         []interface{}{"Foo"},
-		"020443466f6f43e4baba": []interface{}{"Foo", "人"},
+	slice := map[string]any{
+		"0004":                 []any{},
+		"010443466f6f":         []any{"Foo"},
+		"020443466f6f43e4baba": []any{"Foo", "人"},
 	}
 	validateDecoding(t, slice)
 }
 
 var testStrings = makeTestStrings()
 
-func makeTestStrings() map[string]interface{} {
-	str := map[string]interface{}{
+func makeTestStrings() map[string]any {
+	str := map[string]any{
 		"40":       "",
 		"4131":     "1",
 		"43E4BABA": "人",
@@ -118,7 +118,7 @@ func TestString(t *testing.T) {
 }
 
 func TestByte(t *testing.T) {
-	b := make(map[string]interface{})
+	b := make(map[string]any)
 	for key, val := range testStrings {
 		oldCtrl, err := hex.DecodeString(key[0:2])
 		require.NoError(t, err)
@@ -131,7 +131,7 @@ func TestByte(t *testing.T) {
 }
 
 func TestUint16(t *testing.T) {
-	uint16s := map[string]interface{}{
+	uint16s := map[string]any{
 		"a0":     uint64(0),
 		"a1ff":   uint64(255),
 		"a201f4": uint64(500),
@@ -142,7 +142,7 @@ func TestUint16(t *testing.T) {
 }
 
 func TestUint32(t *testing.T) {
-	uint32s := map[string]interface{}{
+	uint32s := map[string]any{
 		"c0":         uint64(0),
 		"c1ff":       uint64(255),
 		"c201f4":     uint64(500),
@@ -158,7 +158,7 @@ func TestUint64(t *testing.T) {
 	ctrlByte := "02"
 	bits := uint64(64)
 
-	uints := map[string]interface{}{
+	uints := map[string]any{
 		"00" + ctrlByte:          uint64(0),
 		"02" + ctrlByte + "01f4": uint64(500),
 		"02" + ctrlByte + "2a78": uint64(10872),
@@ -178,7 +178,7 @@ func TestUint128(t *testing.T) {
 	ctrlByte := "03"
 	bits := uint(128)
 
-	uints := map[string]interface{}{
+	uints := map[string]any{
 		"00" + ctrlByte:          big.NewInt(0),
 		"02" + ctrlByte + "01f4": big.NewInt(500),
 		"02" + ctrlByte + "2a78": big.NewInt(10872),
@@ -204,13 +204,13 @@ func powBigInt(bi *big.Int, pow uint) *big.Int {
 	return newInt
 }
 
-func validateDecoding(t *testing.T, tests map[string]interface{}) {
+func validateDecoding(t *testing.T, tests map[string]any) {
 	for inputStr, expected := range tests {
 		inputBytes, err := hex.DecodeString(inputStr)
 		require.NoError(t, err)
 		d := decoder{inputBytes}
 
-		var result interface{}
+		var result any
 		_, err = d.decode(0, reflect.ValueOf(&result), 0)
 		assert.NoError(t, err)
 

@@ -15,7 +15,7 @@ func newOffsetError() InvalidDatabaseError {
 	return InvalidDatabaseError{"unexpected end of database"}
 }
 
-func newInvalidDatabaseError(format string, args ...interface{}) InvalidDatabaseError {
+func newInvalidDatabaseError(format string, args ...any) InvalidDatabaseError {
 	return InvalidDatabaseError{fmt.Sprintf(format, args...)}
 }
 
@@ -30,7 +30,7 @@ type UnmarshalTypeError struct {
 	Value string
 }
 
-func newUnmarshalTypeError(value interface{}, rType reflect.Type) UnmarshalTypeError {
+func newUnmarshalTypeError(value any, rType reflect.Type) UnmarshalTypeError {
 	return UnmarshalTypeError{
 		Value: fmt.Sprintf("%v", value),
 		Type:  rType,

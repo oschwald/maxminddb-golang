@@ -158,7 +158,7 @@ func (n *Networks) Next() bool {
 // Network returns the current network or an error if there is a problem
 // decoding the data for the network. It takes a pointer to a result value to
 // decode the network's data into.
-func (n *Networks) Network(result interface{}) (*net.IPNet, error) {
+func (n *Networks) Network(result any) (*net.IPNet, error) {
 	if n.err != nil {
 		return nil, n.err
 	}
