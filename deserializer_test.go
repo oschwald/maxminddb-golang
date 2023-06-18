@@ -20,26 +20,26 @@ func TestDecodingToDeserializer(t *testing.T) {
 }
 
 type stackValue struct {
-	value  interface{}
+	value  any
 	curNum int
 }
 
 type testDeserializer struct {
 	stack []*stackValue
-	rv    interface{}
+	rv    any
 	key   *string
 }
 
-func (d *testDeserializer) ShouldSkip(_ uintptr) (bool, error) {
+func (*testDeserializer) ShouldSkip(_ uintptr) (bool, error) {
 	return false, nil
 }
 
 func (d *testDeserializer) StartSlice(size uint) error {
-	return d.add(make([]interface{}, size))
+	return d.add(make([]any, size))
 }
 
 func (d *testDeserializer) StartMap(_ uint) error {
-	return d.add(map[string]interface{}{})
+	return d.add(map[string]any{})
 }
 
 //nolint:unparam // This is to meet the requirements of the interface.
@@ -88,13 +88,13 @@ func (d *testDeserializer) Float32(v float32) error {
 	return d.add(v)
 }
 
-func (d *testDeserializer) add(v interface{}) error {
+func (d *testDeserializer) add(v any) error {
 	if len(d.stack) == 0 {
 		d.rv = v
 	} else {
 		top := d.stack[len(d.stack)-1]
 		switch parent := top.value.(type) {
-		case map[string]interface{}:
+		case map[string]any:
 			if d.key == nil {
 				key := v.(string)
 				d.key = &key
@@ -103,7 +103,7 @@ func (d *testDeserializer) add(v interface{}) error {
 				d.key = nil
 			}
 
-		case []interface{}:
+		case []any:
 			parent[top.curNum] = v
 			top.curNum++
 		default:
@@ -111,7 +111,7 @@ func (d *testDeserializer) add(v interface{}) error {
 	}
 
 	switch v := v.(type) {
-	case map[string]interface{}, []interface{}:
+	case map[string]any, []any:
 		d.stack = append(d.stack, &stackValue{value: v})
 	default:
 	}

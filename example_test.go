@@ -33,7 +33,7 @@ func ExampleReader_Lookup_struct() {
 	// GB
 }
 
-// This example demonstrates how to decode to an interface{}.
+// This example demonstrates how to decode to an any.
 func ExampleReader_Lookup_interface() {
 	db, err := maxminddb.Open("test-data/test-data/GeoIP2-City-Test.mmdb")
 	if err != nil {
@@ -43,7 +43,7 @@ func ExampleReader_Lookup_interface() {
 
 	ip := net.ParseIP("81.2.69.142")
 
-	var record interface{}
+	var record any
 	err = db.Lookup(ip, &record)
 	if err != nil {
 		log.Panic(err)

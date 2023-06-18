@@ -41,7 +41,7 @@ func TestNetworksWithInvalidSearchTree(t *testing.T) {
 
 	n := reader.Networks()
 	for n.Next() {
-		var record interface{}
+		var record any
 		_, err := n.Network(&record)
 		assert.Nil(t, err)
 	}
@@ -261,7 +261,7 @@ func TestNetworksWithin(t *testing.T) {
 	}
 }
 
-var geoIPTests = []networkTest{
+var geoipTests = []networkTest{
 	{
 		Network:  "81.2.69.128/26",
 		Database: "GeoIP2-Country-Test.mmdb",
@@ -274,7 +274,7 @@ var geoIPTests = []networkTest{
 }
 
 func TestGeoIPNetworksWithin(t *testing.T) {
-	for _, v := range geoIPTests {
+	for _, v := range geoipTests {
 		fileName := testFile(v.Database)
 		reader, err := Open(fileName)
 		require.Nil(t, err, "unexpected error while opening database: %v", err)

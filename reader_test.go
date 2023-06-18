@@ -63,8 +63,8 @@ func TestReaderBytes(t *testing.T) {
 func TestLookupNetwork(t *testing.T) {
 	bigInt := new(big.Int)
 	bigInt.SetString("1329227995784915872903807060280344576", 10)
-	decoderRecord := map[string]interface{}{
-		"array": []interface{}{
+	decoderRecord := map[string]any{
+		"array": []any{
 			uint64(1),
 			uint64(2),
 			uint64(3),
@@ -79,9 +79,9 @@ func TestLookupNetwork(t *testing.T) {
 		"double": 42.123456,
 		"float":  float32(1.1),
 		"int32":  -268435456,
-		"map": map[string]interface{}{
-			"mapX": map[string]interface{}{
-				"arrayX": []interface{}{
+		"map": map[string]any{
+			"mapX": map[string]any{
+				"arrayX": []any{
 					uint64(0x7),
 					uint64(0x8),
 					uint64(0x9),
@@ -100,7 +100,7 @@ func TestLookupNetwork(t *testing.T) {
 		IP             net.IP
 		DBFile         string
 		ExpectedCIDR   string
-		ExpectedRecord interface{}
+		ExpectedRecord any
 		ExpectedOK     bool
 	}{
 		{
@@ -114,28 +114,28 @@ func TestLookupNetwork(t *testing.T) {
 			IP:             net.ParseIP("::1:ffff:ffff"),
 			DBFile:         "MaxMind-DB-test-ipv6-24.mmdb",
 			ExpectedCIDR:   "::1:ffff:ffff/128",
-			ExpectedRecord: map[string]interface{}{"ip": "::1:ffff:ffff"},
+			ExpectedRecord: map[string]any{"ip": "::1:ffff:ffff"},
 			ExpectedOK:     true,
 		},
 		{
 			IP:             net.ParseIP("::2:0:1"),
 			DBFile:         "MaxMind-DB-test-ipv6-24.mmdb",
 			ExpectedCIDR:   "::2:0:0/122",
-			ExpectedRecord: map[string]interface{}{"ip": "::2:0:0"},
+			ExpectedRecord: map[string]any{"ip": "::2:0:0"},
 			ExpectedOK:     true,
 		},
 		{
 			IP:             net.ParseIP("1.1.1.1"),
 			DBFile:         "MaxMind-DB-test-ipv4-24.mmdb",
 			ExpectedCIDR:   "1.1.1.1/32",
-			ExpectedRecord: map[string]interface{}{"ip": "1.1.1.1"},
+			ExpectedRecord: map[string]any{"ip": "1.1.1.1"},
 			ExpectedOK:     true,
 		},
 		{
 			IP:             net.ParseIP("1.1.1.3"),
 			DBFile:         "MaxMind-DB-test-ipv4-24.mmdb",
 			ExpectedCIDR:   "1.1.1.2/31",
-			ExpectedRecord: map[string]interface{}{"ip": "1.1.1.2"},
+			ExpectedRecord: map[string]any{"ip": "1.1.1.2"},
 			ExpectedOK:     true,
 		},
 		{
@@ -191,7 +191,7 @@ func TestLookupNetwork(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(fmt.Sprintf("%s - %s", test.DBFile, test.IP), func(t *testing.T) {
-			var record interface{}
+			var record any
 			reader, err := Open(testFile(test.DBFile))
 			require.NoError(t, err)
 
@@ -208,7 +208,7 @@ func TestDecodingToInterface(t *testing.T) {
 	reader, err := Open(testFile("MaxMind-DB-test-decoder.mmdb"))
 	require.NoError(t, err, "unexpected error while opening database: %v", err)
 
-	var recordInterface interface{}
+	var recordInterface any
 	err = reader.Lookup(net.ParseIP("::1.1.1.0"), &recordInterface)
 	require.NoError(t, err, "unexpected error while doing lookup: %v", err)
 
@@ -220,18 +220,18 @@ func TestMetadataPointer(t *testing.T) {
 	require.NoError(t, err, "unexpected error while opening database: %v", err)
 }
 
-func checkDecodingToInterface(t *testing.T, recordInterface interface{}) {
-	record := recordInterface.(map[string]interface{})
-	assert.Equal(t, []interface{}{uint64(1), uint64(2), uint64(3)}, record["array"])
+func checkDecodingToInterface(t *testing.T, recordInterface any) {
+	record := recordInterface.(map[string]any)
+	assert.Equal(t, []any{uint64(1), uint64(2), uint64(3)}, record["array"])
 	assert.Equal(t, true, record["boolean"])
 	assert.Equal(t, []byte{0x00, 0x00, 0x00, 0x2a}, record["bytes"])
 	assert.Equal(t, 42.123456, record["double"])
 	assert.Equal(t, float32(1.1), record["float"])
 	assert.Equal(t, -268435456, record["int32"])
 	assert.Equal(t,
-		map[string]interface{}{
-			"mapX": map[string]interface{}{
-				"arrayX":       []interface{}{uint64(7), uint64(8), uint64(9)},
+		map[string]any{
+			"mapX": map[string]any{
+				"arrayX":       []any{uint64(7), uint64(8), uint64(9)},
 				"utf8_stringX": "hello",
 			},
 		},
@@ -248,18 +248,18 @@ func checkDecodingToInterface(t *testing.T, recordInterface interface{}) {
 }
 
 type TestType struct {
-	Array      []uint                 `maxminddb:"array"`
-	Boolean    bool                   `maxminddb:"boolean"`
-	Bytes      []byte                 `maxminddb:"bytes"`
-	Double     float64                `maxminddb:"double"`
-	Float      float32                `maxminddb:"float"`
-	Int32      int32                  `maxminddb:"int32"`
-	Map        map[string]interface{} `maxminddb:"map"`
-	Uint16     uint16                 `maxminddb:"uint16"`
-	Uint32     uint32                 `maxminddb:"uint32"`
-	Uint64     uint64                 `maxminddb:"uint64"`
-	Uint128    big.Int                `maxminddb:"uint128"`
-	Utf8String string                 `maxminddb:"utf8_string"`
+	Array      []uint         `maxminddb:"array"`
+	Boolean    bool           `maxminddb:"boolean"`
+	Bytes      []byte         `maxminddb:"bytes"`
+	Double     float64        `maxminddb:"double"`
+	Float      float32        `maxminddb:"float"`
+	Int32      int32          `maxminddb:"int32"`
+	Map        map[string]any `maxminddb:"map"`
+	Uint16     uint16         `maxminddb:"uint16"`
+	Uint32     uint32         `maxminddb:"uint32"`
+	Uint64     uint64         `maxminddb:"uint64"`
+	Uint128    big.Int        `maxminddb:"uint128"`
+	Utf8String string         `maxminddb:"utf8_string"`
 }
 
 func TestDecoder(t *testing.T) {
@@ -275,9 +275,9 @@ func TestDecoder(t *testing.T) {
 		assert.Equal(t, int32(-268435456), result.Int32)
 
 		assert.Equal(t,
-			map[string]interface{}{
-				"mapX": map[string]interface{}{
-					"arrayX":       []interface{}{uint64(7), uint64(8), uint64(9)},
+			map[string]any{
+				"mapX": map[string]any{
+					"arrayX":       []any{uint64(7), uint64(8), uint64(9)},
 					"utf8_stringX": "hello",
 				},
 			},
@@ -356,7 +356,7 @@ type City struct {
 
 func TestEmbeddedStructAsInterface(t *testing.T) {
 	var city City
-	var result interface{} = city.Traits
+	var result any = city.Traits
 
 	db, err := Open(testFile("GeoIP2-ISP-Test.mmdb"))
 	require.NoError(t, err)
@@ -527,7 +527,7 @@ func TestBrokenDoubleDatabase(t *testing.T) {
 	reader, err := Open(testFile("GeoIP2-City-Test-Broken-Double-Format.mmdb"))
 	require.NoError(t, err, "unexpected error while opening database: %v", err)
 
-	var result interface{}
+	var result any
 	err = reader.Lookup(net.ParseIP("2001:220::"), &result)
 
 	expected := newInvalidDatabaseError(
@@ -560,7 +560,7 @@ func TestDecodingToNonPointer(t *testing.T) {
 	reader, err := Open(testFile("MaxMind-DB-test-decoder.mmdb"))
 	require.NoError(t, err)
 
-	var recordInterface interface{}
+	var recordInterface any
 	err = reader.Lookup(net.ParseIP("::1.1.1.0"), recordInterface)
 	assert.Equal(t, "result param must be a pointer", err.Error())
 	assert.NoError(t, reader.Close(), "error on close")
@@ -570,7 +570,7 @@ func TestNilLookup(t *testing.T) {
 	reader, err := Open(testFile("MaxMind-DB-test-decoder.mmdb"))
 	require.NoError(t, err)
 
-	var recordInterface interface{}
+	var recordInterface any
 	err = reader.Lookup(nil, recordInterface)
 	assert.Equal(t, "IP passed to Lookup cannot be nil", err.Error())
 	assert.NoError(t, reader.Close(), "error on close")
@@ -581,7 +581,7 @@ func TestUsingClosedDatabase(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, reader.Close())
 
-	var recordInterface interface{}
+	var recordInterface any
 
 	err = reader.Lookup(nil, recordInterface)
 	assert.Equal(t, "cannot call Lookup on a closed database", err.Error())
@@ -719,7 +719,7 @@ func BenchmarkInterfaceLookup(b *testing.B) {
 
 	//nolint:gosec // this is a test
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	var result interface{}
+	var result any
 
 	ip := make(net.IP, 4)
 	for i := 0; i < b.N; i++ {
@@ -738,7 +738,7 @@ func BenchmarkInterfaceLookupNetwork(b *testing.B) {
 
 	//nolint:gosec // this is a test
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	var result interface{}
+	var result any
 
 	ip := make(net.IP, 4)
 	for i := 0; i < b.N; i++ {
@@ -873,5 +873,5 @@ func randomIPv4Address(r *rand.Rand, ip []byte) {
 }
 
 func testFile(file string) string {
-	return filepath.Join("test-data/test-data", file)
+	return filepath.Join("test-data", "test-data", file)
 }
