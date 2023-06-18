@@ -26,8 +26,8 @@ func (e InvalidDatabaseError) Error() string {
 // UnmarshalTypeError is returned when the value in the database cannot be
 // assigned to the specified data type.
 type UnmarshalTypeError struct {
-	Value string       // stringified copy of the database value that caused the error
-	Type  reflect.Type // type of the value that could not be assign to
+	Type  reflect.Type
+	Value string
 }
 
 func newUnmarshalTypeError(value interface{}, rType reflect.Type) UnmarshalTypeError {

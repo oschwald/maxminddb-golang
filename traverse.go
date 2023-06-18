@@ -14,11 +14,10 @@ type netNode struct {
 
 // Networks represents a set of subnets that we are iterating over.
 type Networks struct {
-	reader   *Reader
-	nodes    []netNode // Nodes we still have to visit.
-	lastNode netNode
-	err      error
-
+	err                 error
+	reader              *Reader
+	nodes               []netNode
+	lastNode            netNode
 	skipAliasedNetworks bool
 }
 

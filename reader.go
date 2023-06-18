@@ -25,14 +25,14 @@ var metadataStartMarker = []byte("\xAB\xCD\xEFMaxMind.com")
 // All of the methods on Reader are thread-safe. The struct may be safely
 // shared across goroutines.
 type Reader struct {
-	hasMappedFile     bool
-	buffer            []byte
 	nodeReader        nodeReader
+	buffer            []byte
 	decoder           decoder
 	Metadata          Metadata
 	ipv4Start         uint
 	ipv4StartBitDepth int
 	nodeOffsetMult    uint
+	hasMappedFile     bool
 }
 
 // Metadata holds the metadata decoded from the MaxMind DB file. In particular
@@ -40,13 +40,13 @@ type Reader struct {
 // type and description, the IP version supported, and a slice of the natural
 // languages included.
 type Metadata struct {
+	Description              map[string]string `maxminddb:"description"`
+	DatabaseType             string            `maxminddb:"database_type"`
+	Languages                []string          `maxminddb:"languages"`
 	BinaryFormatMajorVersion uint              `maxminddb:"binary_format_major_version"`
 	BinaryFormatMinorVersion uint              `maxminddb:"binary_format_minor_version"`
 	BuildEpoch               uint              `maxminddb:"build_epoch"`
-	DatabaseType             string            `maxminddb:"database_type"`
-	Description              map[string]string `maxminddb:"description"`
 	IPVersion                uint              `maxminddb:"ip_version"`
-	Languages                []string          `maxminddb:"languages"`
 	NodeCount                uint              `maxminddb:"node_count"`
 	RecordSize               uint              `maxminddb:"record_size"`
 }
