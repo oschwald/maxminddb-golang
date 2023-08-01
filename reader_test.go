@@ -454,6 +454,67 @@ func TestComplexStructWithNestingAndPointer(t *testing.T) {
 	assert.NoError(t, reader.Close())
 }
 
+// See GitHub #115.
+func TestNestedMapDecode(t *testing.T) {
+	db, err := Open(testFile("GeoIP2-Country-Test.mmdb"))
+	require.NoError(t, err)
+
+	var r map[string]map[string]any
+
+	require.NoError(t, db.Lookup(net.ParseIP("89.160.20.128"), &r))
+
+	assert.Equal(
+		t,
+		map[string]map[string]any{
+			"continent": {
+				"code":       "EU",
+				"geoname_id": uint64(6255148),
+				"names": map[string]any{
+					"de":    "Europa",
+					"en":    "Europe",
+					"es":    "Europa",
+					"fr":    "Europe",
+					"ja":    "ヨーロッパ",
+					"pt-BR": "Europa",
+					"ru":    "Европа",
+					"zh-CN": "欧洲",
+				},
+			},
+			"country": {
+				"geoname_id":           uint64(2661886),
+				"is_in_european_union": true,
+				"iso_code":             "SE",
+				"names": map[string]any{
+					"de":    "Schweden",
+					"en":    "Sweden",
+					"es":    "Suecia",
+					"fr":    "Suède",
+					"ja":    "スウェーデン王国",
+					"pt-BR": "Suécia",
+					"ru":    "Швеция",
+					"zh-CN": "瑞典",
+				},
+			},
+			"registered_country": {
+				"geoname_id":           uint64(2921044),
+				"is_in_european_union": true,
+				"iso_code":             "DE",
+				"names": map[string]any{
+					"de":    "Deutschland",
+					"en":    "Germany",
+					"es":    "Alemania",
+					"fr":    "Allemagne",
+					"ja":    "ドイツ連邦共和国",
+					"pt-BR": "Alemanha",
+					"ru":    "Германия",
+					"zh-CN": "德国",
+				},
+			},
+		},
+		r,
+	)
+}
+
 func TestNestedOffsetDecode(t *testing.T) {
 	db, err := Open(testFile("GeoIP2-City-Test.mmdb"))
 	require.NoError(t, err)
