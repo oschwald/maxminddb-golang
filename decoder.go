@@ -418,7 +418,7 @@ func (d *decoder) unmarshalMap(
 	result = indirect(result)
 	switch result.Kind() {
 	default:
-		return 0, newUnmarshalTypeError("map", result.Type())
+		return 0, newUnmarshalTypeStrError("map", result.Type())
 	case reflect.Struct:
 		return d.decodeStruct(size, offset, result, depth)
 	case reflect.Map:
@@ -430,7 +430,7 @@ func (d *decoder) unmarshalMap(
 			result.Set(rv)
 			return newOffset, err
 		}
-		return 0, newUnmarshalTypeError("map", result.Type())
+		return 0, newUnmarshalTypeStrError("map", result.Type())
 	}
 }
 
@@ -465,7 +465,7 @@ func (d *decoder) unmarshalSlice(
 			return newOffset, err
 		}
 	}
-	return 0, newUnmarshalTypeError("array", result.Type())
+	return 0, newUnmarshalTypeStrError("array", result.Type())
 }
 
 func (d *decoder) unmarshalString(size, offset uint, result reflect.Value) (uint, error) {
