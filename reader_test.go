@@ -594,7 +594,7 @@ func TestBrokenDoubleDatabase(t *testing.T) {
 	expected := newInvalidDatabaseError(
 		"the MaxMind DB file's data section contains bad data (float 64 size of 2)",
 	)
-	assert.Equal(t, expected, err)
+	assert.ErrorAs(t, err, &expected)
 	assert.NoError(t, reader.Close(), "error on close")
 }
 

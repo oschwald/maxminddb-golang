@@ -2,6 +2,7 @@ package maxminddb
 
 import (
 	"encoding/binary"
+	"fmt"
 	"math"
 	"math/big"
 	"reflect"
@@ -615,7 +616,7 @@ func (d *decoder) decodeMap(
 
 		offset, err = d.decode(offset, elemValue, depth)
 		if err != nil {
-			return 0, err
+			return 0, fmt.Errorf("decoding value for %s: %w", key, err)
 		}
 
 		keyValue.SetString(string(key))
@@ -772,7 +773,7 @@ func (d *decoder) decodeStruct(
 
 		offset, err = d.decode(offset, result.Field(j), depth)
 		if err != nil {
-			return 0, err
+			return 0, fmt.Errorf("decoding value for %s: %w", key, err)
 		}
 	}
 	return offset, nil
