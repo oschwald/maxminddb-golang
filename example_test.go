@@ -49,6 +49,9 @@ func ExampleReader_Lookup_interface() {
 		log.Panic(err)
 	}
 	fmt.Printf("%v", record)
+	//nolint:lll
+	// Output:
+	// map[city:map[geoname_id:2643743 names:map[de:London en:London es:Londres fr:Londres ja:ロンドン pt-BR:Londres ru:Лондон]] continent:map[code:EU geoname_id:6255148 names:map[de:Europa en:Europe es:Europa fr:Europe ja:ヨーロッパ pt-BR:Europa ru:Европа zh-CN:欧洲]] country:map[geoname_id:2635167 iso_code:GB names:map[de:Vereinigtes Königreich en:United Kingdom es:Reino Unido fr:Royaume-Uni ja:イギリス pt-BR:Reino Unido ru:Великобритания zh-CN:英国]] location:map[accuracy_radius:10 latitude:51.5142 longitude:-0.0931 time_zone:Europe/London] registered_country:map[geoname_id:6252001 iso_code:US names:map[de:USA en:United States es:Estados Unidos fr:États-Unis ja:アメリカ合衆国 pt-BR:Estados Unidos ru:США zh-CN:美国]] subdivisions:[map[geoname_id:6269131 iso_code:ENG names:map[en:England es:Inglaterra fr:Angleterre pt-BR:Inglaterra]]]]
 }
 
 // This example demonstrates how to iterate over all networks in the
