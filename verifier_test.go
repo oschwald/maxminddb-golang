@@ -36,7 +36,7 @@ func TestVerifyOnGoodDatabases(t *testing.T) {
 			reader, err := Open(testFile(database))
 			require.NoError(t, err)
 
-			assert.NoError(
+			require.NoError(
 				t,
 				reader.Verify(),
 				"Received error (%v) when verifying %v",
@@ -56,8 +56,8 @@ func TestVerifyOnBrokenDatabases(t *testing.T) {
 
 	for _, database := range databases {
 		reader, err := Open(testFile(database))
-		assert.Nil(t, err)
-		assert.NotNil(t, reader.Verify(),
+		require.NoError(t, err)
+		assert.Error(t, reader.Verify(),
 			"Did not receive expected error when verifying %v", database,
 		)
 	}
