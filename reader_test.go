@@ -225,8 +225,8 @@ func checkDecodingToInterface(t *testing.T, recordInterface any) {
 	assert.Equal(t, []any{uint64(1), uint64(2), uint64(3)}, record["array"])
 	assert.Equal(t, true, record["boolean"])
 	assert.Equal(t, []byte{0x00, 0x00, 0x00, 0x2a}, record["bytes"])
-	assert.Equal(t, 42.123456, record["double"])
-	assert.Equal(t, float32(1.1), record["float"])
+	assert.InEpsilon(t, 42.123456, record["double"], 1e-10)
+	assert.InEpsilon(t, float32(1.1), record["float"], 1e-5)
 	assert.Equal(t, -268435456, record["int32"])
 	assert.Equal(t,
 		map[string]any{
@@ -268,10 +268,10 @@ func TestDecoder(t *testing.T) {
 
 	verify := func(result TestType) {
 		assert.Equal(t, []uint{uint(1), uint(2), uint(3)}, result.Array)
-		assert.Equal(t, true, result.Boolean)
+		assert.True(t, result.Boolean)
 		assert.Equal(t, []byte{0x00, 0x00, 0x00, 0x2a}, result.Bytes)
-		assert.Equal(t, 42.123456, result.Double)
-		assert.Equal(t, float32(1.1), result.Float)
+		assert.InEpsilon(t, 42.123456, result.Double, 1e-10)
+		assert.InEpsilon(t, float32(1.1), result.Float, 1e-5)
 		assert.Equal(t, int32(-268435456), result.Int32)
 
 		assert.Equal(t,
@@ -306,11 +306,11 @@ func TestDecoder(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotEqual(t, NotFound, offset)
 
-		assert.NoError(t, reader.Decode(offset, &result))
+		require.NoError(t, reader.Decode(offset, &result))
 		verify(result)
 	}
 
-	assert.NoError(t, reader.Close())
+	require.NoError(t, reader.Close())
 }
 
 type TestInterface interface {
@@ -329,7 +329,7 @@ func TestStructInterface(t *testing.T) {
 
 	require.NoError(t, reader.Lookup(net.ParseIP("::1.1.1.0"), &result))
 
-	assert.Equal(t, true, result.method())
+	assert.True(t, result.method())
 }
 
 func TestNonEmptyNilInterface(t *testing.T) {
@@ -361,7 +361,7 @@ func TestEmbeddedStructAsInterface(t *testing.T) {
 	db, err := Open(testFile("GeoIP2-ISP-Test.mmdb"))
 	require.NoError(t, err)
 
-	assert.NoError(t, db.Lookup(net.ParseIP("1.128.0.0"), &result))
+	require.NoError(t, db.Lookup(net.ParseIP("1.128.0.0"), &result))
 }
 
 type BoolInterface interface {
@@ -425,7 +425,7 @@ type TestPointerType struct {
 
 func TestComplexStructWithNestingAndPointer(t *testing.T) {
 	reader, err := Open(testFile("MaxMind-DB-test-decoder.mmdb"))
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	var result TestPointerType
 
@@ -433,10 +433,10 @@ func TestComplexStructWithNestingAndPointer(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, []uint{uint(1), uint(2), uint(3)}, *result.Array)
-	assert.Equal(t, true, *result.Boolean)
+	assert.True(t, *result.Boolean)
 	assert.Equal(t, []byte{0x00, 0x00, 0x00, 0x2a}, *result.Bytes)
-	assert.Equal(t, 42.123456, *result.Double)
-	assert.Equal(t, float32(1.1), *result.Float)
+	assert.InEpsilon(t, 42.123456, *result.Double, 1e-10)
+	assert.InEpsilon(t, float32(1.1), *result.Float, 1e-5)
 	assert.Equal(t, int32(-268435456), *result.Int32)
 
 	assert.Equal(t, []int{7, 8, 9}, result.Map.MapX.ArrayX)
@@ -451,7 +451,7 @@ func TestComplexStructWithNestingAndPointer(t *testing.T) {
 	bigInt.SetString("1329227995784915872903807060280344576", 10)
 	assert.Equal(t, bigInt, result.Uint128)
 
-	assert.NoError(t, reader.Close())
+	require.NoError(t, reader.Close())
 }
 
 // See GitHub #115.
@@ -520,7 +520,7 @@ func TestNestedOffsetDecode(t *testing.T) {
 	require.NoError(t, err)
 
 	off, err := db.LookupOffset(net.ParseIP("81.2.69.142"))
-	assert.NotEqual(t, off, NotFound)
+	assert.NotEqual(t, NotFound, off)
 	require.NoError(t, err)
 
 	var root struct {
@@ -534,24 +534,24 @@ func TestNestedOffsetDecode(t *testing.T) {
 			TimeZoneOffset uintptr `maxminddb:"time_zone"`
 		} `maxminddb:"location"`
 	}
-	assert.NoError(t, db.Decode(off, &root))
-	assert.Equal(t, 51.5142, root.Location.Latitude)
+	require.NoError(t, db.Decode(off, &root))
+	assert.InEpsilon(t, 51.5142, root.Location.Latitude, 1e-10)
 
 	var longitude float64
-	assert.NoError(t, db.Decode(root.Location.LongitudeOffset, &longitude))
-	assert.Equal(t, -0.0931, longitude)
+	require.NoError(t, db.Decode(root.Location.LongitudeOffset, &longitude))
+	assert.InEpsilon(t, -0.0931, longitude, 1e-10)
 
 	var timeZone string
-	assert.NoError(t, db.Decode(root.Location.TimeZoneOffset, &timeZone))
+	require.NoError(t, db.Decode(root.Location.TimeZoneOffset, &timeZone))
 	assert.Equal(t, "Europe/London", timeZone)
 
 	var country struct {
 		IsoCode string `maxminddb:"iso_code"`
 	}
-	assert.NoError(t, db.Decode(root.CountryOffset, &country))
+	require.NoError(t, db.Decode(root.CountryOffset, &country))
 	assert.Equal(t, "GB", country.IsoCode)
 
-	assert.NoError(t, db.Close())
+	require.NoError(t, db.Close())
 }
 
 func TestDecodingUint16IntoInt(t *testing.T) {
@@ -581,7 +581,7 @@ func TestIpv6inIpv4(t *testing.T) {
 		"error looking up '2001::': you attempted to look up an IPv6 address in an IPv4-only database",
 	)
 	assert.Equal(t, expected, err)
-	assert.NoError(t, reader.Close(), "error on close")
+	require.NoError(t, reader.Close(), "error on close")
 }
 
 func TestBrokenDoubleDatabase(t *testing.T) {
@@ -595,7 +595,7 @@ func TestBrokenDoubleDatabase(t *testing.T) {
 		"the MaxMind DB file's data section contains bad data (float 64 size of 2)",
 	)
 	assert.Equal(t, expected, err)
-	assert.NoError(t, reader.Close(), "error on close")
+	require.NoError(t, reader.Close(), "error on close")
 }
 
 func TestInvalidNodeCountDatabase(t *testing.T) {
@@ -624,7 +624,7 @@ func TestDecodingToNonPointer(t *testing.T) {
 	var recordInterface any
 	err = reader.Lookup(net.ParseIP("::1.1.1.0"), recordInterface)
 	assert.Equal(t, "result param must be a pointer", err.Error())
-	assert.NoError(t, reader.Close(), "error on close")
+	require.NoError(t, reader.Close(), "error on close")
 }
 
 func TestNilLookup(t *testing.T) {
@@ -634,7 +634,7 @@ func TestNilLookup(t *testing.T) {
 	var recordInterface any
 	err = reader.Lookup(nil, recordInterface)
 	assert.Equal(t, "IP passed to Lookup cannot be nil", err.Error())
-	assert.NoError(t, reader.Close(), "error on close")
+	require.NoError(t, reader.Close(), "error on close")
 }
 
 func TestUsingClosedDatabase(t *testing.T) {
@@ -663,11 +663,10 @@ func checkMetadata(t *testing.T, reader *Reader, ipVersion, recordSize uint) {
 	assert.IsType(t, uint(0), metadata.BuildEpoch)
 	assert.Equal(t, "Test", metadata.DatabaseType)
 
-	assert.Equal(t, metadata.Description,
-		map[string]string{
-			"en": "Test Database",
-			"zh": "Test Database Chinese",
-		})
+	assert.Equal(t, map[string]string{
+		"en": "Test Database",
+		"zh": "Test Database Chinese",
+	}, metadata.Description)
 	assert.Equal(t, ipVersion, metadata.IPVersion)
 	assert.Equal(t, []string{"en", "zh"}, metadata.Languages)
 
@@ -687,7 +686,7 @@ func checkIpv4(t *testing.T, reader *Reader) {
 
 		var result map[string]string
 		err := reader.Lookup(ip, &result)
-		assert.NoError(t, err, "unexpected error while doing lookup: %v", err)
+		require.NoError(t, err, "unexpected error while doing lookup: %v", err)
 		assert.Equal(t, map[string]string{"ip": address}, result)
 	}
 	pairs := map[string]string{
@@ -707,7 +706,7 @@ func checkIpv4(t *testing.T, reader *Reader) {
 
 		var result map[string]string
 		err := reader.Lookup(ip, &result)
-		assert.NoError(t, err, "unexpected error while doing lookup: %v", err)
+		require.NoError(t, err, "unexpected error while doing lookup: %v", err)
 		assert.Equal(t, data, result)
 	}
 
@@ -716,7 +715,7 @@ func checkIpv4(t *testing.T, reader *Reader) {
 
 		var result map[string]string
 		err := reader.Lookup(ip, &result)
-		assert.NoError(t, err, "unexpected error while doing lookup: %v", err)
+		require.NoError(t, err, "unexpected error while doing lookup: %v", err)
 		assert.Nil(t, result)
 	}
 }
@@ -730,7 +729,7 @@ func checkIpv6(t *testing.T, reader *Reader) {
 	for _, address := range subnets {
 		var result map[string]string
 		err := reader.Lookup(net.ParseIP(address), &result)
-		assert.NoError(t, err, "unexpected error while doing lookup: %v", err)
+		require.NoError(t, err, "unexpected error while doing lookup: %v", err)
 		assert.Equal(t, map[string]string{"ip": address}, result)
 	}
 
@@ -749,14 +748,14 @@ func checkIpv6(t *testing.T, reader *Reader) {
 		data := map[string]string{"ip": valueAddress}
 		var result map[string]string
 		err := reader.Lookup(net.ParseIP(keyAddress), &result)
-		assert.NoError(t, err, "unexpected error while doing lookup: %v", err)
+		require.NoError(t, err, "unexpected error while doing lookup: %v", err)
 		assert.Equal(t, data, result)
 	}
 
 	for _, address := range []string{"1.1.1.33", "255.254.253.123", "89fa::"} {
 		var result map[string]string
 		err := reader.Lookup(net.ParseIP(address), &result)
-		assert.NoError(t, err, "unexpected error while doing lookup: %v", err)
+		require.NoError(t, err, "unexpected error while doing lookup: %v", err)
 		assert.Nil(t, result)
 	}
 }
@@ -771,7 +770,7 @@ func BenchmarkOpen(b *testing.B) {
 		}
 	}
 	assert.NotNil(b, db)
-	assert.NoError(b, db.Close(), "error on close")
+	require.NoError(b, db.Close(), "error on close")
 }
 
 func BenchmarkInterfaceLookup(b *testing.B) {
@@ -790,7 +789,7 @@ func BenchmarkInterfaceLookup(b *testing.B) {
 			b.Error(err)
 		}
 	}
-	assert.NoError(b, db.Close(), "error on close")
+	require.NoError(b, db.Close(), "error on close")
 }
 
 func BenchmarkInterfaceLookupNetwork(b *testing.B) {
@@ -809,7 +808,7 @@ func BenchmarkInterfaceLookupNetwork(b *testing.B) {
 			b.Error(err)
 		}
 	}
-	assert.NoError(b, db.Close(), "error on close")
+	require.NoError(b, db.Close(), "error on close")
 }
 
 type fullCity struct {
@@ -878,7 +877,7 @@ func BenchmarkCityLookup(b *testing.B) {
 			b.Error(err)
 		}
 	}
-	assert.NoError(b, db.Close(), "error on close")
+	require.NoError(b, db.Close(), "error on close")
 }
 
 func BenchmarkCityLookupNetwork(b *testing.B) {
@@ -897,7 +896,7 @@ func BenchmarkCityLookupNetwork(b *testing.B) {
 			b.Error(err)
 		}
 	}
-	assert.NoError(b, db.Close(), "error on close")
+	require.NoError(b, db.Close(), "error on close")
 }
 
 func BenchmarkCountryCode(b *testing.B) {
@@ -922,7 +921,7 @@ func BenchmarkCountryCode(b *testing.B) {
 			b.Error(err)
 		}
 	}
-	assert.NoError(b, db.Close(), "error on close")
+	require.NoError(b, db.Close(), "error on close")
 }
 
 func randomIPv4Address(r *rand.Rand, ip []byte) {

@@ -1,10 +1,10 @@
 module github.com/oschwald/maxminddb-golang
 
-go 1.19
+go 1.21
 
 require (
-	github.com/stretchr/testify v1.8.4
-	golang.org/x/sys v0.14.0
+	github.com/stretchr/testify v1.9.0
+	golang.org/x/sys v0.20.0
 )
 
 require (

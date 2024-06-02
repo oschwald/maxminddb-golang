@@ -16,7 +16,7 @@ func TestNetworks(t *testing.T) {
 				fmt.Sprintf("MaxMind-DB-test-ipv%d-%d.mmdb", ipVersion, recordSize),
 			)
 			reader, err := Open(fileName)
-			require.Nil(t, err, "unexpected error while opening database: %v", err)
+			require.NoError(t, err, "unexpected error while opening database: %v", err)
 
 			n := reader.Networks()
 			for n.Next() {
@@ -24,31 +24,30 @@ func TestNetworks(t *testing.T) {
 					IP string `maxminddb:"ip"`
 				}{}
 				network, err := n.Network(&record)
-				assert.Nil(t, err)
+				require.NoError(t, err)
 				assert.Equal(t, record.IP, network.IP.String(),
 					"expected %s got %s", record.IP, network.IP.String(),
 				)
 			}
-			assert.Nil(t, n.Err())
-			assert.NoError(t, reader.Close())
+			require.NoError(t, n.Err())
+			require.NoError(t, reader.Close())
 		}
 	}
 }
 
 func TestNetworksWithInvalidSearchTree(t *testing.T) {
 	reader, err := Open(testFile("MaxMind-DB-test-broken-search-tree-24.mmdb"))
-	require.Nil(t, err, "unexpected error while opening database: %v", err)
+	require.NoError(t, err, "unexpected error while opening database: %v", err)
 
 	n := reader.Networks()
 	for n.Next() {
 		var record any
 		_, err := n.Network(&record)
-		assert.Nil(t, err)
+		require.NoError(t, err)
 	}
-	assert.NotNil(t, n.Err(), "no error received when traversing an broken search tree")
-	assert.Equal(t, "invalid search tree at 128.128.128.128/32", n.Err().Error())
+	require.EqualError(t, n.Err(), "invalid search tree at 128.128.128.128/32")
 
-	assert.NoError(t, reader.Close())
+	require.NoError(t, reader.Close())
 }
 
 type networkTest struct {
@@ -237,10 +236,10 @@ func TestNetworksWithin(t *testing.T) {
 		for _, recordSize := range []uint{24, 28, 32} {
 			fileName := testFile(fmt.Sprintf("MaxMind-DB-test-%s-%d.mmdb", v.Database, recordSize))
 			reader, err := Open(fileName)
-			require.Nil(t, err, "unexpected error while opening database: %v", err)
+			require.NoError(t, err, "unexpected error while opening database: %v", err)
 
 			_, network, err := net.ParseCIDR(v.Network)
-			assert.Nil(t, err)
+			require.NoError(t, err)
 			n := reader.NetworksWithin(network, v.Options...)
 			var innerIPs []string
 
@@ -249,14 +248,14 @@ func TestNetworksWithin(t *testing.T) {
 					IP string `maxminddb:"ip"`
 				}{}
 				network, err := n.Network(&record)
-				assert.Nil(t, err)
+				require.NoError(t, err)
 				innerIPs = append(innerIPs, network.String())
 			}
 
 			assert.Equal(t, v.Expected, innerIPs)
-			assert.Nil(t, n.Err())
+			require.NoError(t, n.Err())
 
-			assert.NoError(t, reader.Close())
+			require.NoError(t, reader.Close())
 		}
 	}
 }
@@ -277,10 +276,10 @@ func TestGeoIPNetworksWithin(t *testing.T) {
 	for _, v := range geoipTests {
 		fileName := testFile(v.Database)
 		reader, err := Open(fileName)
-		require.Nil(t, err, "unexpected error while opening database: %v", err)
+		require.NoError(t, err, "unexpected error while opening database: %v", err)
 
 		_, network, err := net.ParseCIDR(v.Network)
-		assert.Nil(t, err)
+		require.NoError(t, err)
 		n := reader.NetworksWithin(network)
 		var innerIPs []string
 
@@ -289,13 +288,13 @@ func TestGeoIPNetworksWithin(t *testing.T) {
 				IP string `maxminddb:"ip"`
 			}{}
 			network, err := n.Network(&record)
-			assert.Nil(t, err)
+			require.NoError(t, err)
 			innerIPs = append(innerIPs, network.String())
 		}
 
 		assert.Equal(t, v.Expected, innerIPs)
-		assert.Nil(t, n.Err())
+		require.NoError(t, n.Err())
 
-		assert.NoError(t, reader.Close())
+		require.NoError(t, reader.Close())
 	}
 }
