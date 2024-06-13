@@ -202,3 +202,44 @@ func isInIPv4Subtree(ip net.IP) bool {
 	}
 	return true
 }
+
+// Data represents a set of data entries that we are iterating over.
+type Data struct {
+	reader *Reader
+	offset uintptr
+	err    error
+}
+
+// Data returns an iterator over all data sections in the database.
+func (r *Reader) Data() *Data {
+	return &Data{reader: r}
+}
+
+// Next returns true if there are more sections to be processed, and false if
+// there are no more sections or if there is an error.
+func (d *Data) Next() bool {
+	if d.err != nil {
+		return false
+	}
+	return d.offset < uintptr(len(d.reader.decoder.buffer))
+}
+
+// Err returns an error, if any, that was encountered during iteration.
+func (d *Data) Err() error {
+	return d.err
+}
+
+// Data returns the current data section or an error if there is a problem
+// decoding the data.
+//
+// It takes a pointer to a result value to decode the data into.
+func (d *Data) Data(result any) error {
+	o, err := d.reader.decode(d.offset, result)
+	if err != nil {
+		return err
+	}
+
+	d.offset = uintptr(o)
+	d.err = err
+	return nil
+}

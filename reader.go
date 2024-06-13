@@ -221,22 +221,21 @@ func (r *Reader) Decode(offset uintptr, result any) error {
 	if r.buffer == nil {
 		return errors.New("cannot call Decode on a closed database")
 	}
-	return r.decode(offset, result)
+	_, err := r.decode(offset, result)
+	return err
 }
 
-func (r *Reader) decode(offset uintptr, result any) error {
+func (r *Reader) decode(offset uintptr, result any) (uint, error) {
 	rv := reflect.ValueOf(result)
 	if rv.Kind() != reflect.Ptr || rv.IsNil() {
-		return errors.New("result param must be a pointer")
+		return 0, errors.New("result param must be a pointer")
 	}
 
 	if dser, ok := result.(deserializer); ok {
-		_, err := r.decoder.decodeToDeserializer(uint(offset), dser, 0, false)
-		return err
+		return r.decoder.decodeToDeserializer(uint(offset), dser, 0, false)
 	}
 
-	_, err := r.decoder.decode(uint(offset), rv, 0)
-	return err
+	return r.decoder.decode(uint(offset), rv, 0)
 }
 
 func (r *Reader) lookupPointer(ip net.IP) (uint, int, net.IP, error) {
@@ -297,7 +296,8 @@ func (r *Reader) retrieveData(pointer uint, result any) error {
 	if err != nil {
 		return err
 	}
-	return r.decode(offset, result)
+	_, err = r.decode(offset, result)
+	return err
 }
 
 func (r *Reader) resolveDataPointer(pointer uint) (uintptr, error) {
