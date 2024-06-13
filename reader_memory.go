@@ -1,5 +1,5 @@
-//go:build appengine || plan9 || js || wasip1 || wasi
-// +build appengine plan9 js wasip1 wasi
+//go:build appengine || plan9 || js || wasip1 || wasi || maxminddisablemmap
+// +build appengine plan9 js wasip1 wasi maxminddisablemmap
 
 package maxminddb
 
@@ -9,6 +9,7 @@ import "io/ioutil"
 // structure or an error. The database file is opened using a memory map
 // on supported platforms. On platforms without memory map support, such
 // as WebAssembly or Google App Engine, the database is loaded into memory.
+// use '-tags maxminddisablemmap' for force DB to be loaded in memory
 // Use the Close method on the Reader object to return the resources to the system.
 func Open(file string) (*Reader, error) {
 	bytes, err := ioutil.ReadFile(file)
