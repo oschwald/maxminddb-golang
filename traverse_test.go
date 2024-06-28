@@ -86,6 +86,27 @@ var tests = []networkTest{
 		},
 	},
 	{
+		Network:  "1.1.1.2/32",
+		Database: "ipv4",
+		Expected: []string{
+			"1.1.1.2/31",
+		},
+	},
+	{
+		Network:  "1.1.1.3/32",
+		Database: "ipv4",
+		Expected: []string{
+			"1.1.1.2/31",
+		},
+	},
+	{
+		Network:  "1.1.1.19/32",
+		Database: "ipv4",
+		Expected: []string{
+			"1.1.1.16/28",
+		},
+	},
+	{
 		Network:  "255.255.255.0/24",
 		Database: "ipv4",
 		Expected: []string(nil),

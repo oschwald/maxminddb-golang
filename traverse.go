@@ -95,6 +95,10 @@ func (r *Reader) NetworksWithin(network *net.IPNet, options ...NetworksOption) *
 	}
 
 	pointer, bit := r.traverseTree(ip, 0, uint(prefixLength))
+
+	if bit < prefixLength {
+		ip = ip.Mask(net.CIDRMask(bit, len(ip)*8))
+	}
 	networks.nodes = []netNode{
 		{
 			ip:      ip,
