@@ -3,6 +3,8 @@ package maxminddb
 import (
 	"fmt"
 	"net"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -71,10 +73,19 @@ var tests = []networkTest{
 		},
 	},
 	{
+		// This is intentionally in non-canonical form to test
+		// that we handle it correctly.
 		Network:  "1.1.1.1/30",
 		Database: "ipv4",
 		Expected: []string{
 			"1.1.1.1/32",
+			"1.1.1.2/31",
+		},
+	},
+	{
+		Network:  "1.1.1.2/31",
+		Database: "ipv4",
+		Expected: []string{
 			"1.1.1.2/31",
 		},
 	},
@@ -267,7 +278,21 @@ func TestNetworksWithin(t *testing.T) {
 				reader, err := Open(fileName)
 				require.NoError(t, err, "unexpected error while opening database: %v", err)
 
-				_, network, err := net.ParseCIDR(v.Network)
+				// We are purposely not using net.ParseCIDR so that we can pass in
+				// values that aren't in canonical form.
+				parts := strings.Split(v.Network, "/")
+				ip := net.ParseIP(parts[0])
+				if v := ip.To4(); v != nil {
+					ip = v
+				}
+				prefixLength, err := strconv.Atoi(parts[1])
+				require.NoError(t, err)
+				mask := net.CIDRMask(prefixLength, len(ip)*8)
+				network := &net.IPNet{
+					IP:   ip,
+					Mask: mask,
+				}
+
 				require.NoError(t, err)
 				n := reader.NetworksWithin(network, v.Options...)
 				var innerIPs []string
