@@ -3,6 +3,8 @@ package maxminddb
 import (
 	"fmt"
 	"net"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -71,6 +73,8 @@ var tests = []networkTest{
 		},
 	},
 	{
+		// This is intentionally in non-canonical form to test
+		// that we handle it correctly.
 		Network:  "1.1.1.1/30",
 		Database: "ipv4",
 		Expected: []string{
@@ -79,10 +83,38 @@ var tests = []networkTest{
 		},
 	},
 	{
+		Network:  "1.1.1.2/31",
+		Database: "ipv4",
+		Expected: []string{
+			"1.1.1.2/31",
+		},
+	},
+	{
 		Network:  "1.1.1.1/32",
 		Database: "ipv4",
 		Expected: []string{
 			"1.1.1.1/32",
+		},
+	},
+	{
+		Network:  "1.1.1.2/32",
+		Database: "ipv4",
+		Expected: []string{
+			"1.1.1.2/31",
+		},
+	},
+	{
+		Network:  "1.1.1.3/32",
+		Database: "ipv4",
+		Expected: []string{
+			"1.1.1.2/31",
+		},
+	},
+	{
+		Network:  "1.1.1.19/32",
+		Database: "ipv4",
+		Expected: []string{
+			"1.1.1.16/28",
 		},
 	},
 	{
@@ -234,28 +266,51 @@ var tests = []networkTest{
 func TestNetworksWithin(t *testing.T) {
 	for _, v := range tests {
 		for _, recordSize := range []uint{24, 28, 32} {
-			fileName := testFile(fmt.Sprintf("MaxMind-DB-test-%s-%d.mmdb", v.Database, recordSize))
-			reader, err := Open(fileName)
-			require.NoError(t, err, "unexpected error while opening database: %v", err)
+			name := fmt.Sprintf(
+				"%s-%d: %s, options: %v",
+				v.Database,
+				recordSize,
+				v.Network,
+				len(v.Options) != 0,
+			)
+			t.Run(name, func(t *testing.T) {
+				fileName := testFile(fmt.Sprintf("MaxMind-DB-test-%s-%d.mmdb", v.Database, recordSize))
+				reader, err := Open(fileName)
+				require.NoError(t, err, "unexpected error while opening database: %v", err)
 
-			_, network, err := net.ParseCIDR(v.Network)
-			require.NoError(t, err)
-			n := reader.NetworksWithin(network, v.Options...)
-			var innerIPs []string
-
-			for n.Next() {
-				record := struct {
-					IP string `maxminddb:"ip"`
-				}{}
-				network, err := n.Network(&record)
+				// We are purposely not using net.ParseCIDR so that we can pass in
+				// values that aren't in canonical form.
+				parts := strings.Split(v.Network, "/")
+				ip := net.ParseIP(parts[0])
+				if v := ip.To4(); v != nil {
+					ip = v
+				}
+				prefixLength, err := strconv.Atoi(parts[1])
 				require.NoError(t, err)
-				innerIPs = append(innerIPs, network.String())
-			}
+				mask := net.CIDRMask(prefixLength, len(ip)*8)
+				network := &net.IPNet{
+					IP:   ip,
+					Mask: mask,
+				}
 
-			assert.Equal(t, v.Expected, innerIPs)
-			require.NoError(t, n.Err())
+				require.NoError(t, err)
+				n := reader.NetworksWithin(network, v.Options...)
+				var innerIPs []string
 
-			require.NoError(t, reader.Close())
+				for n.Next() {
+					record := struct {
+						IP string `maxminddb:"ip"`
+					}{}
+					network, err := n.Network(&record)
+					require.NoError(t, err)
+					innerIPs = append(innerIPs, network.String())
+				}
+
+				assert.Equal(t, v.Expected, innerIPs)
+				require.NoError(t, n.Err())
+
+				require.NoError(t, reader.Close())
+			})
 		}
 	}
 }
