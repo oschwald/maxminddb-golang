@@ -234,28 +234,37 @@ var tests = []networkTest{
 func TestNetworksWithin(t *testing.T) {
 	for _, v := range tests {
 		for _, recordSize := range []uint{24, 28, 32} {
-			fileName := testFile(fmt.Sprintf("MaxMind-DB-test-%s-%d.mmdb", v.Database, recordSize))
-			reader, err := Open(fileName)
-			require.NoError(t, err, "unexpected error while opening database: %v", err)
+			name := fmt.Sprintf(
+				"%s-%d: %s, options: %v",
+				v.Database,
+				recordSize,
+				v.Network,
+				len(v.Options) != 0,
+			)
+			t.Run(name, func(t *testing.T) {
+				fileName := testFile(fmt.Sprintf("MaxMind-DB-test-%s-%d.mmdb", v.Database, recordSize))
+				reader, err := Open(fileName)
+				require.NoError(t, err, "unexpected error while opening database: %v", err)
 
-			_, network, err := net.ParseCIDR(v.Network)
-			require.NoError(t, err)
-			n := reader.NetworksWithin(network, v.Options...)
-			var innerIPs []string
-
-			for n.Next() {
-				record := struct {
-					IP string `maxminddb:"ip"`
-				}{}
-				network, err := n.Network(&record)
+				_, network, err := net.ParseCIDR(v.Network)
 				require.NoError(t, err)
-				innerIPs = append(innerIPs, network.String())
-			}
+				n := reader.NetworksWithin(network, v.Options...)
+				var innerIPs []string
 
-			assert.Equal(t, v.Expected, innerIPs)
-			require.NoError(t, n.Err())
+				for n.Next() {
+					record := struct {
+						IP string `maxminddb:"ip"`
+					}{}
+					network, err := n.Network(&record)
+					require.NoError(t, err)
+					innerIPs = append(innerIPs, network.String())
+				}
 
-			require.NoError(t, reader.Close())
+				assert.Equal(t, v.Expected, innerIPs)
+				require.NoError(t, n.Err())
+
+				require.NoError(t, reader.Close())
+			})
 		}
 	}
 }
