@@ -2,12 +2,12 @@ package maxminddb
 
 import (
 	"fmt"
-	"net"
+	"net/netip"
 )
 
 // Internal structure used to keep track of nodes we still need to visit.
 type netNode struct {
-	ip      net.IP
+	ip      netip.Addr
 	bit     uint
 	pointer uint
 }
@@ -22,8 +22,8 @@ type Networks struct {
 }
 
 var (
-	allIPv4 = &net.IPNet{IP: make(net.IP, 4), Mask: net.CIDRMask(0, 32)}
-	allIPv6 = &net.IPNet{IP: make(net.IP, 16), Mask: net.CIDRMask(0, 128)}
+	allIPv4 = netip.MustParsePrefix("0.0.0.0/0")
+	allIPv6 = netip.MustParsePrefix("::/0")
 )
 
 // NetworksOption are options for Networks and NetworksWithin.
@@ -58,21 +58,21 @@ func (r *Reader) Networks(options ...NetworksOption) *Networks {
 }
 
 // NetworksWithin returns an iterator that can be used to traverse all networks
-// in the database which are contained in a given network.
+// in the database which are contained in a given prefix.
 //
 // Please note that a MaxMind DB may map IPv4 networks into several locations
 // in an IPv6 database. This iterator will iterate over all of these locations
 // separately. To only iterate over the IPv4 networks once, use the
 // SkipAliasedNetworks option.
 //
-// If the provided network is contained within a network in the database, the
+// If the provided prefix is contained within a network in the database, the
 // iterator will iterate over exactly one network, the containing network.
-func (r *Reader) NetworksWithin(network *net.IPNet, options ...NetworksOption) *Networks {
-	if r.Metadata.IPVersion == 4 && network.IP.To4() == nil {
+func (r *Reader) NetworksWithin(prefix netip.Prefix, options ...NetworksOption) *Networks {
+	if r.Metadata.IPVersion == 4 && prefix.Addr().Is6() {
 		return &Networks{
 			err: fmt.Errorf(
 				"error getting networks with '%s': you attempted to use an IPv6 network in an IPv4-only database",
-				network.String(),
+				prefix,
 			),
 		}
 	}
@@ -82,29 +82,24 @@ func (r *Reader) NetworksWithin(network *net.IPNet, options ...NetworksOption) *
 		option(networks)
 	}
 
-	ip := network.IP
-	prefixLength, _ := network.Mask.Size()
-
-	if r.Metadata.IPVersion == 6 && len(ip) == net.IPv4len {
-		if networks.skipAliasedNetworks {
-			ip = net.IP{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ip[0], ip[1], ip[2], ip[3]}
-		} else {
-			ip = ip.To16()
-		}
-		prefixLength += 96
+	ip := prefix.Addr()
+	netIP := ip
+	stopBit := prefix.Bits()
+	if ip.Is4() {
+		netIP = v4ToV16(ip)
+		stopBit += 96
 	}
 
-	pointer, bit := r.traverseTree(ip, 0, uint(prefixLength))
+	pointer, bit := r.traverseTree(ip, 0, stopBit)
 
-	// We could skip this when bit >= prefixLength if we assume that the network
-	// passed in is in canonical form. However, given that this may not be the
-	// case, it is safest to always take the mask. If this is hot code at some
-	// point, we could eliminate the allocation of the net.IPMask by zeroing
-	// out the bits in ip directly.
-	ip = ip.Mask(net.CIDRMask(bit, len(ip)*8))
+	prefix, err := netIP.Prefix(bit)
+	if err != nil {
+		networks.err = fmt.Errorf("prefixing %s with %d", netIP, bit)
+	}
+
 	networks.nodes = []netNode{
 		{
-			ip:      ip,
+			ip:      prefix.Addr(),
 			bit:     uint(bit),
 			pointer: pointer,
 		},
@@ -136,11 +131,17 @@ func (n *Networks) Next() bool {
 				n.lastNode = node
 				return true
 			}
-			ipRight := make(net.IP, len(node.ip))
-			copy(ipRight, node.ip)
+			ipRight := node.ip.As16()
 			if len(ipRight) <= int(node.bit>>3) {
+				displayAddr := node.ip
+				displayBits := node.bit
+				if isInIPv4Subtree(node.ip) {
+					displayAddr = v6ToV4(displayAddr)
+					displayBits -= 96
+				}
+
 				n.err = newInvalidDatabaseError(
-					"invalid search tree at %v/%v", ipRight, node.bit)
+					"invalid search tree at %s/%d", displayAddr, displayBits)
 				return false
 			}
 			ipRight[node.bit>>3] |= 1 << (7 - (node.bit % 8))
@@ -151,7 +152,7 @@ func (n *Networks) Next() bool {
 			node.bit++
 			n.nodes = append(n.nodes, netNode{
 				pointer: rightPointer,
-				ip:      ipRight,
+				ip:      netip.AddrFrom16(ipRight),
 				bit:     node.bit,
 			})
 
@@ -165,30 +166,22 @@ func (n *Networks) Next() bool {
 // Network returns the current network or an error if there is a problem
 // decoding the data for the network. It takes a pointer to a result value to
 // decode the network's data into.
-func (n *Networks) Network(result any) (*net.IPNet, error) {
+func (n *Networks) Network(result any) (netip.Prefix, error) {
 	if n.err != nil {
-		return nil, n.err
+		return netip.Prefix{}, n.err
 	}
 	if err := n.reader.retrieveData(n.lastNode.pointer, result); err != nil {
-		return nil, err
+		return netip.Prefix{}, err
 	}
 
 	ip := n.lastNode.ip
 	prefixLength := int(n.lastNode.bit)
-
-	// We do this because uses of SkipAliasedNetworks expect the IPv4 networks
-	// to be returned as IPv4 networks. If we are not skipping aliased
-	// networks, then the user will get IPv4 networks from the ::FFFF:0:0/96
-	// network as Go automatically converts those.
-	if n.skipAliasedNetworks && isInIPv4Subtree(ip) {
-		ip = ip[12:]
+	if isInIPv4Subtree(ip) {
+		ip = v6ToV4(ip)
 		prefixLength -= 96
 	}
 
-	return &net.IPNet{
-		IP:   ip,
-		Mask: net.CIDRMask(prefixLength, len(ip)*8),
-	}, nil
+	return netip.PrefixFrom(ip, prefixLength), nil
 }
 
 // Err returns an error, if any, that was encountered during iteration.
@@ -196,16 +189,24 @@ func (n *Networks) Err() error {
 	return n.err
 }
 
-// isInIPv4Subtree returns true if the IP is an IPv6 address in the database's
-// IPv4 subtree.
-func isInIPv4Subtree(ip net.IP) bool {
-	if len(ip) != 16 {
-		return false
-	}
-	for i := 0; i < 12; i++ {
-		if ip[i] != 0 {
-			return false
-		}
-	}
-	return true
+var ipv4SubtreeBoundary = netip.MustParseAddr("::255.255.255.255").Next()
+
+// isInIPv4Subtree returns true if the IP is in the database's IPv4 subtree.
+func isInIPv4Subtree(ip netip.Addr) bool {
+	return ip.Is4() || ip.Less(ipv4SubtreeBoundary)
+}
+
+// We store IPv4 addresses at ::/96 for unclear reasons.
+func v4ToV16(ip netip.Addr) netip.Addr {
+	b4 := ip.As4()
+	var b16 [16]byte
+	copy(b16[12:], b4[:])
+	return netip.AddrFrom16(b16)
+}
+
+// Converts an IPv4 address embedded in IPv6 to IPv4.
+func v6ToV4(ip netip.Addr) netip.Addr {
+	b := ip.As16()
+	v, _ := netip.AddrFromSlice(b[12:])
+	return v
 }

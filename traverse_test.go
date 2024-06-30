@@ -2,7 +2,7 @@ package maxminddb
 
 import (
 	"fmt"
-	"net"
+	"net/netip"
 	"strconv"
 	"strings"
 	"testing"
@@ -27,8 +27,8 @@ func TestNetworks(t *testing.T) {
 				}{}
 				network, err := n.Network(&record)
 				require.NoError(t, err)
-				assert.Equal(t, record.IP, network.IP.String(),
-					"expected %s got %s", record.IP, network.IP.String(),
+				assert.Equal(t, record.IP, network.Addr().String(),
+					"expected %s got %s", record.IP, network.Addr().String(),
 				)
 			}
 			require.NoError(t, n.Err())
@@ -198,23 +198,23 @@ var tests = []networkTest{
 		Network:  "::/0",
 		Database: "mixed",
 		Expected: []string{
-			"::101:101/128",
-			"::101:102/127",
-			"::101:104/126",
-			"::101:108/125",
-			"::101:110/124",
-			"::101:120/128",
-			"::1:ffff:ffff/128",
-			"::2:0:0/122",
-			"::2:0:40/124",
-			"::2:0:50/125",
-			"::2:0:58/127",
 			"1.1.1.1/32",
 			"1.1.1.2/31",
 			"1.1.1.4/30",
 			"1.1.1.8/29",
 			"1.1.1.16/28",
 			"1.1.1.32/32",
+			"::1:ffff:ffff/128",
+			"::2:0:0/122",
+			"::2:0:40/124",
+			"::2:0:50/125",
+			"::2:0:58/127",
+			"::ffff:1.1.1.1/128",
+			"::ffff:1.1.1.2/127",
+			"::ffff:1.1.1.4/126",
+			"::ffff:1.1.1.8/125",
+			"::ffff:1.1.1.16/124",
+			"::ffff:1.1.1.32/128",
 			"2001:0:101:101::/64",
 			"2001:0:101:102::/63",
 			"2001:0:101:104::/62",
@@ -281,17 +281,12 @@ func TestNetworksWithin(t *testing.T) {
 				// We are purposely not using net.ParseCIDR so that we can pass in
 				// values that aren't in canonical form.
 				parts := strings.Split(v.Network, "/")
-				ip := net.ParseIP(parts[0])
-				if v := ip.To4(); v != nil {
-					ip = v
-				}
+				ip, err := netip.ParseAddr(parts[0])
+				require.NoError(t, err)
 				prefixLength, err := strconv.Atoi(parts[1])
 				require.NoError(t, err)
-				mask := net.CIDRMask(prefixLength, len(ip)*8)
-				network := &net.IPNet{
-					IP:   ip,
-					Mask: mask,
-				}
+				network, err := ip.Prefix(prefixLength)
+				require.NoError(t, err)
 
 				require.NoError(t, err)
 				n := reader.NetworksWithin(network, v.Options...)
@@ -333,9 +328,9 @@ func TestGeoIPNetworksWithin(t *testing.T) {
 		reader, err := Open(fileName)
 		require.NoError(t, err, "unexpected error while opening database: %v", err)
 
-		_, network, err := net.ParseCIDR(v.Network)
+		prefix, err := netip.ParsePrefix(v.Network)
 		require.NoError(t, err)
-		n := reader.NetworksWithin(network)
+		n := reader.NetworksWithin(prefix)
 		var innerIPs []string
 
 		for n.Next() {

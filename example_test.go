@@ -3,9 +3,9 @@ package maxminddb_test
 import (
 	"fmt"
 	"log"
-	"net"
+	"net/netip"
 
-	"github.com/oschwald/maxminddb-golang"
+	"github.com/oschwald/maxminddb-golang/v2"
 )
 
 // This example shows how to decode to a struct.
@@ -16,7 +16,7 @@ func ExampleReader_Lookup_struct() {
 	}
 	defer db.Close()
 
-	ip := net.ParseIP("81.2.69.142")
+	addr := netip.MustParseAddr("81.2.69.142")
 
 	var record struct {
 		Country struct {
@@ -24,7 +24,7 @@ func ExampleReader_Lookup_struct() {
 		} `maxminddb:"country"`
 	} // Or any appropriate struct
 
-	err = db.Lookup(ip, &record)
+	err = db.Lookup(addr, &record)
 	if err != nil {
 		log.Panic(err)
 	}
@@ -41,10 +41,10 @@ func ExampleReader_Lookup_interface() {
 	}
 	defer db.Close()
 
-	ip := net.ParseIP("81.2.69.142")
+	addr := netip.MustParseAddr("81.2.69.142")
 
 	var record any
-	err = db.Lookup(ip, &record)
+	err = db.Lookup(addr, &record)
 	if err != nil {
 		log.Panic(err)
 	}
@@ -114,12 +114,12 @@ func ExampleReader_NetworksWithin() {
 	}
 	defer db.Close()
 
-	_, network, err := net.ParseCIDR("1.0.0.0/8")
+	prefix, err := netip.ParsePrefix("1.0.0.0/8")
 	if err != nil {
 		log.Panic(err)
 	}
 
-	networks := db.NetworksWithin(network, maxminddb.SkipAliasedNetworks)
+	networks := db.NetworksWithin(prefix, maxminddb.SkipAliasedNetworks)
 	for networks.Next() {
 		record := struct {
 			Domain string `maxminddb:"connection_type"`

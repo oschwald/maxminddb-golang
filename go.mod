@@ -1,4 +1,4 @@
-module github.com/oschwald/maxminddb-golang
+module github.com/oschwald/maxminddb-golang/v2
 
 go 1.21
 
