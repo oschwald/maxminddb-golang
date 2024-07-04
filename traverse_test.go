@@ -140,7 +140,6 @@ var tests = []networkTest{
 		Expected: []string{
 			"::1:ffff:ffff/128",
 		},
-		Options: []NetworksOption{SkipAliasedNetworks},
 	},
 	{
 		Network:  "::/0",
@@ -152,7 +151,6 @@ var tests = []networkTest{
 			"::2:0:50/125",
 			"::2:0:58/127",
 		},
-		Options: []NetworksOption{SkipAliasedNetworks},
 	},
 	{
 		Network:  "::2:0:40/123",
@@ -162,7 +160,6 @@ var tests = []networkTest{
 			"::2:0:50/125",
 			"::2:0:58/127",
 		},
-		Options: []NetworksOption{SkipAliasedNetworks},
 	},
 	{
 		Network:  "0:0:0:0:0:ffff:ffff:ff00/120",
@@ -192,7 +189,6 @@ var tests = []networkTest{
 			"1.1.1.16/28",
 			"1.1.1.32/32",
 		},
-		Options: []NetworksOption{SkipAliasedNetworks},
 	},
 	{
 		Network:  "::/0",
@@ -228,6 +224,7 @@ var tests = []networkTest{
 			"2002:101:110::/44",
 			"2002:101:120::/48",
 		},
+		Options: []NetworksOption{IncludeAliasedNetworks},
 	},
 	{
 		Network:  "::/0",
@@ -245,7 +242,6 @@ var tests = []networkTest{
 			"::2:0:50/125",
 			"::2:0:58/127",
 		},
-		Options: []NetworksOption{SkipAliasedNetworks},
 	},
 	{
 		Network:  "1.1.1.16/28",

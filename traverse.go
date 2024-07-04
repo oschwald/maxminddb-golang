@@ -14,11 +14,11 @@ type netNode struct {
 
 // Networks represents a set of subnets that we are iterating over.
 type Networks struct {
-	err                 error
-	reader              *Reader
-	nodes               []netNode
-	lastNode            netNode
-	skipAliasedNetworks bool
+	err                    error
+	reader                 *Reader
+	nodes                  []netNode
+	lastNode               netNode
+	includeAliasedNetworks bool
 }
 
 var (
@@ -29,23 +29,20 @@ var (
 // NetworksOption are options for Networks and NetworksWithin.
 type NetworksOption func(*Networks)
 
-// SkipAliasedNetworks is an option for Networks and NetworksWithin that
-// makes them not iterate over aliases of the IPv4 subtree in an IPv6
+// IncludeAliasedNetworks is an option for Networks and NetworksWithin
+// that makes them iterate over aliases of the IPv4 subtree in an IPv6
 // database, e.g., ::ffff:0:0/96, 2001::/32, and 2002::/16.
-//
-// You most likely want to set this. The only reason it isn't the default
-// behavior is to provide backwards compatibility to existing users.
-func SkipAliasedNetworks(networks *Networks) {
-	networks.skipAliasedNetworks = true
+func IncludeAliasedNetworks(networks *Networks) {
+	networks.includeAliasedNetworks = true
 }
 
 // Networks returns an iterator that can be used to traverse all networks in
 // the database.
 //
 // Please note that a MaxMind DB may map IPv4 networks into several locations
-// in an IPv6 database. This iterator will iterate over all of these locations
-// separately. To only iterate over the IPv4 networks once, use the
-// SkipAliasedNetworks option.
+// in an IPv6 database. This iterator will only iterate over these once by
+// default. To iterate over all the IPv4 network locations, use the
+// IncludeAliasedNetworks option.
 func (r *Reader) Networks(options ...NetworksOption) *Networks {
 	var networks *Networks
 	if r.Metadata.IPVersion == 6 {
@@ -122,7 +119,7 @@ func (n *Networks) Next() bool {
 		for node.pointer != n.reader.Metadata.NodeCount {
 			// This skips IPv4 aliases without hardcoding the networks that the writer
 			// currently aliases.
-			if n.skipAliasedNetworks && n.reader.ipv4Start != 0 &&
+			if !n.includeAliasedNetworks && n.reader.ipv4Start != 0 &&
 				node.pointer == n.reader.ipv4Start && !isInIPv4Subtree(node.ip) {
 				break
 			}
