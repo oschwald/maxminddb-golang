@@ -67,7 +67,7 @@ func ExampleReader_Networks() {
 		Domain string `maxminddb:"connection_type"`
 	}{}
 
-	networks := db.Networks(maxminddb.SkipAliasedNetworks)
+	networks := db.Networks()
 	for networks.Next() {
 		subnet, err := networks.Network(&record)
 		if err != nil {
@@ -123,7 +123,7 @@ func ExampleReader_NetworksWithin() {
 		log.Panic(err)
 	}
 
-	networks := db.NetworksWithin(prefix, maxminddb.SkipAliasedNetworks)
+	networks := db.NetworksWithin(prefix)
 	for networks.Next() {
 		subnet, err := networks.Network(&record)
 		if err != nil {
