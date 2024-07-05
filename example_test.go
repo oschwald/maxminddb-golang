@@ -24,7 +24,7 @@ func ExampleReader_Lookup_struct() {
 		} `maxminddb:"country"`
 	} // Or any appropriate struct
 
-	err = db.Lookup(addr, &record)
+	err = db.Lookup(addr).Decode(&record)
 	if err != nil {
 		log.Panic(err)
 	}
@@ -44,7 +44,7 @@ func ExampleReader_Lookup_interface() {
 	addr := netip.MustParseAddr("81.2.69.142")
 
 	var record any
-	err = db.Lookup(addr, &record)
+	err = db.Lookup(addr).Decode(&record)
 	if err != nil {
 		log.Panic(err)
 	}
