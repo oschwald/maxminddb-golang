@@ -61,7 +61,7 @@ func FromBytes(buffer []byte) (*Reader, error) {
 	}
 
 	metadataStart += len(metadataStartMarker)
-	metadataDecoder := decoder{buffer[metadataStart:]}
+	metadataDecoder := decoder{buffer: buffer[metadataStart:]}
 
 	var metadata Metadata
 
@@ -78,7 +78,7 @@ func FromBytes(buffer []byte) (*Reader, error) {
 		return nil, newInvalidDatabaseError("the MaxMind DB contains invalid metadata")
 	}
 	d := decoder{
-		buffer[searchTreeSize+dataSectionSeparatorSize : metadataStart-len(metadataStartMarker)],
+		buffer: buffer[searchTreeSize+dataSectionSeparatorSize : metadataStart-len(metadataStartMarker)],
 	}
 
 	nodeBuffer := buffer[:searchTreeSize]
@@ -125,21 +125,25 @@ func (r *Reader) setIPv4Start() {
 	r.ipv4StartBitDepth = i
 }
 
-// Lookup retrieves the database record for ip and stores it in the value
-// pointed to by result. If result is nil or not a pointer, an error is
-// returned. If the data in the database record cannot be stored in result
-// because of type differences, an UnmarshalTypeError is returned. If the
-// database is invalid or otherwise cannot be read, an InvalidDatabaseError
-// is returned.
-func (r *Reader) Lookup(ip netip.Addr, result any) error {
+// Lookup retrieves the database record for ip and returns Result, which can
+// be used to decode the data..
+func (r *Reader) Lookup(ip netip.Addr) Result {
 	if r.buffer == nil {
-		return errors.New("cannot call Lookup on a closed database")
+		return Result{err: errors.New("cannot call Lookup on a closed database")}
 	}
 	pointer, _, _, err := r.lookupPointer(ip)
-	if pointer == 0 || err != nil {
-		return err
+	if err != nil {
+		return Result{err: err}
 	}
-	return r.retrieveData(pointer, result)
+	if pointer == 0 {
+		return Result{offset: notFound}
+	}
+	offset, err := r.resolveDataPointer(pointer)
+	return Result{
+		decoder: r.decoder,
+		offset:  uint(offset),
+		err:     err,
+	}
 }
 
 // LookupNetwork retrieves the database record for ip and stores it in the
@@ -229,22 +233,8 @@ func (r *Reader) Decode(offset uintptr, result any) error {
 	if r.buffer == nil {
 		return errors.New("cannot call Decode on a closed database")
 	}
-	return r.decode(offset, result)
-}
 
-func (r *Reader) decode(offset uintptr, result any) error {
-	rv := reflect.ValueOf(result)
-	if rv.Kind() != reflect.Ptr || rv.IsNil() {
-		return errors.New("result param must be a pointer")
-	}
-
-	if dser, ok := result.(deserializer); ok {
-		_, err := r.decoder.decodeToDeserializer(uint(offset), dser, 0, false)
-		return err
-	}
-
-	_, err := r.decoder.decode(uint(offset), rv, 0)
-	return err
+	return Result{decoder: r.decoder, offset: uint(offset)}.Decode(result)
 }
 
 func (r *Reader) lookupPointer(ip netip.Addr) (uint, int, netip.Addr, error) {
@@ -297,7 +287,7 @@ func (r *Reader) retrieveData(pointer uint, result any) error {
 	if err != nil {
 		return err
 	}
-	return r.decode(offset, result)
+	return Result{decoder: r.decoder, offset: uint(offset)}.Decode(result)
 }
 
 func (r *Reader) resolveDataPointer(pointer uint) (uintptr, error) {
