@@ -316,6 +316,30 @@ func TestDecoder(t *testing.T) {
 	require.NoError(t, reader.Close())
 }
 
+func TestDecodePath(t *testing.T) {
+	reader, err := Open(testFile("MaxMind-DB-test-decoder.mmdb"))
+	require.NoError(t, err)
+
+	result := reader.Lookup(netip.MustParseAddr("::1.1.1.0"))
+	require.NoError(t, result.Err())
+
+	var u16 uint16
+
+	require.NoError(t, result.DecodePath(&u16, "uint16"))
+
+	assert.Equal(t, uint16(100), u16)
+
+	var u uint
+	require.NoError(t, result.DecodePath(&u, "array", 0))
+	assert.Equal(t, uint(1), u)
+
+	require.NoError(t, result.DecodePath(&u, "array", 2))
+	assert.Equal(t, uint(3), u)
+
+	require.NoError(t, result.DecodePath(&u, "map", "mapX", "arrayX", 1))
+	assert.Equal(t, uint(8), u)
+}
+
 type TestInterface interface {
 	method() bool
 }
@@ -902,7 +926,7 @@ func BenchmarkCityLookupNetwork(b *testing.B) {
 	require.NoError(b, db.Close(), "error on close")
 }
 
-func BenchmarkCountryCode(b *testing.B) {
+func BenchmarkDecodeCountryCodeWithStruct(b *testing.B) {
 	db, err := Open("GeoLite2-City.mmdb")
 	require.NoError(b, err)
 
@@ -920,6 +944,27 @@ func BenchmarkCountryCode(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		ip := randomIPv4Address(r, s)
 		err = db.Lookup(ip).Decode(&result)
+		if err != nil {
+			b.Error(err)
+		}
+	}
+	require.NoError(b, db.Close(), "error on close")
+}
+
+func BenchmarkDecodePathCountryCode(b *testing.B) {
+	db, err := Open("GeoLite2-City.mmdb")
+	require.NoError(b, err)
+
+	path := []any{"country", "iso_code"}
+
+	//nolint:gosec // this is a test
+	r := rand.New(rand.NewSource(0))
+	var result string
+
+	s := make(net.IP, 4)
+	for i := 0; i < b.N; i++ {
+		ip := randomIPv4Address(r, s)
+		err = db.Lookup(ip).DecodePath(&result, path...)
 		if err != nil {
 			b.Error(err)
 		}
