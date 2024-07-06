@@ -18,6 +18,7 @@ disable = [
     "forcetypeassert",
     "funlen",
     "gochecknoglobals",
+    "gocognit",
     "godox",
     "gomnd",
     "inamedparam",
