@@ -100,95 +100,95 @@ func TestLookupNetwork(t *testing.T) {
 	}
 
 	tests := []struct {
-		IP             netip.Addr
-		DBFile         string
-		ExpectedCIDR   string
-		ExpectedRecord any
-		ExpectedOK     bool
+		IP              netip.Addr
+		DBFile          string
+		ExpectedNetwork string
+		ExpectedRecord  any
+		ExpectedFound   bool
 	}{
 		{
-			IP:             netip.MustParseAddr("1.1.1.1"),
-			DBFile:         "MaxMind-DB-test-ipv6-32.mmdb",
-			ExpectedCIDR:   "1.0.0.0/8",
-			ExpectedRecord: nil,
-			ExpectedOK:     false,
+			IP:              netip.MustParseAddr("1.1.1.1"),
+			DBFile:          "MaxMind-DB-test-ipv6-32.mmdb",
+			ExpectedNetwork: "1.0.0.0/8",
+			ExpectedRecord:  nil,
+			ExpectedFound:   false,
 		},
 		{
-			IP:             netip.MustParseAddr("::1:ffff:ffff"),
-			DBFile:         "MaxMind-DB-test-ipv6-24.mmdb",
-			ExpectedCIDR:   "::1:ffff:ffff/128",
-			ExpectedRecord: map[string]any{"ip": "::1:ffff:ffff"},
-			ExpectedOK:     true,
+			IP:              netip.MustParseAddr("::1:ffff:ffff"),
+			DBFile:          "MaxMind-DB-test-ipv6-24.mmdb",
+			ExpectedNetwork: "::1:ffff:ffff/128",
+			ExpectedRecord:  map[string]any{"ip": "::1:ffff:ffff"},
+			ExpectedFound:   true,
 		},
 		{
-			IP:             netip.MustParseAddr("::2:0:1"),
-			DBFile:         "MaxMind-DB-test-ipv6-24.mmdb",
-			ExpectedCIDR:   "::2:0:0/122",
-			ExpectedRecord: map[string]any{"ip": "::2:0:0"},
-			ExpectedOK:     true,
+			IP:              netip.MustParseAddr("::2:0:1"),
+			DBFile:          "MaxMind-DB-test-ipv6-24.mmdb",
+			ExpectedNetwork: "::2:0:0/122",
+			ExpectedRecord:  map[string]any{"ip": "::2:0:0"},
+			ExpectedFound:   true,
 		},
 		{
-			IP:             netip.MustParseAddr("1.1.1.1"),
-			DBFile:         "MaxMind-DB-test-ipv4-24.mmdb",
-			ExpectedCIDR:   "1.1.1.1/32",
-			ExpectedRecord: map[string]any{"ip": "1.1.1.1"},
-			ExpectedOK:     true,
+			IP:              netip.MustParseAddr("1.1.1.1"),
+			DBFile:          "MaxMind-DB-test-ipv4-24.mmdb",
+			ExpectedNetwork: "1.1.1.1/32",
+			ExpectedRecord:  map[string]any{"ip": "1.1.1.1"},
+			ExpectedFound:   true,
 		},
 		{
-			IP:             netip.MustParseAddr("1.1.1.3"),
-			DBFile:         "MaxMind-DB-test-ipv4-24.mmdb",
-			ExpectedCIDR:   "1.1.1.2/31",
-			ExpectedRecord: map[string]any{"ip": "1.1.1.2"},
-			ExpectedOK:     true,
+			IP:              netip.MustParseAddr("1.1.1.3"),
+			DBFile:          "MaxMind-DB-test-ipv4-24.mmdb",
+			ExpectedNetwork: "1.1.1.2/31",
+			ExpectedRecord:  map[string]any{"ip": "1.1.1.2"},
+			ExpectedFound:   true,
 		},
 		{
-			IP:             netip.MustParseAddr("1.1.1.3"),
-			DBFile:         "MaxMind-DB-test-decoder.mmdb",
-			ExpectedCIDR:   "1.1.1.0/24",
-			ExpectedRecord: decoderRecord,
-			ExpectedOK:     true,
+			IP:              netip.MustParseAddr("1.1.1.3"),
+			DBFile:          "MaxMind-DB-test-decoder.mmdb",
+			ExpectedNetwork: "1.1.1.0/24",
+			ExpectedRecord:  decoderRecord,
+			ExpectedFound:   true,
 		},
 		{
-			IP:             netip.MustParseAddr("::ffff:1.1.1.128"),
-			DBFile:         "MaxMind-DB-test-decoder.mmdb",
-			ExpectedCIDR:   "::ffff:1.1.1.0/120",
-			ExpectedRecord: decoderRecord,
-			ExpectedOK:     true,
+			IP:              netip.MustParseAddr("::ffff:1.1.1.128"),
+			DBFile:          "MaxMind-DB-test-decoder.mmdb",
+			ExpectedNetwork: "::ffff:1.1.1.0/120",
+			ExpectedRecord:  decoderRecord,
+			ExpectedFound:   true,
 		},
 		{
-			IP:             netip.MustParseAddr("::1.1.1.128"),
-			DBFile:         "MaxMind-DB-test-decoder.mmdb",
-			ExpectedCIDR:   "::101:100/120",
-			ExpectedRecord: decoderRecord,
-			ExpectedOK:     true,
+			IP:              netip.MustParseAddr("::1.1.1.128"),
+			DBFile:          "MaxMind-DB-test-decoder.mmdb",
+			ExpectedNetwork: "::101:100/120",
+			ExpectedRecord:  decoderRecord,
+			ExpectedFound:   true,
 		},
 		{
-			IP:             netip.MustParseAddr("200.0.2.1"),
-			DBFile:         "MaxMind-DB-no-ipv4-search-tree.mmdb",
-			ExpectedCIDR:   "::/64",
-			ExpectedRecord: "::0/64",
-			ExpectedOK:     true,
+			IP:              netip.MustParseAddr("200.0.2.1"),
+			DBFile:          "MaxMind-DB-no-ipv4-search-tree.mmdb",
+			ExpectedNetwork: "::/64",
+			ExpectedRecord:  "::0/64",
+			ExpectedFound:   true,
 		},
 		{
-			IP:             netip.MustParseAddr("::200.0.2.1"),
-			DBFile:         "MaxMind-DB-no-ipv4-search-tree.mmdb",
-			ExpectedCIDR:   "::/64",
-			ExpectedRecord: "::0/64",
-			ExpectedOK:     true,
+			IP:              netip.MustParseAddr("::200.0.2.1"),
+			DBFile:          "MaxMind-DB-no-ipv4-search-tree.mmdb",
+			ExpectedNetwork: "::/64",
+			ExpectedRecord:  "::0/64",
+			ExpectedFound:   true,
 		},
 		{
-			IP:             netip.MustParseAddr("0:0:0:0:ffff:ffff:ffff:ffff"),
-			DBFile:         "MaxMind-DB-no-ipv4-search-tree.mmdb",
-			ExpectedCIDR:   "::/64",
-			ExpectedRecord: "::0/64",
-			ExpectedOK:     true,
+			IP:              netip.MustParseAddr("0:0:0:0:ffff:ffff:ffff:ffff"),
+			DBFile:          "MaxMind-DB-no-ipv4-search-tree.mmdb",
+			ExpectedNetwork: "::/64",
+			ExpectedRecord:  "::0/64",
+			ExpectedFound:   true,
 		},
 		{
-			IP:             netip.MustParseAddr("ef00::"),
-			DBFile:         "MaxMind-DB-no-ipv4-search-tree.mmdb",
-			ExpectedCIDR:   "8000::/1",
-			ExpectedRecord: nil,
-			ExpectedOK:     false,
+			IP:              netip.MustParseAddr("ef00::"),
+			DBFile:          "MaxMind-DB-no-ipv4-search-tree.mmdb",
+			ExpectedNetwork: "8000::/1",
+			ExpectedRecord:  nil,
+			ExpectedFound:   false,
 		},
 	}
 
@@ -198,10 +198,12 @@ func TestLookupNetwork(t *testing.T) {
 			reader, err := Open(testFile(test.DBFile))
 			require.NoError(t, err)
 
-			network, ok, err := reader.LookupNetwork(test.IP, &record)
-			require.NoError(t, err)
-			assert.Equal(t, test.ExpectedOK, ok)
-			assert.Equal(t, test.ExpectedCIDR, network.String())
+			result := reader.Lookup(test.IP)
+			require.NoError(t, result.Err())
+			assert.Equal(t, test.ExpectedFound, result.Found())
+			assert.Equal(t, test.ExpectedNetwork, result.Network().String())
+
+			require.NoError(t, result.Decode(&record))
 			assert.Equal(t, test.ExpectedRecord, record)
 		})
 	}
@@ -819,20 +821,22 @@ func BenchmarkInterfaceLookup(b *testing.B) {
 	require.NoError(b, db.Close(), "error on close")
 }
 
-func BenchmarkInterfaceLookupNetwork(b *testing.B) {
+func BenchmarkLookupNetwork(b *testing.B) {
 	db, err := Open("GeoLite2-City.mmdb")
 	require.NoError(b, err)
 
 	//nolint:gosec // this is a test
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	var result any
 
 	s := make(net.IP, 4)
 	for i := 0; i < b.N; i++ {
 		ip := randomIPv4Address(r, s)
-		_, _, err = db.LookupNetwork(ip, &result)
-		if err != nil {
+		res := db.Lookup(ip)
+		if err := res.Err(); err != nil {
 			b.Error(err)
+		}
+		if !res.Network().IsValid() {
+			b.Fatalf("invalid network for %s", ip)
 		}
 	}
 	require.NoError(b, db.Close(), "error on close")
@@ -907,19 +911,18 @@ func BenchmarkCityLookup(b *testing.B) {
 	require.NoError(b, db.Close(), "error on close")
 }
 
-func BenchmarkCityLookupNetwork(b *testing.B) {
+func BenchmarkCityLookupOnly(b *testing.B) {
 	db, err := Open("GeoLite2-City.mmdb")
 	require.NoError(b, err)
 
 	//nolint:gosec // this is a test
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	var result fullCity
 
 	s := make(net.IP, 4)
 	for i := 0; i < b.N; i++ {
 		ip := randomIPv4Address(r, s)
-		_, _, err = db.LookupNetwork(ip, &result)
-		if err != nil {
+		result := db.Lookup(ip)
+		if err := result.Err(); err != nil {
 			b.Error(err)
 		}
 	}
