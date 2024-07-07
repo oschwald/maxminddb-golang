@@ -3,15 +3,18 @@ package maxminddb
 import (
 	"errors"
 	"math"
+	"net/netip"
 	"reflect"
 )
 
 const notFound uint = math.MaxUint
 
 type Result struct {
-	err     error
-	decoder decoder
-	offset  uint
+	ip        netip.Addr
+	err       error
+	decoder   decoder
+	offset    uint
+	prefixLen uint8
 }
 
 // Decode unmarshals the data from the data section into the value pointed to
@@ -102,4 +105,28 @@ func (r Result) Err() error {
 // return false if the IP was not found or if there was an error.
 func (r Result) Found() bool {
 	return r.err == nil && r.offset != notFound
+}
+
+// Network returns the netip.Prefix representing the network associated with
+// the data record in the database.
+func (r Result) Network() netip.Prefix {
+	ip := r.ip
+	prefixLen := int(r.prefixLen)
+
+	if ip.Is4() {
+		// This is necessary as the node that the IPv4 start is at may
+		// be at a bit depth that is less that 96, i.e., ipv4Start points
+		// to a leaf node. For instance, if a record was inserted at ::/8,
+		// the ipv4Start would point directly at the leaf node for the
+		// record and would have a bit depth of 8. This would not happen
+		// with databases currently distributed by MaxMind as all of them
+		// have an IPv4 subtree that is greater than a single node.
+		if prefixLen < 96 {
+			return netip.PrefixFrom(zeroIP, prefixLen)
+		}
+		prefixLen -= 96
+	}
+
+	prefix, _ := ip.Prefix(prefixLen)
+	return prefix
 }
