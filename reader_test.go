@@ -300,19 +300,19 @@ func TestDecoder(t *testing.T) {
 
 	{
 		// Directly lookup and decode.
-		var result TestType
-		require.NoError(t, reader.Lookup(netip.MustParseAddr("::1.1.1.0")).Decode(&result))
-		verify(result)
+		var testV TestType
+		require.NoError(t, reader.Lookup(netip.MustParseAddr("::1.1.1.0")).Decode(&testV))
+		verify(testV)
 	}
 	{
 		// Lookup record offset, then Decode.
-		var result TestType
-		offset, err := reader.LookupOffset(netip.MustParseAddr("::1.1.1.0"))
-		require.NoError(t, err)
-		assert.NotEqual(t, NotFound, offset)
+		var testV TestType
+		result := reader.Lookup(netip.MustParseAddr("::1.1.1.0"))
+		require.NoError(t, result.Err())
+		require.True(t, result.Found())
 
-		require.NoError(t, reader.Decode(offset, &result))
-		verify(result)
+		require.NoError(t, reader.Decode(result.RecordOffset(), &testV))
+		verify(testV)
 	}
 
 	require.NoError(t, reader.Close())
@@ -548,9 +548,9 @@ func TestNestedOffsetDecode(t *testing.T) {
 	db, err := Open(testFile("GeoIP2-City-Test.mmdb"))
 	require.NoError(t, err)
 
-	off, err := db.LookupOffset(netip.MustParseAddr("81.2.69.142"))
-	assert.NotEqual(t, NotFound, off)
-	require.NoError(t, err)
+	result := db.Lookup(netip.MustParseAddr("81.2.69.142"))
+	require.NoError(t, result.Err())
+	require.True(t, result.Found())
 
 	var root struct {
 		CountryOffset uintptr `maxminddb:"country"`
@@ -563,7 +563,7 @@ func TestNestedOffsetDecode(t *testing.T) {
 			TimeZoneOffset uintptr `maxminddb:"time_zone"`
 		} `maxminddb:"location"`
 	}
-	require.NoError(t, db.Decode(off, &root))
+	require.NoError(t, db.Decode(result.RecordOffset(), &root))
 	assert.InEpsilon(t, 51.5142, root.Location.Latitude, 1e-10)
 
 	var longitude float64
@@ -671,13 +671,14 @@ func TestUsingClosedDatabase(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, reader.Close())
 
-	var recordInterface any
 	addr := netip.MustParseAddr("::")
+
+	result := reader.Lookup(addr)
+	assert.Equal(t, "cannot call Lookup on a closed database", result.Err().Error())
+
+	var recordInterface any
 	err = reader.Lookup(addr).Decode(recordInterface)
 	assert.Equal(t, "cannot call Lookup on a closed database", err.Error())
-
-	_, err = reader.LookupOffset(addr)
-	assert.Equal(t, "cannot call LookupOffset on a closed database", err.Error())
 
 	err = reader.Decode(0, recordInterface)
 	assert.Equal(t, "cannot call Decode on a closed database", err.Error())

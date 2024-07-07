@@ -95,7 +95,7 @@ func (r Result) DecodePath(v any, path ...any) error {
 }
 
 // Err provides a way to check whether there was an error during the lookup
-// without clling Result.Decode. If there was an error, it will also be
+// without calling Result.Decode. If there was an error, it will also be
 // returned from Result.Decode.
 func (r Result) Err() error {
 	return r.err
@@ -105,6 +105,17 @@ func (r Result) Err() error {
 // return false if the IP was not found or if there was an error.
 func (r Result) Found() bool {
 	return r.err == nil && r.offset != notFound
+}
+
+// RecordOffset returns the offset of the record in the database. This can be
+// passed to ReaderDecode. It can also be used as a unique identifier for the
+// data record in the particular database to cache the data record across
+// lookups. Note that while the offset uniquely identifies the data record,
+// other data in Result  may differ between lookups. The offset is only valid
+// for the current database version. If you update the database file, you must
+// invalidate any cache associated with the previous version.
+func (r Result) RecordOffset() uintptr {
+	return uintptr(r.offset)
 }
 
 // Network returns the netip.Prefix representing the network associated with
