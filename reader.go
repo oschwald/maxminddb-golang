@@ -9,13 +9,7 @@ import (
 	"reflect"
 )
 
-const (
-	// NotFound is returned by LookupOffset when a matched root record offset
-	// cannot be found.
-	NotFound = ^uintptr(0)
-
-	dataSectionSeparatorSize = 16
-)
+const dataSectionSeparatorSize = 16
 
 var metadataStartMarker = []byte("\xAB\xCD\xEFMaxMind.com")
 
@@ -156,24 +150,6 @@ func (r *Reader) Lookup(ip netip.Addr) Result {
 	}
 }
 
-// LookupOffset maps an argument net.IP to a corresponding record offset in the
-// database. NotFound is returned if no such record is found, and a record may
-// otherwise be extracted by passing the returned offset to Decode. LookupOffset
-// is an advanced API, which exists to provide clients with a means to cache
-// previously-decoded records.
-func (r *Reader) LookupOffset(ip netip.Addr) (uintptr, error) {
-	if r.buffer == nil {
-		return 0, errors.New("cannot call LookupOffset on a closed database")
-	}
-	pointer, _, err := r.lookupPointer(ip)
-	if pointer == 0 || err != nil {
-		return NotFound, err
-	}
-	return r.resolveDataPointer(pointer)
-}
-
-var zeroIP = netip.MustParseAddr("::")
-
 // Decode the record at |offset| into |result|. The result value pointed to
 // must be a data value that corresponds to a record in the database. This may
 // include a struct representation of the data, a map capable of holding the
@@ -197,6 +173,8 @@ func (r *Reader) Decode(offset uintptr, result any) error {
 
 	return Result{decoder: r.decoder, offset: uint(offset)}.Decode(result)
 }
+
+var zeroIP = netip.MustParseAddr("::")
 
 func (r *Reader) lookupPointer(ip netip.Addr) (uint, int, error) {
 	if r.Metadata.IPVersion == 4 && ip.Is6() {
