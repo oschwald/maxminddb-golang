@@ -131,46 +131,29 @@ func (r *Reader) Lookup(ip netip.Addr) Result {
 	if r.buffer == nil {
 		return Result{err: errors.New("cannot call Lookup on a closed database")}
 	}
-	pointer, _, _, err := r.lookupPointer(ip)
+	pointer, prefixLen, err := r.lookupPointer(ip)
 	if err != nil {
-		return Result{err: err}
+		return Result{
+			ip:        ip,
+			prefixLen: uint8(prefixLen),
+			err:       err,
+		}
 	}
 	if pointer == 0 {
-		return Result{offset: notFound}
+		return Result{
+			ip:        ip,
+			prefixLen: uint8(prefixLen),
+			offset:    notFound,
+		}
 	}
 	offset, err := r.resolveDataPointer(pointer)
 	return Result{
-		decoder: r.decoder,
-		offset:  uint(offset),
-		err:     err,
+		decoder:   r.decoder,
+		ip:        ip,
+		offset:    uint(offset),
+		prefixLen: uint8(prefixLen),
+		err:       err,
 	}
-}
-
-// LookupNetwork retrieves the database record for ip and stores it in the
-// value pointed to by result. The prefix returned is the network associated
-// with the data record in the database. The ok return value indicates whether
-// the database contained a record for the ip.
-//
-// If result is nil or not a pointer, an error is returned. If the data in the
-// database record cannot be stored in result because of type differences, an
-// UnmarshalTypeError is returned. If the database is invalid or otherwise
-// cannot be read, an InvalidDatabaseError is returned.
-func (r *Reader) LookupNetwork(
-	ip netip.Addr,
-	result any,
-) (prefix netip.Prefix, ok bool, err error) {
-	if r.buffer == nil {
-		return netip.Prefix{}, false, errors.New("cannot call Lookup on a closed database")
-	}
-	pointer, prefixLength, ip, err := r.lookupPointer(ip)
-	// We return this error below as we want to return the prefix it is for
-
-	prefix, errP := r.cidr(ip, prefixLength)
-	if pointer == 0 || err != nil || errP != nil {
-		return prefix, false, errors.Join(err, errP)
-	}
-
-	return prefix, true, r.retrieveData(pointer, result)
 }
 
 // LookupOffset maps an argument net.IP to a corresponding record offset in the
@@ -182,7 +165,7 @@ func (r *Reader) LookupOffset(ip netip.Addr) (uintptr, error) {
 	if r.buffer == nil {
 		return 0, errors.New("cannot call LookupOffset on a closed database")
 	}
-	pointer, _, _, err := r.lookupPointer(ip)
+	pointer, _, err := r.lookupPointer(ip)
 	if pointer == 0 || err != nil {
 		return NotFound, err
 	}
@@ -190,28 +173,6 @@ func (r *Reader) LookupOffset(ip netip.Addr) (uintptr, error) {
 }
 
 var zeroIP = netip.MustParseAddr("::")
-
-func (r *Reader) cidr(ip netip.Addr, prefixLength int) (netip.Prefix, error) {
-	if ip.Is4() {
-		// This is necessary as the node that the IPv4 start is at may
-		// be at a bit depth that is less that 96, i.e., ipv4Start points
-		// to a leaf node. For instance, if a record was inserted at ::/8,
-		// the ipv4Start would point directly at the leaf node for the
-		// record and would have a bit depth of 8. This would not happen
-		// with databases currently distributed by MaxMind as all of them
-		// have an IPv4 subtree that is greater than a single node.
-		if r.Metadata.IPVersion == 6 && r.ipv4StartBitDepth != 96 {
-			return netip.PrefixFrom(zeroIP, r.ipv4StartBitDepth), nil
-		}
-		prefixLength -= 96
-	}
-
-	prefix, err := ip.Prefix(prefixLength)
-	if err != nil {
-		return netip.Prefix{}, fmt.Errorf("creating prefix from %s/%d: %w", ip, prefixLength, err)
-	}
-	return prefix, nil
-}
 
 // Decode the record at |offset| into |result|. The result value pointed to
 // must be a data value that corresponds to a record in the database. This may
@@ -237,9 +198,9 @@ func (r *Reader) Decode(offset uintptr, result any) error {
 	return Result{decoder: r.decoder, offset: uint(offset)}.Decode(result)
 }
 
-func (r *Reader) lookupPointer(ip netip.Addr) (uint, int, netip.Addr, error) {
+func (r *Reader) lookupPointer(ip netip.Addr) (uint, int, error) {
 	if r.Metadata.IPVersion == 4 && ip.Is6() {
-		return 0, 0, ip, fmt.Errorf(
+		return 0, 0, fmt.Errorf(
 			"error looking up '%s': you attempted to look up an IPv6 address in an IPv4-only database",
 			ip.String(),
 		)
@@ -250,12 +211,12 @@ func (r *Reader) lookupPointer(ip netip.Addr) (uint, int, netip.Addr, error) {
 	nodeCount := r.Metadata.NodeCount
 	if node == nodeCount {
 		// Record is empty
-		return 0, prefixLength, ip, nil
+		return 0, prefixLength, nil
 	} else if node > nodeCount {
-		return node, prefixLength, ip, nil
+		return node, prefixLength, nil
 	}
 
-	return 0, prefixLength, ip, newInvalidDatabaseError("invalid node in search tree")
+	return 0, prefixLength, newInvalidDatabaseError("invalid node in search tree")
 }
 
 func (r *Reader) traverseTree(ip netip.Addr, node uint, stopBit int) (uint, int) {
