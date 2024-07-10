@@ -3,6 +3,8 @@ package maxminddb
 import (
 	"fmt"
 	"net/netip"
+
+	"iter"
 )
 
 // Internal structure used to keep track of nodes we still need to visit.
@@ -12,8 +14,8 @@ type netNode struct {
 	pointer uint
 }
 
-// Networks represents a set of subnets that we are iterating over.
-type Networks struct {
+// networks represents a set of subnets that we are iterating over.
+type networks struct {
 	err                    error
 	reader                 *Reader
 	nodes                  []netNode
@@ -27,12 +29,12 @@ var (
 )
 
 // NetworksOption are options for Networks and NetworksWithin.
-type NetworksOption func(*Networks)
+type NetworksOption func(*networks)
 
 // IncludeAliasedNetworks is an option for Networks and NetworksWithin
 // that makes them iterate over aliases of the IPv4 subtree in an IPv6
 // database, e.g., ::ffff:0:0/96, 2001::/32, and 2002::/16.
-func IncludeAliasedNetworks(networks *Networks) {
+func IncludeAliasedNetworks(networks *networks) {
 	networks.includeAliasedNetworks = true
 }
 
@@ -43,15 +45,11 @@ func IncludeAliasedNetworks(networks *Networks) {
 // in an IPv6 database. This iterator will only iterate over these once by
 // default. To iterate over all the IPv4 network locations, use the
 // IncludeAliasedNetworks option.
-func (r *Reader) Networks(options ...NetworksOption) *Networks {
-	var networks *Networks
+func (r *Reader) Networks(options ...NetworksOption) iter.Seq[Result] {
 	if r.Metadata.IPVersion == 6 {
-		networks = r.NetworksWithin(allIPv6, options...)
-	} else {
-		networks = r.NetworksWithin(allIPv4, options...)
+		return r.NetworksWithin(allIPv6, options...)
 	}
-
-	return networks
+	return r.NetworksWithin(allIPv4, options...)
 }
 
 // NetworksWithin returns an iterator that can be used to traverse all networks
@@ -64,9 +62,41 @@ func (r *Reader) Networks(options ...NetworksOption) *Networks {
 //
 // If the provided prefix is contained within a network in the database, the
 // iterator will iterate over exactly one network, the containing network.
-func (r *Reader) NetworksWithin(prefix netip.Prefix, options ...NetworksOption) *Networks {
+func (r *Reader) NetworksWithin(prefix netip.Prefix, options ...NetworksOption) iter.Seq[Result] {
+	n := r.networksWithin(prefix, options...)
+	return func(yield func(Result) bool) {
+		for n.next() {
+			if n.err != nil {
+				yield(Result{err: n.err})
+				return
+			}
+
+			ip := n.lastNode.ip
+			if isInIPv4Subtree(ip) {
+				ip = v6ToV4(ip)
+			}
+
+			offset, err := r.resolveDataPointer(n.lastNode.pointer)
+			ok := yield(Result{
+				decoder:   r.decoder,
+				ip:        ip,
+				offset:    uint(offset),
+				prefixLen: uint8(n.lastNode.bit),
+				err:       err,
+			})
+			if !ok {
+				return
+			}
+		}
+		if n.err != nil {
+			yield(Result{err: n.err})
+		}
+	}
+}
+
+func (r *Reader) networksWithin(prefix netip.Prefix, options ...NetworksOption) *networks {
 	if r.Metadata.IPVersion == 4 && prefix.Addr().Is6() {
-		return &Networks{
+		return &networks{
 			err: fmt.Errorf(
 				"error getting networks with '%s': you attempted to use an IPv6 network in an IPv4-only database",
 				prefix,
@@ -74,7 +104,7 @@ func (r *Reader) NetworksWithin(prefix netip.Prefix, options ...NetworksOption) 
 		}
 	}
 
-	networks := &Networks{reader: r}
+	networks := &networks{reader: r}
 	for _, option := range options {
 		option(networks)
 	}
@@ -105,10 +135,10 @@ func (r *Reader) NetworksWithin(prefix netip.Prefix, options ...NetworksOption) 
 	return networks
 }
 
-// Next prepares the next network for reading with the Network method. It
+// next prepares the next network for reading with the Network method. It
 // returns true if there is another network to be processed and false if there
 // are no more networks or if there is an error.
-func (n *Networks) Next() bool {
+func (n *networks) next() bool {
 	if n.err != nil {
 		return false
 	}
@@ -158,32 +188,6 @@ func (n *Networks) Next() bool {
 	}
 
 	return false
-}
-
-// Network returns the current network or an error if there is a problem
-// decoding the data for the network. It takes a pointer to a result value to
-// decode the network's data into.
-func (n *Networks) Network(result any) (netip.Prefix, error) {
-	if n.err != nil {
-		return netip.Prefix{}, n.err
-	}
-	if err := n.reader.retrieveData(n.lastNode.pointer, result); err != nil {
-		return netip.Prefix{}, err
-	}
-
-	ip := n.lastNode.ip
-	prefixLength := int(n.lastNode.bit)
-	if isInIPv4Subtree(ip) {
-		ip = v6ToV4(ip)
-		prefixLength -= 96
-	}
-
-	return netip.PrefixFrom(ip, prefixLength), nil
-}
-
-// Err returns an error, if any, that was encountered during iteration.
-func (n *Networks) Err() error {
-	return n.err
 }
 
 var ipv4SubtreeBoundary = netip.MustParseAddr("::255.255.255.255").Next()

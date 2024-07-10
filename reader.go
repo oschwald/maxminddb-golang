@@ -221,14 +221,6 @@ func (r *Reader) traverseTree(ip netip.Addr, node uint, stopBit int) (uint, int)
 	return node, i
 }
 
-func (r *Reader) retrieveData(pointer uint, result any) error {
-	offset, err := r.resolveDataPointer(pointer)
-	if err != nil {
-		return err
-	}
-	return Result{decoder: r.decoder, offset: uint(offset)}.Decode(result)
-}
-
 func (r *Reader) resolveDataPointer(pointer uint) (uintptr, error) {
 	resolved := uintptr(pointer - r.Metadata.NodeCount - dataSectionSeparatorSize)
 

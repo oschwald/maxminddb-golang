@@ -20,18 +20,18 @@ func TestNetworks(t *testing.T) {
 			reader, err := Open(fileName)
 			require.NoError(t, err, "unexpected error while opening database: %v", err)
 
-			n := reader.Networks()
-			for n.Next() {
+			for result := range reader.Networks() {
 				record := struct {
 					IP string `maxminddb:"ip"`
 				}{}
-				network, err := n.Network(&record)
+				err := result.Decode(&record)
 				require.NoError(t, err)
+
+				network := result.Network()
 				assert.Equal(t, record.IP, network.Addr().String(),
 					"expected %s got %s", record.IP, network.Addr().String(),
 				)
 			}
-			require.NoError(t, n.Err())
 			require.NoError(t, reader.Close())
 		}
 	}
@@ -41,13 +41,14 @@ func TestNetworksWithInvalidSearchTree(t *testing.T) {
 	reader, err := Open(testFile("MaxMind-DB-test-broken-search-tree-24.mmdb"))
 	require.NoError(t, err, "unexpected error while opening database: %v", err)
 
-	n := reader.Networks()
-	for n.Next() {
+	for result := range reader.Networks() {
 		var record any
-		_, err := n.Network(&record)
-		require.NoError(t, err)
+		err = result.Decode(&record)
+		if err != nil {
+			break
+		}
 	}
-	require.EqualError(t, n.Err(), "invalid search tree at 128.128.128.128/32")
+	require.EqualError(t, err, "invalid search tree at 128.128.128.128/32")
 
 	require.NoError(t, reader.Close())
 }
@@ -285,20 +286,18 @@ func TestNetworksWithin(t *testing.T) {
 				require.NoError(t, err)
 
 				require.NoError(t, err)
-				n := reader.NetworksWithin(network, v.Options...)
 				var innerIPs []string
 
-				for n.Next() {
+				for result := range reader.NetworksWithin(network, v.Options...) {
 					record := struct {
 						IP string `maxminddb:"ip"`
 					}{}
-					network, err := n.Network(&record)
+					err := result.Decode(&record)
 					require.NoError(t, err)
-					innerIPs = append(innerIPs, network.String())
+					innerIPs = append(innerIPs, result.Network().String())
 				}
 
 				assert.Equal(t, v.Expected, innerIPs)
-				require.NoError(t, n.Err())
 
 				require.NoError(t, reader.Close())
 			})
@@ -326,20 +325,18 @@ func TestGeoIPNetworksWithin(t *testing.T) {
 
 		prefix, err := netip.ParsePrefix(v.Network)
 		require.NoError(t, err)
-		n := reader.NetworksWithin(prefix)
 		var innerIPs []string
 
-		for n.Next() {
+		for result := range reader.NetworksWithin(prefix) {
 			record := struct {
 				IP string `maxminddb:"ip"`
 			}{}
-			network, err := n.Network(&record)
+			err := result.Decode(&record)
 			require.NoError(t, err)
-			innerIPs = append(innerIPs, network.String())
+			innerIPs = append(innerIPs, result.Network().String())
 		}
 
 		assert.Equal(t, v.Expected, innerIPs)
-		require.NoError(t, n.Err())
 
 		require.NoError(t, reader.Close())
 	}
