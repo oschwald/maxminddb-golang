@@ -102,16 +102,11 @@ func (v *verifier) verifyDatabase() error {
 func (v *verifier) verifySearchTree() (map[uint]bool, error) {
 	offsets := make(map[uint]bool)
 
-	it := v.reader.Networks()
-	for it.Next() {
-		offset, err := v.reader.resolveDataPointer(it.lastNode.pointer)
-		if err != nil {
+	for result := range v.reader.Networks() {
+		if err := result.Err(); err != nil {
 			return nil, err
 		}
-		offsets[uint(offset)] = true
-	}
-	if err := it.Err(); err != nil {
-		return nil, err
+		offsets[result.offset] = true
 	}
 	return offsets, nil
 }
