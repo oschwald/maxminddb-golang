@@ -341,3 +341,19 @@ func TestGeoIPNetworksWithin(t *testing.T) {
 		require.NoError(t, reader.Close())
 	}
 }
+
+func BenchmarkNetworks(b *testing.B) {
+	db, err := Open(testFile("GeoIP2-Country-Test.mmdb"))
+	require.NoError(b, err)
+
+	for i := 0; i < b.N; i++ {
+		for r := range db.Networks() {
+			var rec struct{}
+			err = r.Decode(&rec)
+			if err != nil {
+				b.Error(err)
+			}
+		}
+	}
+	require.NoError(b, db.Close(), "error on close")
+}
