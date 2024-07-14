@@ -14,12 +14,7 @@ type netNode struct {
 	pointer uint
 }
 
-// networks represents a set of subnets that we are iterating over.
-type networks struct {
-	err                    error
-	reader                 *Reader
-	nodes                  []netNode
-	lastNode               netNode
+type networkOptions struct {
 	includeAliasedNetworks bool
 }
 
@@ -29,12 +24,12 @@ var (
 )
 
 // NetworksOption are options for Networks and NetworksWithin.
-type NetworksOption func(*networks)
+type NetworksOption func(*networkOptions)
 
 // IncludeAliasedNetworks is an option for Networks and NetworksWithin
 // that makes them iterate over aliases of the IPv4 subtree in an IPv6
 // database, e.g., ::ffff:0:0/96, 2001::/32, and 2002::/16.
-func IncludeAliasedNetworks(networks *networks) {
+func IncludeAliasedNetworks(networks *networkOptions) {
 	networks.includeAliasedNetworks = true
 }
 
@@ -63,131 +58,111 @@ func (r *Reader) Networks(options ...NetworksOption) iter.Seq[Result] {
 // If the provided prefix is contained within a network in the database, the
 // iterator will iterate over exactly one network, the containing network.
 func (r *Reader) NetworksWithin(prefix netip.Prefix, options ...NetworksOption) iter.Seq[Result] {
-	n := r.networksWithin(prefix, options...)
 	return func(yield func(Result) bool) {
-		for n.next() {
-			if n.err != nil {
-				yield(Result{err: n.err})
-				return
-			}
-
-			ip := n.lastNode.ip
-			if isInIPv4Subtree(ip) {
-				ip = v6ToV4(ip)
-			}
-
-			offset, err := r.resolveDataPointer(n.lastNode.pointer)
-			ok := yield(Result{
-				decoder:   r.decoder,
-				ip:        ip,
-				offset:    uint(offset),
-				prefixLen: uint8(n.lastNode.bit),
-				err:       err,
+		if r.Metadata.IPVersion == 4 && prefix.Addr().Is6() {
+			yield(Result{
+				err: fmt.Errorf(
+					"error getting networks with '%s': you attempted to use an IPv6 network in an IPv4-only database",
+					prefix,
+				),
 			})
-			if !ok {
-				return
-			}
+			return
 		}
-		if n.err != nil {
-			yield(Result{err: n.err})
+
+		n := &networkOptions{}
+		for _, option := range options {
+			option(n)
 		}
-	}
-}
 
-func (r *Reader) networksWithin(prefix netip.Prefix, options ...NetworksOption) *networks {
-	if r.Metadata.IPVersion == 4 && prefix.Addr().Is6() {
-		return &networks{
-			err: fmt.Errorf(
-				"error getting networks with '%s': you attempted to use an IPv6 network in an IPv4-only database",
-				prefix,
-			),
+		ip := prefix.Addr()
+		netIP := ip
+		stopBit := prefix.Bits()
+		if ip.Is4() {
+			netIP = v4ToV16(ip)
+			stopBit += 96
 		}
-	}
 
-	networks := &networks{reader: r}
-	for _, option := range options {
-		option(networks)
-	}
+		pointer, bit := r.traverseTree(ip, 0, stopBit)
 
-	ip := prefix.Addr()
-	netIP := ip
-	stopBit := prefix.Bits()
-	if ip.Is4() {
-		netIP = v4ToV16(ip)
-		stopBit += 96
-	}
+		prefix, err := netIP.Prefix(bit)
+		if err != nil {
+			yield(Result{
+				err: fmt.Errorf("prefixing %s with %d", netIP, bit),
+			})
+		}
 
-	pointer, bit := r.traverseTree(ip, 0, stopBit)
+		nodes := []netNode{
+			{
+				ip:      prefix.Addr(),
+				bit:     uint(bit),
+				pointer: pointer,
+			},
+		}
 
-	prefix, err := netIP.Prefix(bit)
-	if err != nil {
-		networks.err = fmt.Errorf("prefixing %s with %d", netIP, bit)
-	}
+		for len(nodes) > 0 {
+			node := nodes[len(nodes)-1]
+			nodes = nodes[:len(nodes)-1]
 
-	networks.nodes = []netNode{
-		{
-			ip:      prefix.Addr(),
-			bit:     uint(bit),
-			pointer: pointer,
-		},
-	}
-
-	return networks
-}
-
-// next prepares the next network for reading with the Network method. It
-// returns true if there is another network to be processed and false if there
-// are no more networks or if there is an error.
-func (n *networks) next() bool {
-	if n.err != nil {
-		return false
-	}
-	for len(n.nodes) > 0 {
-		node := n.nodes[len(n.nodes)-1]
-		n.nodes = n.nodes[:len(n.nodes)-1]
-
-		for node.pointer != n.reader.Metadata.NodeCount {
-			// This skips IPv4 aliases without hardcoding the networks that the writer
-			// currently aliases.
-			if !n.includeAliasedNetworks && n.reader.ipv4Start != 0 &&
-				node.pointer == n.reader.ipv4Start && !isInIPv4Subtree(node.ip) {
-				break
-			}
-
-			if node.pointer > n.reader.Metadata.NodeCount {
-				n.lastNode = node
-				return true
-			}
-			ipRight := node.ip.As16()
-			if len(ipRight) <= int(node.bit>>3) {
-				displayAddr := node.ip
-				displayBits := node.bit
-				if isInIPv4Subtree(node.ip) {
-					displayAddr = v6ToV4(displayAddr)
-					displayBits -= 96
+			for node.pointer != r.Metadata.NodeCount {
+				// This skips IPv4 aliases without hardcoding the networks that the writer
+				// currently aliases.
+				if !n.includeAliasedNetworks && r.ipv4Start != 0 &&
+					node.pointer == r.ipv4Start && !isInIPv4Subtree(node.ip) {
+					break
 				}
 
-				n.err = newInvalidDatabaseError(
-					"invalid search tree at %s/%d", displayAddr, displayBits)
-				return false
+				if node.pointer > r.Metadata.NodeCount {
+					ip := node.ip
+					if isInIPv4Subtree(ip) {
+						ip = v6ToV4(ip)
+					}
+
+					offset, err := r.resolveDataPointer(node.pointer)
+					ok := yield(Result{
+						decoder:   r.decoder,
+						ip:        ip,
+						offset:    uint(offset),
+						prefixLen: uint8(node.bit),
+						err:       err,
+					})
+					if !ok {
+						return
+					}
+					break
+				}
+				ipRight := node.ip.As16()
+				if len(ipRight) <= int(node.bit>>3) {
+					displayAddr := node.ip
+					displayBits := node.bit
+					if isInIPv4Subtree(node.ip) {
+						displayAddr = v6ToV4(displayAddr)
+						displayBits -= 96
+					}
+
+					yield(Result{
+						ip:        displayAddr,
+						prefixLen: uint8(node.bit),
+						err: newInvalidDatabaseError(
+							"invalid search tree at %s/%d", displayAddr, displayBits),
+					})
+					return
+				}
+				ipRight[node.bit>>3] |= 1 << (7 - (node.bit % 8))
+
+				offset := node.pointer * r.nodeOffsetMult
+				rightPointer := r.nodeReader.readRight(offset)
+
+				node.bit++
+				nodes = append(nodes, netNode{
+					pointer: rightPointer,
+					ip:      netip.AddrFrom16(ipRight),
+					bit:     node.bit,
+				})
+
+				node.pointer = r.nodeReader.readLeft(offset)
 			}
-			ipRight[node.bit>>3] |= 1 << (7 - (node.bit % 8))
-
-			offset := node.pointer * n.reader.nodeOffsetMult
-			rightPointer := n.reader.nodeReader.readRight(offset)
-
-			node.bit++
-			n.nodes = append(n.nodes, netNode{
-				pointer: rightPointer,
-				ip:      netip.AddrFrom16(ipRight),
-				bit:     node.bit,
-			})
-
-			node.pointer = n.reader.nodeReader.readLeft(offset)
 		}
 	}
-
-	return false
 }
 
 var ipv4SubtreeBoundary = netip.MustParseAddr("::255.255.255.255").Next()
