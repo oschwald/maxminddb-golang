@@ -93,13 +93,14 @@ func (r *Reader) NetworksWithin(prefix netip.Prefix, options ...NetworksOption) 
 			})
 		}
 
-		nodes := []netNode{
-			{
+		nodes := make([]netNode, 0, 64)
+		nodes = append(nodes,
+			netNode{
 				ip:      prefix.Addr(),
 				bit:     uint(bit),
 				pointer: pointer,
 			},
-		}
+		)
 
 		for len(nodes) > 0 {
 			node := nodes[len(nodes)-1]
