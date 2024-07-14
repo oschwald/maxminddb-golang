@@ -87,7 +87,9 @@ func (r *Reader) NetworksWithin(prefix netip.Prefix, options ...NetworksOption) 
 		prefix, err := netIP.Prefix(bit)
 		if err != nil {
 			yield(Result{
-				err: fmt.Errorf("prefixing %s with %d", netIP, bit),
+				ip:        ip,
+				prefixLen: uint8(bit),
+				err:       fmt.Errorf("prefixing %s with %d", netIP, bit),
 			})
 		}
 
@@ -133,18 +135,19 @@ func (r *Reader) NetworksWithin(prefix netip.Prefix, options ...NetworksOption) 
 				ipRight := node.ip.As16()
 				if len(ipRight) <= int(node.bit>>3) {
 					displayAddr := node.ip
-					displayBits := node.bit
 					if isInIPv4Subtree(node.ip) {
 						displayAddr = v6ToV4(displayAddr)
-						displayBits -= 96
 					}
 
-					yield(Result{
+					res := Result{
 						ip:        displayAddr,
 						prefixLen: uint8(node.bit),
-						err: newInvalidDatabaseError(
-							"invalid search tree at %s/%d", displayAddr, displayBits),
-					})
+					}
+					res.err = newInvalidDatabaseError(
+						"invalid search tree at %s", res.Network())
+
+					yield(res)
+
 					return
 				}
 				ipRight[node.bit>>3] |= 1 << (7 - (node.bit % 8))
