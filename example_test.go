@@ -63,12 +63,12 @@ func ExampleReader_Networks() {
 	}
 	defer db.Close()
 
-	record := struct {
-		Domain string `maxminddb:"connection_type"`
-	}{}
-
 	networks := db.Networks(maxminddb.SkipAliasedNetworks)
 	for networks.Next() {
+		record := struct {
+			Domain string `maxminddb:"connection_type"`
+		}{}
+
 		subnet, err := networks.Network(&record)
 		if err != nil {
 			log.Panic(err)
@@ -114,10 +114,6 @@ func ExampleReader_NetworksWithin() {
 	}
 	defer db.Close()
 
-	record := struct {
-		Domain string `maxminddb:"connection_type"`
-	}{}
-
 	_, network, err := net.ParseCIDR("1.0.0.0/8")
 	if err != nil {
 		log.Panic(err)
@@ -125,6 +121,10 @@ func ExampleReader_NetworksWithin() {
 
 	networks := db.NetworksWithin(network, maxminddb.SkipAliasedNetworks)
 	for networks.Next() {
+		record := struct {
+			Domain string `maxminddb:"connection_type"`
+		}{}
+
 		subnet, err := networks.Network(&record)
 		if err != nil {
 			log.Panic(err)
