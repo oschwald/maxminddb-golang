@@ -30,8 +30,8 @@ const (
 	_Slice
 	// We don't use the next two. They are placeholders. See the spec
 	// for more details.
-	_Container //nolint: deadcode, varcheck // above
-	_Marker    //nolint: deadcode, varcheck // above
+	_Container //nolint:deadcode,varcheck // above
+	_Marker    //nolint:deadcode,varcheck // above
 	_Bool
 	_Float32
 )

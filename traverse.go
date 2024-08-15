@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/netip"
 
+	// comment to prevent gofumpt from randomly moving iter.
 	"iter"
 )
 
