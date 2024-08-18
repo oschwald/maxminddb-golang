@@ -201,7 +201,7 @@ func TestLookupNetwork(t *testing.T) {
 			result := reader.Lookup(test.IP)
 			require.NoError(t, result.Err())
 			assert.Equal(t, test.ExpectedFound, result.Found())
-			assert.Equal(t, test.ExpectedNetwork, result.Network().String())
+			assert.Equal(t, test.ExpectedNetwork, result.Prefix().String())
 
 			require.NoError(t, result.Decode(&record))
 			assert.Equal(t, test.ExpectedRecord, record)
@@ -841,7 +841,7 @@ func BenchmarkLookupNetwork(b *testing.B) {
 		if err := res.Err(); err != nil {
 			b.Error(err)
 		}
-		if !res.Network().IsValid() {
+		if !res.Prefix().IsValid() {
 			b.Fatalf("invalid network for %s", ip)
 		}
 	}

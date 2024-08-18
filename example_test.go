@@ -72,7 +72,7 @@ func ExampleReader_Networks() {
 		if err != nil {
 			log.Panic(err)
 		}
-		fmt.Printf("%s: %s\n", result.Network(), record.Domain)
+		fmt.Printf("%s: %s\n", result.Prefix(), record.Domain)
 	}
 	// Output:
 	// 1.0.0.0/24: Cable/DSL
@@ -123,7 +123,7 @@ func ExampleReader_NetworksWithin() {
 		if err != nil {
 			log.Panic(err)
 		}
-		fmt.Printf("%s: %s\n", result.Network(), record.Domain)
+		fmt.Printf("%s: %s\n", result.Prefix(), record.Domain)
 	}
 
 	// Output:

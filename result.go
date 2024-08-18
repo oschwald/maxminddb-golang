@@ -118,9 +118,9 @@ func (r Result) Offset() uintptr {
 	return uintptr(r.offset)
 }
 
-// Network returns the netip.Prefix representing the network associated with
+// Prefix returns the netip.Prefix representing the network associated with
 // the data record in the database.
-func (r Result) Network() netip.Prefix {
+func (r Result) Prefix() netip.Prefix {
 	ip := r.ip
 	prefixLen := int(r.prefixLen)
 

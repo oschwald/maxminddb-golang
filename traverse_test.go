@@ -27,7 +27,7 @@ func TestNetworks(t *testing.T) {
 				err := result.Decode(&record)
 				require.NoError(t, err)
 
-				network := result.Network()
+				network := result.Prefix()
 				assert.Equal(t, record.IP, network.Addr().String(),
 					"expected %s got %s", record.IP, network.Addr().String(),
 				)
@@ -294,7 +294,7 @@ func TestNetworksWithin(t *testing.T) {
 					}{}
 					err := result.Decode(&record)
 					require.NoError(t, err)
-					innerIPs = append(innerIPs, result.Network().String())
+					innerIPs = append(innerIPs, result.Prefix().String())
 				}
 
 				assert.Equal(t, v.Expected, innerIPs)
@@ -333,7 +333,7 @@ func TestGeoIPNetworksWithin(t *testing.T) {
 			}{}
 			err := result.Decode(&record)
 			require.NoError(t, err)
-			innerIPs = append(innerIPs, result.Network().String())
+			innerIPs = append(innerIPs, result.Prefix().String())
 		}
 
 		assert.Equal(t, v.Expected, innerIPs)

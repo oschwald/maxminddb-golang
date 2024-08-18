@@ -146,7 +146,7 @@ func (r *Reader) NetworksWithin(prefix netip.Prefix, options ...NetworksOption) 
 						prefixLen: uint8(node.bit),
 					}
 					res.err = newInvalidDatabaseError(
-						"invalid search tree at %s", res.Network())
+						"invalid search tree at %s", res.Prefix())
 
 					yield(res)
 
