@@ -311,7 +311,7 @@ func TestDecoder(t *testing.T) {
 		require.NoError(t, result.Err())
 		require.True(t, result.Found())
 
-		res := reader.LookupOffset(result.RecordOffset())
+		res := reader.LookupOffset(result.Offset())
 		require.NoError(t, res.Decode(&testV))
 		verify(testV)
 	}
@@ -564,7 +564,7 @@ func TestNestedOffsetDecode(t *testing.T) {
 			TimeZoneOffset uintptr `maxminddb:"time_zone"`
 		} `maxminddb:"location"`
 	}
-	res := db.LookupOffset(result.RecordOffset())
+	res := db.LookupOffset(result.Offset())
 	require.NoError(t, res.Decode(&root))
 	assert.InEpsilon(t, 51.5142, root.Location.Latitude, 1e-10)
 

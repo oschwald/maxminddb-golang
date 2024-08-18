@@ -107,14 +107,14 @@ func (r Result) Found() bool {
 	return r.err == nil && r.offset != notFound
 }
 
-// RecordOffset returns the offset of the record in the database. This can be
-// passed to ReaderDecode. It can also be used as a unique identifier for the
-// data record in the particular database to cache the data record across
-// lookups. Note that while the offset uniquely identifies the data record,
-// other data in Result  may differ between lookups. The offset is only valid
-// for the current database version. If you update the database file, you must
-// invalidate any cache associated with the previous version.
-func (r Result) RecordOffset() uintptr {
+// Offset returns the offset of the record in the database. This can be
+// passed to (*Reader).LookupOffset. It can also be used as a unique
+// identifier for the data record in the particular database to cache the data
+// record across lookups. Note that while the offset uniquely identifies the
+// data record, other data in Result  may differ between lookups. The offset
+// is only valid for the current database version. If you update the database
+// file, you must invalidate any cache associated with the previous version.
+func (r Result) Offset() uintptr {
 	return uintptr(r.offset)
 }
 
