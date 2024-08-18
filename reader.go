@@ -150,28 +150,14 @@ func (r *Reader) Lookup(ip netip.Addr) Result {
 	}
 }
 
-// Decode the record at |offset| into |result|. The result value pointed to
-// must be a data value that corresponds to a record in the database. This may
-// include a struct representation of the data, a map capable of holding the
-// data or an empty any value.
-//
-// If result is a pointer to a struct, the struct need not include a field
-// for every value that may be in the database. If a field is not present in
-// the structure, the decoder will not decode that field, reducing the time
-// required to decode the record.
-//
-// As a special case, a struct field of type uintptr will be used to capture
-// the offset of the value. Decode may later be used to extract the stored
-// value from the offset. MaxMind DBs are highly normalized: for example in
-// the City database, all records of the same country will reference a
-// single representative record for that country. This uintptr behavior allows
-// clients to leverage this normalization in their own sub-record caching.
-func (r *Reader) Decode(offset uintptr, result any) error {
+// LookupOffset returns the Result for the specified offset. Note that
+// netip.Prefix returned by Networks will be invalid when using LookupOffset.
+func (r *Reader) LookupOffset(offset uintptr) Result {
 	if r.buffer == nil {
-		return errors.New("cannot call Decode on a closed database")
+		return Result{err: errors.New("cannot call Decode on a closed database")}
 	}
 
-	return Result{decoder: r.decoder, offset: uint(offset)}.Decode(result)
+	return Result{decoder: r.decoder, offset: uint(offset)}
 }
 
 var zeroIP = netip.MustParseAddr("::")
