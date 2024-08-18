@@ -2,7 +2,7 @@ package maxminddb
 
 import (
 	"math/big"
-	"net"
+	"net/netip"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -13,7 +13,7 @@ func TestDecodingToDeserializer(t *testing.T) {
 	require.NoError(t, err, "unexpected error while opening database: %v", err)
 
 	dser := testDeserializer{}
-	err = reader.Lookup(net.ParseIP("::1.1.1.0"), &dser)
+	err = reader.Lookup(netip.MustParseAddr("::1.1.1.0")).Decode(&dser)
 	require.NoError(t, err, "unexpected error while doing lookup: %v", err)
 
 	checkDecodingToInterface(t, dser.rv)

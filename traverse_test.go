@@ -2,7 +2,7 @@ package maxminddb
 
 import (
 	"fmt"
-	"net"
+	"net/netip"
 	"strconv"
 	"strings"
 	"testing"
@@ -20,18 +20,18 @@ func TestNetworks(t *testing.T) {
 			reader, err := Open(fileName)
 			require.NoError(t, err, "unexpected error while opening database: %v", err)
 
-			n := reader.Networks()
-			for n.Next() {
+			for result := range reader.Networks() {
 				record := struct {
 					IP string `maxminddb:"ip"`
 				}{}
-				network, err := n.Network(&record)
+				err := result.Decode(&record)
 				require.NoError(t, err)
-				assert.Equal(t, record.IP, network.IP.String(),
-					"expected %s got %s", record.IP, network.IP.String(),
+
+				network := result.Prefix()
+				assert.Equal(t, record.IP, network.Addr().String(),
+					"expected %s got %s", record.IP, network.Addr().String(),
 				)
 			}
-			require.NoError(t, n.Err())
 			require.NoError(t, reader.Close())
 		}
 	}
@@ -41,13 +41,14 @@ func TestNetworksWithInvalidSearchTree(t *testing.T) {
 	reader, err := Open(testFile("MaxMind-DB-test-broken-search-tree-24.mmdb"))
 	require.NoError(t, err, "unexpected error while opening database: %v", err)
 
-	n := reader.Networks()
-	for n.Next() {
+	for result := range reader.Networks() {
 		var record any
-		_, err := n.Network(&record)
-		require.NoError(t, err)
+		err = result.Decode(&record)
+		if err != nil {
+			break
+		}
 	}
-	require.EqualError(t, n.Err(), "invalid search tree at 128.128.128.128/32")
+	require.EqualError(t, err, "invalid search tree at 128.128.128.128/32")
 
 	require.NoError(t, reader.Close())
 }
@@ -140,7 +141,6 @@ var tests = []networkTest{
 		Expected: []string{
 			"::1:ffff:ffff/128",
 		},
-		Options: []NetworksOption{SkipAliasedNetworks},
 	},
 	{
 		Network:  "::/0",
@@ -152,7 +152,6 @@ var tests = []networkTest{
 			"::2:0:50/125",
 			"::2:0:58/127",
 		},
-		Options: []NetworksOption{SkipAliasedNetworks},
 	},
 	{
 		Network:  "::2:0:40/123",
@@ -162,7 +161,6 @@ var tests = []networkTest{
 			"::2:0:50/125",
 			"::2:0:58/127",
 		},
-		Options: []NetworksOption{SkipAliasedNetworks},
 	},
 	{
 		Network:  "0:0:0:0:0:ffff:ffff:ff00/120",
@@ -192,29 +190,28 @@ var tests = []networkTest{
 			"1.1.1.16/28",
 			"1.1.1.32/32",
 		},
-		Options: []NetworksOption{SkipAliasedNetworks},
 	},
 	{
 		Network:  "::/0",
 		Database: "mixed",
 		Expected: []string{
-			"::101:101/128",
-			"::101:102/127",
-			"::101:104/126",
-			"::101:108/125",
-			"::101:110/124",
-			"::101:120/128",
-			"::1:ffff:ffff/128",
-			"::2:0:0/122",
-			"::2:0:40/124",
-			"::2:0:50/125",
-			"::2:0:58/127",
 			"1.1.1.1/32",
 			"1.1.1.2/31",
 			"1.1.1.4/30",
 			"1.1.1.8/29",
 			"1.1.1.16/28",
 			"1.1.1.32/32",
+			"::1:ffff:ffff/128",
+			"::2:0:0/122",
+			"::2:0:40/124",
+			"::2:0:50/125",
+			"::2:0:58/127",
+			"::ffff:1.1.1.1/128",
+			"::ffff:1.1.1.2/127",
+			"::ffff:1.1.1.4/126",
+			"::ffff:1.1.1.8/125",
+			"::ffff:1.1.1.16/124",
+			"::ffff:1.1.1.32/128",
 			"2001:0:101:101::/64",
 			"2001:0:101:102::/63",
 			"2001:0:101:104::/62",
@@ -228,6 +225,7 @@ var tests = []networkTest{
 			"2002:101:110::/44",
 			"2002:101:120::/48",
 		},
+		Options: []NetworksOption{IncludeAliasedNetworks},
 	},
 	{
 		Network:  "::/0",
@@ -245,7 +243,6 @@ var tests = []networkTest{
 			"::2:0:50/125",
 			"::2:0:58/127",
 		},
-		Options: []NetworksOption{SkipAliasedNetworks},
 	},
 	{
 		Network:  "1.1.1.16/28",
@@ -281,33 +278,26 @@ func TestNetworksWithin(t *testing.T) {
 				// We are purposely not using net.ParseCIDR so that we can pass in
 				// values that aren't in canonical form.
 				parts := strings.Split(v.Network, "/")
-				ip := net.ParseIP(parts[0])
-				if v := ip.To4(); v != nil {
-					ip = v
-				}
+				ip, err := netip.ParseAddr(parts[0])
+				require.NoError(t, err)
 				prefixLength, err := strconv.Atoi(parts[1])
 				require.NoError(t, err)
-				mask := net.CIDRMask(prefixLength, len(ip)*8)
-				network := &net.IPNet{
-					IP:   ip,
-					Mask: mask,
-				}
+				network, err := ip.Prefix(prefixLength)
+				require.NoError(t, err)
 
 				require.NoError(t, err)
-				n := reader.NetworksWithin(network, v.Options...)
 				var innerIPs []string
 
-				for n.Next() {
+				for result := range reader.NetworksWithin(network, v.Options...) {
 					record := struct {
 						IP string `maxminddb:"ip"`
 					}{}
-					network, err := n.Network(&record)
+					err := result.Decode(&record)
 					require.NoError(t, err)
-					innerIPs = append(innerIPs, network.String())
+					innerIPs = append(innerIPs, result.Prefix().String())
 				}
 
 				assert.Equal(t, v.Expected, innerIPs)
-				require.NoError(t, n.Err())
 
 				require.NoError(t, reader.Close())
 			})
@@ -333,23 +323,37 @@ func TestGeoIPNetworksWithin(t *testing.T) {
 		reader, err := Open(fileName)
 		require.NoError(t, err, "unexpected error while opening database: %v", err)
 
-		_, network, err := net.ParseCIDR(v.Network)
+		prefix, err := netip.ParsePrefix(v.Network)
 		require.NoError(t, err)
-		n := reader.NetworksWithin(network)
 		var innerIPs []string
 
-		for n.Next() {
+		for result := range reader.NetworksWithin(prefix) {
 			record := struct {
 				IP string `maxminddb:"ip"`
 			}{}
-			network, err := n.Network(&record)
+			err := result.Decode(&record)
 			require.NoError(t, err)
-			innerIPs = append(innerIPs, network.String())
+			innerIPs = append(innerIPs, result.Prefix().String())
 		}
 
 		assert.Equal(t, v.Expected, innerIPs)
-		require.NoError(t, n.Err())
 
 		require.NoError(t, reader.Close())
 	}
+}
+
+func BenchmarkNetworks(b *testing.B) {
+	db, err := Open(testFile("GeoIP2-Country-Test.mmdb"))
+	require.NoError(b, err)
+
+	for i := 0; i < b.N; i++ {
+		for r := range db.Networks() {
+			var rec struct{}
+			err = r.Decode(&rec)
+			if err != nil {
+				b.Error(err)
+			}
+		}
+	}
+	require.NoError(b, db.Close(), "error on close")
 }

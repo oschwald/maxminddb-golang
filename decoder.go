@@ -30,8 +30,8 @@ const (
 	_Slice
 	// We don't use the next two. They are placeholders. See the spec
 	// for more details.
-	_Container //nolint: deadcode, varcheck // above
-	_Marker    //nolint: deadcode, varcheck // above
+	_Container //nolint:deadcode,varcheck // above
+	_Marker    //nolint:deadcode,varcheck // above
 	_Bool
 	_Float32
 )
@@ -87,6 +87,82 @@ func (d *decoder) decodeToDeserializer(
 	}
 
 	return d.decodeFromTypeToDeserializer(typeNum, size, newOffset, dser, depth+1)
+}
+
+func (d *decoder) decodePath(
+	offset uint,
+	path []any,
+	result reflect.Value,
+) error {
+PATH:
+	for i, v := range path {
+		var (
+			typeNum dataType
+			size    uint
+			err     error
+		)
+		typeNum, size, offset, err = d.decodeCtrlData(offset)
+		if err != nil {
+			return err
+		}
+
+		if typeNum == _Pointer {
+			pointer, _, err := d.decodePointer(size, offset)
+			if err != nil {
+				return err
+			}
+
+			typeNum, size, offset, err = d.decodeCtrlData(pointer)
+			if err != nil {
+				return err
+			}
+		}
+
+		switch v := v.(type) {
+		case string:
+			// We are expecting a map
+			if typeNum != _Map {
+				// XXX - use type names in errors.
+				return fmt.Errorf("expected a map for %s but found %d", v, typeNum)
+			}
+			for i := uint(0); i < size; i++ {
+				var key []byte
+				key, offset, err = d.decodeKey(offset)
+				if err != nil {
+					return err
+				}
+				if string(key) == v {
+					continue PATH
+				}
+				offset, err = d.nextValueOffset(offset, 1)
+				if err != nil {
+					return err
+				}
+			}
+			// Not found. Maybe return a boolean?
+			return nil
+		case int:
+			// We are expecting an array
+			if typeNum != _Slice {
+				// XXX - use type names in errors.
+				return fmt.Errorf("expected a slice for %d but found %d", v, typeNum)
+			}
+			if size < uint(v) {
+				// Slice is smaller than index, not found
+				return nil
+			}
+			// TODO: support negative indexes? Seems useful for subdivisions in
+			// particular.
+			offset, err = d.nextValueOffset(offset, uint(v))
+			if err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("unexpected type for %d value in path, %v: %T", i, v, v)
+		}
+	}
+	_, err := d.decode(offset, result, len(path))
+	return err
 }
 
 func (d *decoder) decodeCtrlData(offset uint) (dataType, uint, uint, error) {
