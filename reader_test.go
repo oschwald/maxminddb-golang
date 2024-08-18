@@ -311,7 +311,8 @@ func TestDecoder(t *testing.T) {
 		require.NoError(t, result.Err())
 		require.True(t, result.Found())
 
-		require.NoError(t, reader.Decode(result.RecordOffset(), &testV))
+		res := reader.LookupOffset(result.RecordOffset())
+		require.NoError(t, res.Decode(&testV))
 		verify(testV)
 	}
 
@@ -563,21 +564,25 @@ func TestNestedOffsetDecode(t *testing.T) {
 			TimeZoneOffset uintptr `maxminddb:"time_zone"`
 		} `maxminddb:"location"`
 	}
-	require.NoError(t, db.Decode(result.RecordOffset(), &root))
+	res := db.LookupOffset(result.RecordOffset())
+	require.NoError(t, res.Decode(&root))
 	assert.InEpsilon(t, 51.5142, root.Location.Latitude, 1e-10)
 
 	var longitude float64
-	require.NoError(t, db.Decode(root.Location.LongitudeOffset, &longitude))
+	res = db.LookupOffset(root.Location.LongitudeOffset)
+	require.NoError(t, res.Decode(&longitude))
 	assert.InEpsilon(t, -0.0931, longitude, 1e-10)
 
 	var timeZone string
-	require.NoError(t, db.Decode(root.Location.TimeZoneOffset, &timeZone))
+	res = db.LookupOffset(root.Location.TimeZoneOffset)
+	require.NoError(t, res.Decode(&timeZone))
 	assert.Equal(t, "Europe/London", timeZone)
 
 	var country struct {
 		IsoCode string `maxminddb:"iso_code"`
 	}
-	require.NoError(t, db.Decode(root.CountryOffset, &country))
+	res = db.LookupOffset(root.CountryOffset)
+	require.NoError(t, res.Decode(&country))
 	assert.Equal(t, "GB", country.IsoCode)
 
 	require.NoError(t, db.Close())
@@ -680,7 +685,7 @@ func TestUsingClosedDatabase(t *testing.T) {
 	err = reader.Lookup(addr).Decode(recordInterface)
 	assert.Equal(t, "cannot call Lookup on a closed database", err.Error())
 
-	err = reader.Decode(0, recordInterface)
+	err = reader.LookupOffset(0).Decode(recordInterface)
 	assert.Equal(t, "cannot call Decode on a closed database", err.Error())
 }
 
