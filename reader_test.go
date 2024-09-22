@@ -336,11 +336,33 @@ func TestDecodePath(t *testing.T) {
 	require.NoError(t, result.DecodePath(&u, "array", 0))
 	assert.Equal(t, uint(1), u)
 
-	require.NoError(t, result.DecodePath(&u, "array", 2))
-	assert.Equal(t, uint(3), u)
+	var u2 uint
+	require.NoError(t, result.DecodePath(&u2, "array", 2))
+	assert.Equal(t, uint(3), u2)
 
-	require.NoError(t, result.DecodePath(&u, "map", "mapX", "arrayX", 1))
-	assert.Equal(t, uint(8), u)
+	// This is past the end of the array
+	var u3 uint
+	require.NoError(t, result.DecodePath(&u3, "array", 3))
+	assert.Equal(t, uint(0), u3)
+
+	// Negative offsets
+
+	var n1 uint
+	require.NoError(t, result.DecodePath(&n1, "array", -1))
+	assert.Equal(t, uint(3), n1)
+
+	var n2 uint
+	require.NoError(t, result.DecodePath(&n2, "array", -3))
+	assert.Equal(t, uint(1), n2)
+
+	var u4 uint
+	require.NoError(t, result.DecodePath(&u4, "map", "mapX", "arrayX", 1))
+	assert.Equal(t, uint(8), u4)
+
+	// Does key not exist
+	var ne uint
+	require.NoError(t, result.DecodePath(&ne, "does-not-exist", 1))
+	assert.Equal(t, uint(0), ne)
 }
 
 type TestInterface interface {

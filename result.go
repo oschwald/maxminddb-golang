@@ -62,7 +62,9 @@ func (r Result) Decode(v any) error {
 // value.
 //
 // For maps, string path elements are used as keys.
-// For arrays, int path elements are used as indices.
+// For arrays, int path elements are used as indices. A negative offset will
+// return values from the end of the array, e.g., -1 will return the last
+// element.
 //
 // If the path is empty, the entire data structure is decoded into v.
 //
