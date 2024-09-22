@@ -147,13 +147,21 @@ PATH:
 				// XXX - use type names in errors.
 				return fmt.Errorf("expected a slice for %d but found %d", v, typeNum)
 			}
-			if size < uint(v) {
-				// Slice is smaller than index, not found
-				return nil
+			var i uint
+			if v < 0 {
+				if size < uint(-v) {
+					// Slice is smaller than negative index, not found
+					return nil
+				}
+				i = size - uint(-v)
+			} else {
+				if size <= uint(v) {
+					// Slice is smaller than index, not found
+					return nil
+				}
+				i = uint(v)
 			}
-			// TODO: support negative indexes? Seems useful for subdivisions in
-			// particular.
-			offset, err = d.nextValueOffset(offset, uint(v))
+			offset, err = d.nextValueOffset(offset, i)
 			if err != nil {
 				return err
 			}
