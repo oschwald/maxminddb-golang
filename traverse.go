@@ -2,10 +2,9 @@ package maxminddb
 
 import (
 	"fmt"
-	"net/netip"
-
 	// comment to prevent gofumpt from randomly moving iter.
 	"iter"
+	"net/netip"
 )
 
 // Internal structure used to keep track of nodes we still need to visit.
