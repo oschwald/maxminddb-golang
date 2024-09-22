@@ -2,7 +2,7 @@
 # This is needed for precious, which may run multiple instances
 # in parallel
 allow-parallel-runners = true
-go = "1.21"
+go = "1.23"
 tests = true
 timeout = "10m"
 
@@ -15,6 +15,7 @@ disable = [
     "execinquery",
     "exhaustive",
     "exhaustruct",
+    "exportloopref",
     "forcetypeassert",
     "funlen",
     "gochecknoglobals",
@@ -67,6 +68,13 @@ sections = ["standard", "default", "prefix(github.com/oschwald/maxminddb-golang)
 
 [linters-settings.gofumpt]
 extra-rules = true
+
+[linters-settings.gosec]
+excludes = [
+    # integer overflow conversion. There are a lot of these and
+    # most seem safe or at least low risk.
+    "G115",
+]
 
 [linters-settings.govet]
 enable-all = true
