@@ -13,7 +13,7 @@ This is not an official MaxMind API.
 ## Installation ##
 
 ```
-go get github.com/oschwald/maxminddb-golang
+go get github.com/oschwald/maxminddb-golang/v2
 ```
 
 ## Usage ##
