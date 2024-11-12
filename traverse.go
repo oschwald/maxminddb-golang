@@ -16,6 +16,7 @@ type netNode struct {
 
 type networkOptions struct {
 	includeAliasedNetworks bool
+	includeEmptyNetworks   bool
 }
 
 var (
@@ -33,13 +34,22 @@ func IncludeAliasedNetworks(networks *networkOptions) {
 	networks.includeAliasedNetworks = true
 }
 
-// Networks returns an iterator that can be used to traverse all networks in
+// IncludeEmptyNetworks is an option for Networks and NetworksWithin
+// that makes them include networks without any data in the iteration.
+func IncludeEmptyNetworks(networks *networkOptions) {
+	networks.includeEmptyNetworks = true
+}
+
+// Networks returns an iterator that can be used to traverse the networks in
 // the database.
 //
 // Please note that a MaxMind DB may map IPv4 networks into several locations
 // in an IPv6 database. This iterator will only iterate over these once by
 // default. To iterate over all the IPv4 network locations, use the
 // [IncludeAliasedNetworks] option.
+//
+// Networks without data are excluded by default. To include them, use
+// [IncludeEmptyNetworks].
 func (r *Reader) Networks(options ...NetworksOption) iter.Seq[Result] {
 	if r.Metadata.IPVersion == 6 {
 		return r.NetworksWithin(allIPv6, options...)
@@ -47,7 +57,7 @@ func (r *Reader) Networks(options ...NetworksOption) iter.Seq[Result] {
 	return r.NetworksWithin(allIPv4, options...)
 }
 
-// NetworksWithin returns an iterator that can be used to traverse all networks
+// NetworksWithin returns an iterator that can be used to traverse the networks
 // in the database which are contained in a given prefix.
 //
 // Please note that a MaxMind DB may map IPv4 networks into several locations
@@ -57,6 +67,9 @@ func (r *Reader) Networks(options ...NetworksOption) iter.Seq[Result] {
 //
 // If the provided prefix is contained within a network in the database, the
 // iterator will iterate over exactly one network, the containing network.
+//
+// Networks without data are excluded by default. To include them, use
+// [IncludeEmptyNetworks].
 func (r *Reader) NetworksWithin(prefix netip.Prefix, options ...NetworksOption) iter.Seq[Result] {
 	return func(yield func(Result) bool) {
 		if r.Metadata.IPVersion == 4 && prefix.Addr().Is6() {
@@ -106,7 +119,25 @@ func (r *Reader) NetworksWithin(prefix netip.Prefix, options ...NetworksOption) 
 			node := nodes[len(nodes)-1]
 			nodes = nodes[:len(nodes)-1]
 
-			for node.pointer != r.Metadata.NodeCount {
+			for {
+				if node.pointer == r.Metadata.NodeCount {
+					if n.includeEmptyNetworks {
+						ip := node.ip
+						if isInIPv4Subtree(ip) {
+							ip = v6ToV4(ip)
+						}
+
+						ok := yield(Result{
+							ip:        ip,
+							offset:    notFound,
+							prefixLen: uint8(node.bit),
+						})
+						if !ok {
+							return
+						}
+					}
+					break
+				}
 				// This skips IPv4 aliases without hardcoding the networks that the writer
 				// currently aliases.
 				if !n.includeAliasedNetworks && r.ipv4Start != 0 &&
