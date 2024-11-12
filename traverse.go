@@ -122,13 +122,8 @@ func (r *Reader) NetworksWithin(prefix netip.Prefix, options ...NetworksOption) 
 			for {
 				if node.pointer == r.Metadata.NodeCount {
 					if n.includeEmptyNetworks {
-						ip := node.ip
-						if isInIPv4Subtree(ip) {
-							ip = v6ToV4(ip)
-						}
-
 						ok := yield(Result{
-							ip:        ip,
+							ip:        mappedIP(node.ip),
 							offset:    notFound,
 							prefixLen: uint8(node.bit),
 						})
@@ -146,15 +141,10 @@ func (r *Reader) NetworksWithin(prefix netip.Prefix, options ...NetworksOption) 
 				}
 
 				if node.pointer > r.Metadata.NodeCount {
-					ip := node.ip
-					if isInIPv4Subtree(ip) {
-						ip = v6ToV4(ip)
-					}
-
 					offset, err := r.resolveDataPointer(node.pointer)
 					ok := yield(Result{
 						decoder:   r.decoder,
-						ip:        ip,
+						ip:        mappedIP(node.ip),
 						offset:    uint(offset),
 						prefixLen: uint8(node.bit),
 						err:       err,
@@ -201,6 +191,13 @@ func (r *Reader) NetworksWithin(prefix netip.Prefix, options ...NetworksOption) 
 }
 
 var ipv4SubtreeBoundary = netip.MustParseAddr("::255.255.255.255").Next()
+
+func mappedIP(ip netip.Addr) netip.Addr {
+	if isInIPv4Subtree(ip) {
+		return v6ToV4(ip)
+	}
+	return ip
+}
 
 // isInIPv4Subtree returns true if the IP is in the database's IPv4 subtree.
 func isInIPv4Subtree(ip netip.Addr) bool {
