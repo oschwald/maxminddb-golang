@@ -3,6 +3,8 @@ package maxminddb
 import (
 	"fmt"
 	"net/netip"
+	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -245,6 +247,43 @@ var tests = []networkTest{
 		},
 	},
 	{
+		Network:  "1.0.0.0/8",
+		Database: "mixed",
+		Expected: []string{
+			"1.0.0.0/16",
+			"1.1.0.0/24",
+			"1.1.1.0/32",
+			"1.1.1.1/32",
+			"1.1.1.2/31",
+			"1.1.1.4/30",
+			"1.1.1.8/29",
+			"1.1.1.16/28",
+			"1.1.1.32/32",
+			"1.1.1.33/32",
+			"1.1.1.34/31",
+			"1.1.1.36/30",
+			"1.1.1.40/29",
+			"1.1.1.48/28",
+			"1.1.1.64/26",
+			"1.1.1.128/25",
+			"1.1.2.0/23",
+			"1.1.4.0/22",
+			"1.1.8.0/21",
+			"1.1.16.0/20",
+			"1.1.32.0/19",
+			"1.1.64.0/18",
+			"1.1.128.0/17",
+			"1.2.0.0/15",
+			"1.4.0.0/14",
+			"1.8.0.0/13",
+			"1.16.0.0/12",
+			"1.32.0.0/11",
+			"1.64.0.0/10",
+			"1.128.0.0/9",
+		},
+		Options: []NetworksOption{IncludeEmptyNetworks},
+	},
+	{
 		Network:  "1.1.1.16/28",
 		Database: "mixed",
 		Expected: []string{
@@ -263,12 +302,16 @@ var tests = []networkTest{
 func TestNetworksWithin(t *testing.T) {
 	for _, v := range tests {
 		for _, recordSize := range []uint{24, 28, 32} {
+			var opts []string
+			for _, o := range v.Options {
+				opts = append(opts, runtime.FuncForPC(reflect.ValueOf(o).Pointer()).Name())
+			}
 			name := fmt.Sprintf(
 				"%s-%d: %s, options: %v",
 				v.Database,
 				recordSize,
 				v.Network,
-				len(v.Options) != 0,
+				opts,
 			)
 			t.Run(name, func(t *testing.T) {
 				fileName := testFile(fmt.Sprintf("MaxMind-DB-test-%s-%d.mmdb", v.Database, recordSize))
