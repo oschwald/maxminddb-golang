@@ -281,7 +281,7 @@ var tests = []networkTest{
 			"1.64.0.0/10",
 			"1.128.0.0/9",
 		},
-		Options: []NetworksOption{IncludeEmptyNetworks},
+		Options: []NetworksOption{IncludeNetworksWithoutData},
 	},
 	{
 		Network:  "1.1.1.16/28",

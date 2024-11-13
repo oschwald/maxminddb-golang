@@ -34,9 +34,9 @@ func IncludeAliasedNetworks(networks *networkOptions) {
 	networks.includeAliasedNetworks = true
 }
 
-// IncludeEmptyNetworks is an option for Networks and NetworksWithin
+// IncludeNetworksWithoutData is an option for Networks and NetworksWithin
 // that makes them include networks without any data in the iteration.
-func IncludeEmptyNetworks(networks *networkOptions) {
+func IncludeNetworksWithoutData(networks *networkOptions) {
 	networks.includeEmptyNetworks = true
 }
 
@@ -49,7 +49,7 @@ func IncludeEmptyNetworks(networks *networkOptions) {
 // [IncludeAliasedNetworks] option.
 //
 // Networks without data are excluded by default. To include them, use
-// [IncludeEmptyNetworks].
+// [IncludeNetworksWithoutData].
 func (r *Reader) Networks(options ...NetworksOption) iter.Seq[Result] {
 	if r.Metadata.IPVersion == 6 {
 		return r.NetworksWithin(allIPv6, options...)
@@ -69,7 +69,7 @@ func (r *Reader) Networks(options ...NetworksOption) iter.Seq[Result] {
 // iterator will iterate over exactly one network, the containing network.
 //
 // Networks without data are excluded by default. To include them, use
-// [IncludeEmptyNetworks].
+// [IncludeNetworksWithoutData].
 func (r *Reader) NetworksWithin(prefix netip.Prefix, options ...NetworksOption) iter.Seq[Result] {
 	return func(yield func(Result) bool) {
 		if r.Metadata.IPVersion == 4 && prefix.Addr().Is6() {
