@@ -823,7 +823,7 @@ func BenchmarkOpen(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		db, err = Open("GeoLite2-City.mmdb")
 		if err != nil {
-			b.Error(err)
+			b.Fatal(err)
 		}
 	}
 	assert.NotNil(b, db)
