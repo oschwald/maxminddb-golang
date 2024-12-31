@@ -65,7 +65,7 @@ func FromBytes(buffer []byte) (*Reader, error) {
 		return nil, err
 	}
 
-	searchTreeSize := metadata.NodeCount * metadata.RecordSize / 4
+	searchTreeSize := metadata.NodeCount * (metadata.RecordSize / 4)
 	dataSectionStart := searchTreeSize + dataSectionSeparatorSize
 	dataSectionEnd := uint(metadataStart - len(metadataStartMarker))
 	if dataSectionStart > dataSectionEnd {
