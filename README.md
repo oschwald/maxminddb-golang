@@ -33,4 +33,5 @@ with your changes.
 
 ## License ##
 
-This is free software, licensed under the ISC License.
+This is free software, primarily licensed under the ISC License. The file
+`mmap_windows.go` is licensed under a BSD-style license by Evan Shaw.
