@@ -691,9 +691,7 @@ func (d *decoder) decodeMap(
 		}
 
 		if elemValue.IsValid() {
-			// After 1.20 is the minimum supported version, this can just be
-			// elemValue.SetZero()
-			reflectSetZero(elemValue)
+			elemValue.SetZero()
 		} else {
 			elemValue = reflect.New(elemType).Elem()
 		}
