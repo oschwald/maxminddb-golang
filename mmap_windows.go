@@ -43,8 +43,10 @@ import (
 type memoryMap []byte
 
 // Windows
-var handleLock sync.Mutex
-var handleMap = map[uintptr]windows.Handle{}
+var (
+	handleLock sync.Mutex
+	handleMap  = map[uintptr]windows.Handle{}
+)
 
 func mmap(fd int, length int) (data []byte, err error) {
 	h, errno := windows.CreateFileMapping(windows.Handle(fd), nil,
