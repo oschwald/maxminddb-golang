@@ -33,14 +33,11 @@ package maxminddb
 import (
 	"errors"
 	"os"
-	"reflect"
 	"sync"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
-
-type memoryMap []byte
 
 // Windows
 var (
@@ -48,55 +45,73 @@ var (
 	handleMap  = map[uintptr]windows.Handle{}
 )
 
-func mmap(fd int, length int) (data []byte, err error) {
-	h, errno := windows.CreateFileMapping(windows.Handle(fd), nil,
-		uint32(windows.PAGE_READONLY), 0, uint32(length), nil)
-	if h == 0 {
-		return nil, os.NewSyscallError("CreateFileMapping", errno)
+// mmap maps a file into memory and returns a byte slice.
+func mmap(fd int, length int) ([]byte, error) {
+	// Create a file mapping
+	handle, err := windows.CreateFileMapping(
+		windows.Handle(fd),
+		nil,
+		windows.PAGE_READONLY,
+		0,
+		uint32(length),
+		nil,
+	)
+	if err != nil {
+		return nil, os.NewSyscallError("CreateFileMapping", err)
 	}
 
-	addr, errno := windows.MapViewOfFile(h, uint32(windows.FILE_MAP_READ), 0,
-		0, uintptr(length))
-	if addr == 0 {
-		return nil, os.NewSyscallError("MapViewOfFile", errno)
+	// Map the file into memory
+	addr, err := windows.MapViewOfFile(
+		handle,
+		windows.FILE_MAP_READ,
+		0,
+		0,
+		uintptr(length),
+	)
+	if err != nil {
+		windows.CloseHandle(handle)
+		return nil, os.NewSyscallError("MapViewOfFile", err)
 	}
+
+	// Store the handle in the map
 	handleLock.Lock()
-	handleMap[addr] = h
+	handleMap[addr] = handle
 	handleLock.Unlock()
 
-	m := memoryMap{}
-	dh := m.header()
-	dh.Data = addr
-	dh.Len = length
-	dh.Cap = dh.Len
-
-	return m, nil
+	data := unsafe.Slice((*byte)(unsafe.Pointer(addr)), length)
+	return data, nil
 }
 
-func (m *memoryMap) header() *reflect.SliceHeader {
-	return (*reflect.SliceHeader)(unsafe.Pointer(m))
-}
-
-func flush(addr, len uintptr) error {
-	errno := windows.FlushViewOfFile(addr, len)
-	return os.NewSyscallError("FlushViewOfFile", errno)
-}
-
-func munmap(b []byte) (err error) {
-	m := memoryMap(b)
-	dh := m.header()
-
-	addr := dh.Data
-	length := uintptr(dh.Len)
-
-	flush(addr, length)
-	err = windows.UnmapViewOfFile(addr)
+// flush ensures changes to a memory-mapped region are written to disk.
+func flush(addr, length uintptr) error {
+	err := windows.FlushViewOfFile(addr, length)
 	if err != nil {
+		return os.NewSyscallError("FlushViewOfFile", err)
+	}
+	return nil
+}
+
+// munmap unmaps a memory-mapped file and releases associated resources.
+func munmap(b []byte) error {
+	// Convert slice to base address and length
+	data := unsafe.SliceData(b)
+	addr := uintptr(unsafe.Pointer(data))
+	length := uintptr(len(b))
+
+	// Flush the memory region
+	if err := flush(addr, length); err != nil {
 		return err
 	}
 
+	// Unmap the memory
+	if err := windows.UnmapViewOfFile(addr); err != nil {
+		return os.NewSyscallError("UnmapViewOfFile", err)
+	}
+
+	// Remove the handle from the map and close it
 	handleLock.Lock()
 	defer handleLock.Unlock()
+
 	handle, ok := handleMap[addr]
 	if !ok {
 		// should be impossible; we would've errored above
@@ -104,6 +119,8 @@ func munmap(b []byte) (err error) {
 	}
 	delete(handleMap, addr)
 
-	e := windows.CloseHandle(windows.Handle(handle))
-	return os.NewSyscallError("CloseHandle", e)
+	if err := windows.CloseHandle(handle); err != nil {
+		return os.NewSyscallError("CloseHandle", err)
+	}
+	return nil
 }
