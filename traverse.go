@@ -104,6 +104,7 @@ func (r *Reader) NetworksWithin(prefix netip.Prefix, options ...NetworksOption) 
 				prefixLen: uint8(bit),
 				err:       fmt.Errorf("prefixing %s with %d", netIP, bit),
 			})
+			return
 		}
 
 		nodes := make([]netNode, 0, 64)
