@@ -74,7 +74,7 @@ excludes = [
 
 [linters-settings.govet]
 enable-all = true
-disable = "shadow"
+disable = ["shadow"]
 
 [linters-settings.lll]
 line-length = 120
