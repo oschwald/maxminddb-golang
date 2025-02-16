@@ -5,8 +5,11 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"net/netip"
+	"os"
 	"reflect"
+	"runtime"
 )
 
 const dataSectionSeparatorSize = 16
@@ -43,6 +46,78 @@ type Metadata struct {
 	IPVersion                uint              `maxminddb:"ip_version"`
 	NodeCount                uint              `maxminddb:"node_count"`
 	RecordSize               uint              `maxminddb:"record_size"`
+}
+
+// Open takes a string path to a MaxMind DB file and returns a Reader
+// structure or an error. The database file is opened using a memory map
+// on supported platforms. On platforms without memory map support, such
+// as WebAssembly or Google App Engine, or if the memory map attempt fails
+// due to lack of support from the filesystem, the database is loaded into memory.
+// Use the Close method on the Reader object to return the resources to the system.
+func Open(file string) (*Reader, error) {
+	mapFile, err := os.Open(file)
+	if err != nil {
+		return nil, err
+	}
+	defer mapFile.Close()
+
+	stats, err := mapFile.Stat()
+	if err != nil {
+		return nil, err
+	}
+
+	size64 := stats.Size()
+	// mmapping an empty file returns -EINVAL on Unix platforms,
+	// and ERROR_FILE_INVALID on Windows.
+	if size64 == 0 {
+		return nil, errors.New("file is empty")
+	}
+
+	size := int(size64)
+	// Check for overflow.
+	if int64(size) != size64 {
+		return nil, errors.New("file too large")
+	}
+
+	data, err := mmap(int(mapFile.Fd()), size)
+	if err != nil {
+		if errors.Is(err, errors.ErrUnsupported) {
+			data, err = openFallback(mapFile, size)
+			if err != nil {
+				return nil, err
+			}
+			return FromBytes(data)
+		}
+		return nil, err
+	}
+
+	reader, err := FromBytes(data)
+	if err != nil {
+		_ = munmap(data)
+		return nil, err
+	}
+
+	reader.hasMappedFile = true
+	runtime.SetFinalizer(reader, (*Reader).Close)
+	return reader, nil
+}
+
+func openFallback(f *os.File, size int) (data []byte, err error) {
+	data = make([]byte, size)
+	_, err = io.ReadFull(f, data)
+	return data, err
+}
+
+// Close returns the resources used by the database to the system.
+func (r *Reader) Close() error {
+	var err error
+	if r.hasMappedFile {
+		runtime.SetFinalizer(r, nil)
+		r.hasMappedFile = false
+		err = munmap(r.buffer)
+	}
+	r.buffer = nil
+	return err
 }
 
 // FromBytes takes a byte slice corresponding to a MaxMind DB file and returns
