@@ -197,7 +197,7 @@ func TestUint128(t *testing.T) {
 // This is _not_ meant to be a comprehensive power function.
 func powBigInt(bi *big.Int, pow uint) *big.Int {
 	newInt := big.NewInt(1)
-	for i := uint(0); i < pow; i++ {
+	for range pow {
 		newInt.Mul(newInt, bi)
 	}
 	return newInt

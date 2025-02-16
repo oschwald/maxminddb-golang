@@ -125,7 +125,7 @@ PATH:
 				// XXX - use type names in errors.
 				return fmt.Errorf("expected a map for %s but found %d", v, typeNum)
 			}
-			for i := uint(0); i < size; i++ {
+			for range size {
 				var key []byte
 				key, offset, err = d.decodeKey(offset)
 				if err != nil {
@@ -682,7 +682,7 @@ func (d *decoder) decodeMap(
 	keyValue := reflect.New(mapType.Key()).Elem()
 	elemType := mapType.Elem()
 	var elemValue reflect.Value
-	for i := uint(0); i < size; i++ {
+	for range size {
 		var key []byte
 		var err error
 		key, offset, err = d.decodeKey(offset)
@@ -717,7 +717,7 @@ func (d *decoder) decodeMapToDeserializer(
 	if err != nil {
 		return 0, err
 	}
-	for i := uint(0); i < size; i++ {
+	for range size {
 		// TODO - implement key/value skipping?
 		offset, err = d.decodeToDeserializer(offset, dser, depth, true)
 		if err != nil {
@@ -778,9 +778,9 @@ func (d *decoder) decodeSlice(
 	depth int,
 ) (uint, error) {
 	result.Set(reflect.MakeSlice(result.Type(), int(size), int(size)))
-	for i := 0; i < int(size); i++ {
+	for i := range size {
 		var err error
-		offset, err = d.decode(offset, result.Index(i), depth)
+		offset, err = d.decode(offset, result.Index(int(i)), depth)
 		if err != nil {
 			return 0, err
 		}
@@ -798,7 +798,7 @@ func (d *decoder) decodeSliceToDeserializer(
 	if err != nil {
 		return 0, err
 	}
-	for i := uint(0); i < size; i++ {
+	for range size {
 		offset, err = d.decodeToDeserializer(offset, dser, depth, true)
 		if err != nil {
 			return 0, err
@@ -833,7 +833,7 @@ func (d *decoder) decodeStruct(
 	}
 
 	// This handles named fields
-	for i := uint(0); i < size; i++ {
+	for range size {
 		var (
 			err error
 			key []byte
@@ -877,7 +877,7 @@ func cachedFields(result reflect.Value) *fieldsType {
 	numFields := resultType.NumField()
 	namedFields := make(map[string]int, numFields)
 	var anonymous []int
-	for i := 0; i < numFields; i++ {
+	for i := range numFields {
 		field := resultType.Field(i)
 
 		fieldName := field.Name
