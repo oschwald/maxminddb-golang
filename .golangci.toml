@@ -14,7 +14,6 @@ disable = [
     "err113",
     "exhaustive",
     "exhaustruct",
-    "exportloopref",
     "forcetypeassert",
     "funlen",
     "gochecknoglobals",
@@ -27,15 +26,14 @@ disable = [
     "nonamedreturns",
     "paralleltest",
     "thelper",
+
+    # deprecated
+    "tenv",
     "testpackage",
 
     "varnamelen",
     "wrapcheck",
     "wsl",
-
-    # Require Go 1.22
-    "copyloopvar",
-    "intrange",
 ]
 
 [linters-settings.errorlint]
