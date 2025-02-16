@@ -33,4 +33,4 @@ with your changes.
 
 ## License ##
 
-This is free software, primarily licensed under the ISC License.
+This is free software, licensed under the ISC License.
