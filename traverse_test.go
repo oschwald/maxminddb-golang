@@ -314,7 +314,9 @@ func TestNetworksWithin(t *testing.T) {
 				opts,
 			)
 			t.Run(name, func(t *testing.T) {
-				fileName := testFile(fmt.Sprintf("MaxMind-DB-test-%s-%d.mmdb", v.Database, recordSize))
+				fileName := testFile(
+					fmt.Sprintf("MaxMind-DB-test-%s-%d.mmdb", v.Database, recordSize),
+				)
 				reader, err := Open(fileName)
 				require.NoError(t, err, "unexpected error while opening database: %v", err)
 
