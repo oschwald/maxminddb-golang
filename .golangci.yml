@@ -16,6 +16,7 @@ linters:
     - gochecknoglobals
     - gocognit
     - godox
+    - gosmopolitan
     - inamedparam
     - interfacebloat
     - mnd
