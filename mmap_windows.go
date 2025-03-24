@@ -12,7 +12,7 @@ import (
 )
 
 // mmap maps a file into memory and returns a byte slice.
-func mmap(fd int, length int) ([]byte, error) {
+func mmap(fd, length int) ([]byte, error) {
 	// Create a file mapping
 	handle, err := windows.CreateFileMapping(
 		windows.Handle(fd),

@@ -157,6 +157,7 @@ formatters:
     - gofmt
     - gofumpt
     - goimports
+    - golines
   settings:
     gci:
       sections:
