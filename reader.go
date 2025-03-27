@@ -69,7 +69,7 @@ func Open(file string, options ...ReaderOption) (*Reader, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer mapFile.Close()
+	defer mapFile.Close() //nolint:errcheck // error is generally not relevant
 
 	stats, err := mapFile.Stat()
 	if err != nil {

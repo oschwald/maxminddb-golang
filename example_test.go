@@ -14,7 +14,7 @@ func ExampleReader_Lookup_struct() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
+	defer db.Close() //nolint:errcheck // error doesn't matter
 
 	addr := netip.MustParseAddr("81.2.69.142")
 
@@ -39,7 +39,7 @@ func ExampleReader_Lookup_interface() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
+	defer db.Close() //nolint:errcheck // error doesn't matter
 
 	addr := netip.MustParseAddr("81.2.69.142")
 
@@ -61,7 +61,7 @@ func ExampleReader_Networks() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
+	defer db.Close() //nolint:errcheck // error doesn't matter
 
 	for result := range db.Networks() {
 		record := struct {
@@ -108,7 +108,7 @@ func ExampleReader_NetworksWithin() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
+	defer db.Close() //nolint:errcheck // error doesn't matter
 
 	prefix, err := netip.ParsePrefix("1.0.0.0/8")
 	if err != nil {
