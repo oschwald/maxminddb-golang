@@ -1,10 +1,10 @@
 package maxminddb
 
 import (
-	"errors"
 	"math"
 	"net/netip"
-	"reflect"
+
+	"github.com/oschwald/maxminddb-golang/v2/internal/decoder"
 )
 
 const notFound uint = math.MaxUint
@@ -12,7 +12,7 @@ const notFound uint = math.MaxUint
 type Result struct {
 	ip        netip.Addr
 	err       error
-	decoder   decoder
+	decoder   decoder.Decoder
 	offset    uint
 	prefixLen uint8
 }
@@ -35,18 +35,8 @@ func (r Result) Decode(v any) error {
 	if r.offset == notFound {
 		return nil
 	}
-	rv := reflect.ValueOf(v)
-	if rv.Kind() != reflect.Ptr || rv.IsNil() {
-		return errors.New("result param must be a pointer")
-	}
 
-	if dser, ok := v.(deserializer); ok {
-		_, err := r.decoder.decodeToDeserializer(r.offset, dser, 0, false)
-		return err
-	}
-
-	_, err := r.decoder.decode(r.offset, rv, 0)
-	return err
+	return r.decoder.Decode(r.offset, v)
 }
 
 // DecodePath unmarshals a value from data section into v, following the
@@ -89,11 +79,7 @@ func (r Result) DecodePath(v any, path ...any) error {
 	if r.offset == notFound {
 		return nil
 	}
-	rv := reflect.ValueOf(v)
-	if rv.Kind() != reflect.Ptr || rv.IsNil() {
-		return errors.New("result param must be a pointer")
-	}
-	return r.decoder.decodePath(r.offset, path, rv)
+	return r.decoder.DecodePath(r.offset, path, v)
 }
 
 // Err provides a way to check whether there was an error during the lookup

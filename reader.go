@@ -8,8 +8,10 @@ import (
 	"io"
 	"net/netip"
 	"os"
-	"reflect"
 	"runtime"
+
+	"github.com/oschwald/maxminddb-golang/v2/internal/decoder"
+	"github.com/oschwald/maxminddb-golang/v2/internal/mmdberrors"
 )
 
 const dataSectionSeparatorSize = 16
@@ -24,7 +26,7 @@ var metadataStartMarker = []byte("\xAB\xCD\xEFMaxMind.com")
 type Reader struct {
 	nodeReader        nodeReader
 	buffer            []byte
-	decoder           decoder
+	decoder           decoder.Decoder
 	Metadata          Metadata
 	ipv4Start         uint
 	ipv4StartBitDepth int
@@ -126,16 +128,17 @@ func FromBytes(buffer []byte) (*Reader, error) {
 	metadataStart := bytes.LastIndex(buffer, metadataStartMarker)
 
 	if metadataStart == -1 {
-		return nil, newInvalidDatabaseError("error opening database: invalid MaxMind DB file")
+		return nil, mmdberrors.NewInvalidDatabaseError(
+			"error opening database: invalid MaxMind DB file",
+		)
 	}
 
 	metadataStart += len(metadataStartMarker)
-	metadataDecoder := decoder{buffer: buffer[metadataStart:]}
+	metadataDecoder := decoder.New(buffer[metadataStart:])
 
 	var metadata Metadata
 
-	rvMetadata := reflect.ValueOf(&metadata)
-	_, err := metadataDecoder.decode(0, rvMetadata, 0)
+	err := metadataDecoder.Decode(0, &metadata)
 	if err != nil {
 		return nil, err
 	}
@@ -144,11 +147,11 @@ func FromBytes(buffer []byte) (*Reader, error) {
 	dataSectionStart := searchTreeSize + dataSectionSeparatorSize
 	dataSectionEnd := uint(metadataStart - len(metadataStartMarker))
 	if dataSectionStart > dataSectionEnd {
-		return nil, newInvalidDatabaseError("the MaxMind DB contains invalid metadata")
+		return nil, mmdberrors.NewInvalidDatabaseError("the MaxMind DB contains invalid metadata")
 	}
-	d := decoder{
-		buffer: buffer[searchTreeSize+dataSectionSeparatorSize : metadataStart-len(metadataStartMarker)],
-	}
+	d := decoder.New(
+		buffer[searchTreeSize+dataSectionSeparatorSize : metadataStart-len(metadataStartMarker)],
+	)
 
 	nodeBuffer := buffer[:searchTreeSize]
 	var nodeReader nodeReader
@@ -160,7 +163,10 @@ func FromBytes(buffer []byte) (*Reader, error) {
 	case 32:
 		nodeReader = nodeReader32{buffer: nodeBuffer}
 	default:
-		return nil, newInvalidDatabaseError("unknown record size: %d", metadata.RecordSize)
+		return nil, mmdberrors.NewInvalidDatabaseError(
+			"unknown record size: %d",
+			metadata.RecordSize,
+		)
 	}
 
 	reader := &Reader{
@@ -255,7 +261,7 @@ func (r *Reader) lookupPointer(ip netip.Addr) (uint, int, error) {
 		return node, prefixLength, nil
 	}
 
-	return 0, prefixLength, newInvalidDatabaseError("invalid node in search tree")
+	return 0, prefixLength, mmdberrors.NewInvalidDatabaseError("invalid node in search tree")
 }
 
 func (r *Reader) traverseTree(ip netip.Addr, node uint, stopBit int) (uint, int) {
@@ -286,7 +292,7 @@ func (r *Reader) resolveDataPointer(pointer uint) (uintptr, error) {
 	resolved := uintptr(pointer - r.Metadata.NodeCount - dataSectionSeparatorSize)
 
 	if resolved >= uintptr(len(r.buffer)) {
-		return 0, newInvalidDatabaseError("the MaxMind DB file's search tree is corrupt")
+		return 0, mmdberrors.NewInvalidDatabaseError("the MaxMind DB file's search tree is corrupt")
 	}
 	return resolved, nil
 }
