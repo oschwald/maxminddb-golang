@@ -1,8 +1,9 @@
 package maxminddb
 
 import (
-	"reflect"
 	"runtime"
+
+	"github.com/oschwald/maxminddb-golang/v2/internal/mmdberrors"
 )
 
 type verifier struct {
@@ -96,7 +97,7 @@ func (v *verifier) verifyDatabase() error {
 		return err
 	}
 
-	return v.verifyDataSection(offsets)
+	return v.reader.decoder.VerifyDataSection(offsets)
 }
 
 func (v *verifier) verifySearchTree() (map[uint]bool, error) {
@@ -118,66 +119,11 @@ func (v *verifier) verifyDataSectionSeparator() error {
 
 	for _, b := range separator {
 		if b != 0 {
-			return newInvalidDatabaseError("unexpected byte in data separator: %v", separator)
-		}
-	}
-	return nil
-}
-
-func (v *verifier) verifyDataSection(offsets map[uint]bool) error {
-	pointerCount := len(offsets)
-
-	decoder := v.reader.decoder
-
-	var offset uint
-	bufferLen := uint(len(decoder.buffer))
-	for offset < bufferLen {
-		var data any
-		rv := reflect.ValueOf(&data)
-		newOffset, err := decoder.decode(offset, rv, 0)
-		if err != nil {
-			return newInvalidDatabaseError(
-				"received decoding error (%v) at offset of %v",
-				err,
-				offset,
+			return mmdberrors.NewInvalidDatabaseError(
+				"unexpected byte in data separator: %v",
+				separator,
 			)
 		}
-		if newOffset <= offset {
-			return newInvalidDatabaseError(
-				"data section offset unexpectedly went from %v to %v",
-				offset,
-				newOffset,
-			)
-		}
-
-		pointer := offset
-
-		if _, ok := offsets[pointer]; !ok {
-			return newInvalidDatabaseError(
-				"found data (%v) at %v that the search tree does not point to",
-				data,
-				pointer,
-			)
-		}
-		delete(offsets, pointer)
-
-		offset = newOffset
-	}
-
-	if offset != bufferLen {
-		return newInvalidDatabaseError(
-			"unexpected data at the end of the data section (last offset: %v, end: %v)",
-			offset,
-			bufferLen,
-		)
-	}
-
-	if len(offsets) != 0 {
-		return newInvalidDatabaseError(
-			"found %v pointers (of %v) in the search tree that we did not see in the data section",
-			len(offsets),
-			pointerCount,
-		)
 	}
 	return nil
 }
@@ -187,7 +133,7 @@ func testError(
 	expected any,
 	actual any,
 ) error {
-	return newInvalidDatabaseError(
+	return mmdberrors.NewInvalidDatabaseError(
 		"%v - Expected: %v Actual: %v",
 		field,
 		expected,

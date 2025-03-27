@@ -1,9 +1,10 @@
-package maxminddb
+package decoder
 
 import (
 	"encoding/hex"
 	"math/big"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -207,7 +208,7 @@ func validateDecoding(t *testing.T, tests map[string]any) {
 	for inputStr, expected := range tests {
 		inputBytes, err := hex.DecodeString(inputStr)
 		require.NoError(t, err)
-		d := decoder{buffer: inputBytes}
+		d := Decoder{buffer: inputBytes}
 
 		var result any
 		_, err = d.decode(0, reflect.ValueOf(&result), 0)
@@ -223,7 +224,7 @@ func validateDecoding(t *testing.T, tests map[string]any) {
 func TestPointers(t *testing.T) {
 	bytes, err := os.ReadFile(testFile("maps-with-pointers.raw"))
 	require.NoError(t, err)
-	d := decoder{buffer: bytes}
+	d := Decoder{buffer: bytes}
 
 	expected := map[uint]map[string]string{
 		0:  {"long_key": "long_value1"},
@@ -242,4 +243,8 @@ func TestPointers(t *testing.T) {
 			t.Errorf("Decode for pointer at %d failed", offset)
 		}
 	}
+}
+
+func testFile(file string) string {
+	return filepath.Join("..", "..", "test-data", "test-data", file)
 }

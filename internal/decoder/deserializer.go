@@ -1,4 +1,4 @@
-package maxminddb
+package decoder
 
 import "math/big"
 
