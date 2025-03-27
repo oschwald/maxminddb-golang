@@ -32,14 +32,18 @@ type NetworksOption func(*networkOptions)
 // IncludeAliasedNetworks is an option for Networks and NetworksWithin
 // that makes them iterate over aliases of the IPv4 subtree in an IPv6
 // database, e.g., ::ffff:0:0/96, 2001::/32, and 2002::/16.
-func IncludeAliasedNetworks(networks *networkOptions) {
-	networks.includeAliasedNetworks = true
+func IncludeAliasedNetworks() NetworksOption {
+	return func(networks *networkOptions) {
+		networks.includeAliasedNetworks = true
+	}
 }
 
 // IncludeNetworksWithoutData is an option for Networks and NetworksWithin
 // that makes them include networks without any data in the iteration.
-func IncludeNetworksWithoutData(networks *networkOptions) {
-	networks.includeEmptyNetworks = true
+func IncludeNetworksWithoutData() NetworksOption {
+	return func(networks *networkOptions) {
+		networks.includeEmptyNetworks = true
+	}
 }
 
 // Networks returns an iterator that can be used to traverse the networks in

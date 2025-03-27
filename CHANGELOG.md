@@ -1,5 +1,11 @@
 # Changes
 
+## 2.0.0-beta.4
+
+- `IncludeNetworksWithoutData` and `IncludeAliasedNetworks` now return a
+  `NetworksOption` rather than being one themselves. This was done to improve
+  the documentation organization.
+
 ## 2.0.0-beta.3 - 2025-02-16
 
 - `Open` will now fall back to loading the database in memory if the
