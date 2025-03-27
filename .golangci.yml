@@ -60,6 +60,9 @@ linters:
     gosec:
       excludes:
         - G115
+        # Potential file inclusion via variable - we only open files asked by
+        # the user of the API.
+        - G304
     govet:
       disable:
         - shadow
@@ -135,22 +138,13 @@ linters:
     unparam:
       check-exported: true
   exclusions:
-    generated: lax
-    presets:
-      - comments
-      - common-false-positives
-      - legacy
-      - std-error-handling
+    warn-unused: true
     rules:
       - linters:
           - govet
           - revive
         path: _test.go
         text: 'fieldalignment:'
-    paths:
-      - third_party$
-      - builtin$
-      - examples$
 formatters:
   enable:
     - gci
@@ -166,9 +160,3 @@ formatters:
         - prefix(github.com/oschwald/maxminddb-golang)
     gofumpt:
       extra-rules: true
-  exclusions:
-    generated: lax
-    paths:
-      - third_party$
-      - builtin$
-      - examples$
