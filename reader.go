@@ -50,9 +50,17 @@ type Metadata struct {
 	RecordSize               uint              `maxminddb:"record_size"`
 }
 
-type readerOptions struct{}
+type readerOptions struct {
+	cache decoder.Cacher
+}
 
 type ReaderOption func(*readerOptions)
+
+func Cache(cache decoder.Cacher) ReaderOption {
+	return func(o *readerOptions) {
+		o.cache = cache
+	}
+}
 
 // Open takes a string path to a MaxMind DB file and any options. It returns a
 // Reader structure or an error. The database file is opened using a memory
@@ -143,7 +151,7 @@ func FromBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
 	}
 
 	metadataStart += len(metadataStartMarker)
-	metadataDecoder := decoder.New(buffer[metadataStart:])
+	metadataDecoder := decoder.New(buffer[metadataStart:], nil)
 
 	var metadata Metadata
 
@@ -159,7 +167,8 @@ func FromBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
 		return nil, mmdberrors.NewInvalidDatabaseError("the MaxMind DB contains invalid metadata")
 	}
 	d := decoder.New(
-		buffer[searchTreeSize+dataSectionSeparatorSize : metadataStart-len(metadataStartMarker)],
+		buffer[searchTreeSize+dataSectionSeparatorSize:metadataStart-len(metadataStartMarker)],
+		opts.cache,
 	)
 
 	nodeBuffer := buffer[:searchTreeSize]

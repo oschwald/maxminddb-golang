@@ -23,6 +23,22 @@ func (e InvalidDatabaseError) Error() string {
 	return e.message
 }
 
+type CacheTypeError struct {
+	Type  string
+	Value any
+}
+
+func NewCacheTypeStrError(value any, expType string) CacheTypeError {
+	return CacheTypeError{
+		Type:  expType,
+		Value: value,
+	}
+}
+
+func (e CacheTypeError) Error() string {
+	return fmt.Sprintf("maxminddb: expected %s type in cache but found %T", e.Type, e.Value)
+}
+
 // UnmarshalTypeError is returned when the value in the database cannot be
 // assigned to the specified data type.
 type UnmarshalTypeError struct {

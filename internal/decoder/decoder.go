@@ -12,8 +12,14 @@ import (
 	"github.com/oschwald/maxminddb-golang/v2/internal/mmdberrors"
 )
 
+type Cacher interface {
+	Load(key uint) (any, bool)
+	Store(key uint, value any)
+}
+
 type Decoder struct {
 	buffer []byte
+	cache  Cacher
 }
 
 type dataType int
@@ -44,8 +50,8 @@ const (
 	maximumDataStructureDepth = 512
 )
 
-func New(buffer []byte) Decoder {
-	return Decoder{buffer: buffer}
+func New(buffer []byte, cache Cacher) Decoder {
+	return Decoder{buffer: buffer, cache: cache}
 }
 
 func (d *Decoder) Decode(offset uint, v any) error {
@@ -348,7 +354,10 @@ func (d *Decoder) decodeFromTypeToDeserializer(
 		v, offset := d.decodeInt(size, offset)
 		return offset, dser.Int32(int32(v))
 	case _String:
-		v, offset := d.decodeString(size, offset)
+		v, offset, err := d.decodeString(size, offset)
+		if err != nil {
+			return 0, err
+		}
 		return offset, dser.String(v)
 	case _Uint16:
 		v, offset := d.decodeUint(size, offset)
@@ -581,7 +590,10 @@ func (d *Decoder) unmarshalSlice(
 }
 
 func (d *Decoder) unmarshalString(size, offset uint, result reflect.Value) (uint, error) {
-	value, newOffset := d.decodeString(size, offset)
+	value, newOffset, err := d.decodeString(size, offset)
+	if err != nil {
+		return 0, err
+	}
 
 	switch result.Kind() {
 	case reflect.String:
@@ -838,9 +850,25 @@ func (d *Decoder) decodeSliceToDeserializer(
 	return offset, nil
 }
 
-func (d *Decoder) decodeString(size, offset uint) (string, uint) {
+func (d *Decoder) decodeString(size, offset uint) (string, uint, error) {
 	newOffset := offset + size
-	return string(d.buffer[offset:newOffset]), newOffset
+	if d.cache == nil {
+		return string(d.buffer[offset:newOffset]), newOffset, nil
+	}
+
+	v, ok := d.cache.Load(offset)
+	if ok {
+		if s, ok := v.(string); ok {
+			return s, newOffset, nil
+		}
+		return "", 0, mmdberrors.NewCacheTypeStrError(v, "string")
+	}
+
+	s := string(d.buffer[offset:newOffset])
+
+	d.cache.Store(offset, s)
+
+	return s, newOffset, nil
 }
 
 func (d *Decoder) decodeStruct(

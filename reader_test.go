@@ -931,6 +931,44 @@ func BenchmarkCityLookup(b *testing.B) {
 	var result fullCity
 
 	s := make(net.IP, 4)
+
+	b.ResetTimer()
+
+	for range b.N {
+		ip := randomIPv4Address(r, s)
+		err = db.Lookup(ip).Decode(&result)
+		if err != nil {
+			b.Error(err)
+		}
+	}
+	require.NoError(b, db.Close(), "error on close")
+}
+
+type cache struct {
+	m map[uint]any
+}
+
+func (c *cache) Load(key uint) (any, bool) {
+	v, ok := c.m[key]
+	return v, ok
+}
+
+func (c *cache) Store(key uint, value any) {
+	c.m[key] = value
+}
+
+func BenchmarkCityLookupWithCache(b *testing.B) {
+	db, err := Open("GeoLite2-City.mmdb", Cache(&cache{m: map[uint]any{}}))
+	require.NoError(b, err)
+
+	//nolint:gosec // this is a test
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	var result fullCity
+
+	s := make(net.IP, 4)
+
+	b.ResetTimer()
+
 	for range b.N {
 		ip := randomIPv4Address(r, s)
 		err = db.Lookup(ip).Decode(&result)
@@ -949,6 +987,9 @@ func BenchmarkCityLookupOnly(b *testing.B) {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	s := make(net.IP, 4)
+
+	b.ResetTimer()
+
 	for range b.N {
 		ip := randomIPv4Address(r, s)
 		result := db.Lookup(ip)
