@@ -14,6 +14,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/oschwald/maxminddb-golang/v2/internal/mmdberrors"
 )
 
 func TestReader(t *testing.T) {
@@ -647,7 +649,7 @@ func TestBrokenDoubleDatabase(t *testing.T) {
 	var result any
 	err = reader.Lookup(netip.MustParseAddr("2001:220::")).Decode(&result)
 
-	expected := newInvalidDatabaseError(
+	expected := mmdberrors.NewInvalidDatabaseError(
 		"the MaxMind DB file's data section contains bad data (float 64 size of 2)",
 	)
 	require.ErrorAs(t, err, &expected)
@@ -657,7 +659,7 @@ func TestBrokenDoubleDatabase(t *testing.T) {
 func TestInvalidNodeCountDatabase(t *testing.T) {
 	_, err := Open(testFile("GeoIP2-City-Test-Invalid-Node-Count.mmdb"))
 
-	expected := newInvalidDatabaseError("the MaxMind DB contains invalid metadata")
+	expected := mmdberrors.NewInvalidDatabaseError("the MaxMind DB contains invalid metadata")
 	assert.Equal(t, expected, err)
 }
 

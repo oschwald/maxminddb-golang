@@ -5,6 +5,8 @@ import (
 	// comment to prevent gofumpt from randomly moving iter.
 	"iter"
 	"net/netip"
+
+	"github.com/oschwald/maxminddb-golang/v2/internal/mmdberrors"
 )
 
 // Internal structure used to keep track of nodes we still need to visit.
@@ -166,7 +168,7 @@ func (r *Reader) NetworksWithin(prefix netip.Prefix, options ...NetworksOption) 
 						ip:        displayAddr,
 						prefixLen: uint8(node.bit),
 					}
-					res.err = newInvalidDatabaseError(
+					res.err = mmdberrors.NewInvalidDatabaseError(
 						"invalid search tree at %s", res.Prefix())
 
 					yield(res)
