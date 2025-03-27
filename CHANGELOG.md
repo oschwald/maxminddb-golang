@@ -1,0 +1,171 @@
+# Changes
+
+## 2.0.0-beta.3 - 2025-02-16
+
+- `Open` will now fall back to loading the database in memory if the
+  file-system does not support `mmap`. Pull request by database64128. GitHub
+  #163.
+- Made significant improvements to the Windows memory-map handling. . GitHub
+  #162.
+- Fix an integer overflow on large databases when using a 32-bit architecture.
+  See ipinfo/mmdbctl#33.
+
+## 2.0.0-beta.2 - 2024-11-14
+
+- Allow negative indexes for arrays when using `DecodePath`. #152
+- Add `IncludeNetworksWithoutData` option for `Networks` and `NetworksWithin`.
+  #155 and #156
+
+## 2.0.0-beta.1 - 2024-08-18
+
+This is the first beta of the v2 releases. Go 1.23 is required. I don't expect
+to do a final release until Go 1.24 is available. See #141 for the v2 roadmap.
+
+Notable changes:
+
+- `(*Reader).Lookup` now takes only the IP address and returns a `Result`.
+  `Lookup(ip, &rec)` would now become `Lookup(ip).Decode(&rec)`.
+- `(*Reader).LookupNetwork` has been removed. To get the network for a result,
+  use `(Result).Prefix()`.
+- `(*Reader).LookupOffset` now _takes_ an offset and returns a `Result`.
+  `Result` has an `Offset()` method that returns the offset value.
+  `(*Reader).Decode` has been removed.
+- Use of `net.IP` and `*net.IPNet` have been replaced with `netip.Addr` and
+  `netip.Prefix`.
+- You may now decode a particular path within a database record using
+  `(Result).DecodePath`. For instance, to decode just the country code in
+  GeoLite2 Country to a string called `code`, you might do something like
+  `Lookup(ip).DecodePath(&code, "country", "iso_code")`. Strings should be used
+  for map keys and ints for array indexes.
+- `(*Reader).Networks` and `(*Reader).NetworksWithin` now return a Go 1.23
+  iterator of `Result` values. Aliased networks are now skipped by default. If
+  you wish to include them, use the `IncludeAliasedNetworks` option.
+
+## 1.13.1 - 2024-06-28
+
+- Return the `*net.IPNet` in canonical form when using `NetworksWithin` to look
+  up a network more specific than the one in the database. Previously, the `IP`
+  field on the `*net.IPNet` would be set to the IP from the lookup network
+  rather than the first IP of the network.
+- `NetworksWithin` will now correctly handle an `*net.IPNet` parameter that is
+  not in canonical form. This issue would only occur if the `*net.IPNet` was
+  manually constructed, as `net.ParseCIDR` returns the value in canonical form
+  even if the input string is not.
+
+## 1.13.0 - 2024-06-03
+
+- Go 1.21 or greater is now required.
+- The error messages when decoding have been improved. #119
+
+## 1.12.0 - 2023-08-01
+
+- The `wasi` target is now built without memory-mapping support. Pull request
+  by Alex Kashintsev. GitHub #114.
+- When decoding to a map of non-scalar, non-interface types such as a
+  `map[string]map[string]any`, the decoder failed to zero out the value for the
+  map elements, which could result in incorrect decoding. Reported by JT Olio.
+  GitHub #115.
+
+## 1.11.0 - 2023-06-18
+
+- `wasm` and `wasip1` targets are now built without memory-mapping support.
+  Pull request by Randy Reddig. GitHub #110.
+
+**Full Changelog**:
+https://github.com/oschwald/maxminddb-golang/compare/v1.10.0...v1.11.0
+
+## 1.10.0 - 2022-08-07
+
+- Set Go version in go.mod file to 1.18.
+
+## 1.9.0 - 2022-03-26
+
+- Set the minimum Go version in the go.mod file to 1.17.
+- Updated dependencies.
+- Minor performance improvements to the custom deserializer feature added in
+  1.8.0.
+
+## 1.8.0 - 2020-11-23
+
+- Added `maxminddb.SkipAliasedNetworks` option to `Networks` and
+  `NetworksWithin` methods. When set, this option will cause the iterator to
+  skip networks that are aliases of the IPv4 tree.
+- Added experimental custom deserializer support. This allows much more control
+  over the deserialization. The API is subject to change and you should use at
+  your own risk.
+
+## 1.7.0 - 2020-06-13
+
+- Add `NetworksWithin` method. This returns an iterator that traverses all
+  networks in the database that are contained in the given network. Pull
+  request by Olaf Alders. GitHub #65.
+
+## 1.6.0 - 2019-12-25
+
+- This module now uses Go modules. Requested by Matthew Rothenberg. GitHub #49.
+- Plan 9 is now supported. Pull request by Jacob Moody. GitHub #61.
+- Documentation fixes. Pull request by Olaf Alders. GitHub #62.
+- Thread-safety is now mentioned in the documentation. Requested by Ken
+  Sedgwick. GitHub #39.
+- Fix off-by-one error in file offset safety check. Reported by Will Storey.
+  GitHub #63.
+
+## 1.5.0 - 2019-09-11
+
+- Drop support for Go 1.7 and 1.8.
+- Minor performance improvements.
+
+## 1.4.0 - 2019-08-28
+
+- Add the method `LookupNetwork`. This returns the network that the record
+  belongs to as well as a boolean indicating whether there was a record for the
+  IP address in the database. GitHub #59.
+- Improve performance.
+
+## 1.3.1 - 2019-08-28
+
+- Fix issue with the finalizer running too early on Go 1.12 when using the
+  Verify method. Reported by Robert-André Mauchin. GitHub #55.
+- Remove unnecessary call to reflect.ValueOf. PR by SenseyeDeveloper. GitHub
+  #53.
+
+## 1.3.0 - 2018-02-25
+
+- The methods on the `maxminddb.Reader` struct now return an error if called on
+  a closed database reader. Previously, this could cause a segmentation
+  violation when using a memory-mapped file.
+- The `Close` method on the `maxminddb.Reader` struct now sets the underlying
+  buffer to nil, even when using `FromBytes` or `Open` on Google App Engine.
+- No longer uses constants from `syscall`
+
+## 1.2.1 - 2018-01-03
+
+- Fix incorrect index being used when decoding into anonymous struct fields. PR
+  #42 by Andy Bursavich.
+
+## 1.2.0 - 2017-05-05
+
+- The database decoder now does bound checking when decoding data from the
+  database. This is to help ensure that the reader does not panic when given a
+  corrupt database to decode. Closes #37.
+- The reader will now return an error on a data structure with a depth greater
+  than 512. This is done to prevent the possibility of a stack overflow on a
+  cyclic data structure in a corrupt database. This matches the maximum depth
+  allowed by `libmaxminddb`. All MaxMind databases currently have a depth of
+  less than five.
+
+## 1.1.0 - 2016-12-31
+
+- Added appengine build tag for Windows. When enabled, memory-mapping will be
+  disabled in the Windows build as it is for the non-Windows build. Pull
+  request #35 by Ingo Oeser.
+- SetFinalizer is now used to unmap files if the user fails to close the
+  reader. Using `r.Close()` is still recommended for most use cases.
+- Previously, an unsafe conversion between `[]byte` and string was used to
+  avoid unnecessary allocations when decoding struct keys. The decoder now
+  relies on a compiler optimization on `string([]byte)` map lookups to achieve
+  this rather than using `unsafe`.
+
+## 1.0.0 - 2016-11-09
+
+New release for those using tagged releases.
