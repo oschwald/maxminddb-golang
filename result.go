@@ -9,6 +9,7 @@ import (
 
 const notFound uint = math.MaxUint
 
+// Result holds the result of the database lookup.
 type Result struct {
 	ip        netip.Addr
 	err       error
