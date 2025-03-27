@@ -50,13 +50,17 @@ type Metadata struct {
 	RecordSize               uint              `maxminddb:"record_size"`
 }
 
-// Open takes a string path to a MaxMind DB file and returns a Reader
-// structure or an error. The database file is opened using a memory map
-// on supported platforms. On platforms without memory map support, such
+type readerOptions struct{}
+
+type ReaderOption func(*readerOptions)
+
+// Open takes a string path to a MaxMind DB file and any options. It returns a
+// Reader structure or an error. The database file is opened using a memory
+// map on supported platforms. On platforms without memory map support, such
 // as WebAssembly or Google App Engine, or if the memory map attempt fails
 // due to lack of support from the filesystem, the database is loaded into memory.
 // Use the Close method on the Reader object to return the resources to the system.
-func Open(file string) (*Reader, error) {
+func Open(file string, options ...ReaderOption) (*Reader, error) {
 	mapFile, err := os.Open(file)
 	if err != nil {
 		return nil, err
@@ -88,12 +92,12 @@ func Open(file string) (*Reader, error) {
 			if err != nil {
 				return nil, err
 			}
-			return FromBytes(data)
+			return FromBytes(data, options...)
 		}
 		return nil, err
 	}
 
-	reader, err := FromBytes(data)
+	reader, err := FromBytes(data, options...)
 	if err != nil {
 		_ = munmap(data)
 		return nil, err
@@ -122,9 +126,14 @@ func (r *Reader) Close() error {
 	return err
 }
 
-// FromBytes takes a byte slice corresponding to a MaxMind DB file and returns
-// a Reader structure or an error.
-func FromBytes(buffer []byte) (*Reader, error) {
+// FromBytes takes a byte slice corresponding to a MaxMind DB file and any
+// options. It returns a Reader structure or an error.
+func FromBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
+	opts := &readerOptions{}
+	for _, option := range options {
+		option(opts)
+	}
+
 	metadataStart := bytes.LastIndex(buffer, metadataStartMarker)
 
 	if metadataStart == -1 {

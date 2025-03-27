@@ -2,6 +2,7 @@
 
 ## 2.0.0-beta.4
 
+- `Open` and `FromBytes` now accept options.
 - `IncludeNetworksWithoutData` and `IncludeAliasedNetworks` now return a
   `NetworksOption` rather than being one themselves. This was done to improve
   the documentation organization.
