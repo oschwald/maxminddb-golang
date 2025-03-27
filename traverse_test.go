@@ -227,7 +227,7 @@ var tests = []networkTest{
 			"2002:101:110::/44",
 			"2002:101:120::/48",
 		},
-		Options: []NetworksOption{IncludeAliasedNetworks},
+		Options: []NetworksOption{IncludeAliasedNetworks()},
 	},
 	{
 		Network:  "::/0",
@@ -281,7 +281,7 @@ var tests = []networkTest{
 			"1.64.0.0/10",
 			"1.128.0.0/9",
 		},
-		Options: []NetworksOption{IncludeNetworksWithoutData},
+		Options: []NetworksOption{IncludeNetworksWithoutData()},
 	},
 	{
 		Network:  "1.1.1.16/28",
