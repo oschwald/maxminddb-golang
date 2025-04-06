@@ -83,7 +83,7 @@ func TestLookupNetwork(t *testing.T) {
 		},
 		"double": 42.123456,
 		"float":  float32(1.1),
-		"int32":  -268435456,
+		"int32":  int32(-268435456),
 		"map": map[string]any{
 			"mapX": map[string]any{
 				"arrayX": []any{
@@ -234,7 +234,7 @@ func checkDecodingToInterface(t *testing.T, recordInterface any) {
 	assert.Equal(t, []byte{0x00, 0x00, 0x00, 0x2a}, record["bytes"])
 	assert.InEpsilon(t, 42.123456, record["double"], 1e-10)
 	assert.InEpsilon(t, float32(1.1), record["float"], 1e-5)
-	assert.Equal(t, -268435456, record["int32"])
+	assert.Equal(t, int32(-268435456), record["int32"])
 	assert.Equal(t,
 		map[string]any{
 			"mapX": map[string]any{

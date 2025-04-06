@@ -13,7 +13,7 @@ const notFound uint = math.MaxUint
 type Result struct {
 	ip        netip.Addr
 	err       error
-	decoder   decoder.Decoder
+	decoder   decoder.ReflectionDecoder
 	offset    uint
 	prefixLen uint8
 }

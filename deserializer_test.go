@@ -69,7 +69,7 @@ func (d *testDeserializer) Uint32(v uint32) error {
 }
 
 func (d *testDeserializer) Int32(v int32) error {
-	return d.add(int(v))
+	return d.add(v)
 }
 
 func (d *testDeserializer) Uint64(v uint64) error {

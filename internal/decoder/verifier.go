@@ -8,7 +8,7 @@ import (
 
 // VerifyDataSection verifies the data section against the provided
 // offsets from the tree.
-func (d *Decoder) VerifyDataSection(offsets map[uint]bool) error {
+func (d *ReflectionDecoder) VerifyDataSection(offsets map[uint]bool) error {
 	pointerCount := len(offsets)
 
 	var offset uint

@@ -26,7 +26,7 @@ var metadataStartMarker = []byte("\xAB\xCD\xEFMaxMind.com")
 type Reader struct {
 	nodeReader        nodeReader
 	buffer            []byte
-	decoder           decoder.Decoder
+	decoder           decoder.ReflectionDecoder
 	Metadata          Metadata
 	ipv4Start         uint
 	ipv4StartBitDepth int
