@@ -166,13 +166,6 @@ func (d *Decoder) decodeFromType(
 		return d.unmarshalPointer(size, offset, result, depth)
 	case _Slice:
 		return d.unmarshalSlice(size, offset, result, depth)
-	}
-
-	// For the remaining types, size is the byte size
-	if offset+size > uint(len(d.buffer)) {
-		return 0, mmdberrors.NewOffsetError()
-	}
-	switch dtype {
 	case _Bytes:
 		return d.unmarshalBytes(size, offset, result)
 	case _Float32:
@@ -181,14 +174,14 @@ func (d *Decoder) decodeFromType(
 		return d.unmarshalFloat64(size, offset, result)
 	case _Int32:
 		return d.unmarshalInt32(size, offset, result)
-	case _String:
-		return d.unmarshalString(size, offset, result)
 	case _Uint16:
 		return d.unmarshalUint(size, offset, result, 16)
 	case _Uint32:
 		return d.unmarshalUint(size, offset, result, 32)
 	case _Uint64:
 		return d.unmarshalUint(size, offset, result, 64)
+	case _String:
+		return d.unmarshalString(size, offset, result)
 	case _Uint128:
 		return d.unmarshalUint128(size, offset, result)
 	default:
@@ -250,7 +243,10 @@ func indirect(result reflect.Value) reflect.Value {
 var sliceType = reflect.TypeOf([]byte{})
 
 func (d *Decoder) unmarshalBytes(size, offset uint, result reflect.Value) (uint, error) {
-	value, newOffset := d.decodeBytes(size, offset)
+	value, newOffset, err := d.decodeBytes(size, offset)
+	if err != nil {
+		return 0, err
+	}
 
 	switch result.Kind() {
 	case reflect.Slice:
@@ -274,7 +270,10 @@ func (d *Decoder) unmarshalFloat32(size, offset uint, result reflect.Value) (uin
 			size,
 		)
 	}
-	value, newOffset := d.decodeFloat32(size, offset)
+	value, newOffset, err := d.decodeFloat32(size, offset)
+	if err != nil {
+		return 0, err
+	}
 
 	switch result.Kind() {
 	case reflect.Float32, reflect.Float64:
@@ -296,7 +295,10 @@ func (d *Decoder) unmarshalFloat64(size, offset uint, result reflect.Value) (uin
 			size,
 		)
 	}
-	value, newOffset := d.decodeFloat64(size, offset)
+	value, newOffset, err := d.decodeFloat64(size, offset)
+	if err != nil {
+		return 0, err
+	}
 
 	switch result.Kind() {
 	case reflect.Float32, reflect.Float64:
@@ -321,7 +323,11 @@ func (d *Decoder) unmarshalInt32(size, offset uint, result reflect.Value) (uint,
 			size,
 		)
 	}
-	value, newOffset := d.decodeInt(size, offset)
+
+	value, newOffset, err := d.decodeInt(size, offset)
+	if err != nil {
+		return 0, err
+	}
 
 	switch result.Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
@@ -410,7 +416,10 @@ func (d *Decoder) unmarshalSlice(
 }
 
 func (d *Decoder) unmarshalString(size, offset uint, result reflect.Value) (uint, error) {
-	value, newOffset := d.decodeString(size, offset)
+	value, newOffset, err := d.decodeString(size, offset)
+	if err != nil {
+		return 0, err
+	}
 
 	switch result.Kind() {
 	case reflect.String:
@@ -438,7 +447,10 @@ func (d *Decoder) unmarshalUint(
 		)
 	}
 
-	value, newOffset := d.decodeUint(size, offset)
+	value, newOffset, err := d.decodeUint(size, offset)
+	if err != nil {
+		return 0, err
+	}
 
 	switch result.Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
@@ -475,7 +487,11 @@ func (d *Decoder) unmarshalUint128(size, offset uint, result reflect.Value) (uin
 			size,
 		)
 	}
-	value, newOffset := d.decodeUint128(size, offset)
+
+	value, newOffset, err := d.decodeUint128(size, offset)
+	if err != nil {
+		return 0, err
+	}
 
 	switch result.Kind() {
 	case reflect.Struct:
