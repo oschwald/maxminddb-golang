@@ -14,27 +14,48 @@ type DataDecoder struct {
 	buffer []byte
 }
 
-type dataType int
+// Type corresponds to the data types defined in the MaxMind DB format
+// specification v2.0, specifically in the "Output Data Section".
+type Type int
 
 const (
-	_Extended dataType = iota
-	_Pointer
-	_String
-	_Float64
-	_Bytes
-	_Uint16
-	_Uint32
-	_Map
-	_Int32
-	_Uint64
-	_Uint128
-	_Slice
-	// We don't use the next two. They are placeholders. See the spec
-	// for more details.
-	_Container //nolint:deadcode,varcheck // above
-	_Marker    //nolint:deadcode,varcheck // above
-	_Bool
-	_Float32
+	// TypeExtended is an "extended" type. This means that the type is encoded in the
+	// next byte(s). It should not be used directly.
+	TypeExtended Type = iota
+	// TypePointer represents a pointer to another location in the data section.
+	TypePointer
+	// TypeString represents a UTF-8 string.
+	TypeString
+	// TypeFloat64 represents a 64-bit floating point number (double).
+	TypeFloat64
+	// TypeBytes represents a slice of bytes.
+	TypeBytes
+	// TypeUint16 represents a 16-bit unsigned integer.
+	TypeUint16
+	// TypeUint32 represents a 32-bit unsigned integer.
+	TypeUint32
+	// TypeMap represents a map data type. The keys must be strings.
+	// The values may be any data type.
+	TypeMap
+	// TypeInt32 represents a 32-bit signed integer.
+	TypeInt32
+	// TypeUint64 represents a 64-bit unsigned integer.
+	TypeUint64
+	// TypeUint128 represents a 128-bit unsigned integer.
+	TypeUint128
+	// TypeSlice represents an array data type.
+	TypeSlice
+	// TypeContainer represents a data cache container. This is used for
+	// internal database optimization and is not directly used.
+	// It is included here as a placeholder per the specification.
+	TypeContainer
+	// TypeMarker represents an end marker for the data section. It is included
+	// here as a placeholder per the specification. It is not used directly.
+	TypeMarker
+	// TypeBool represents a boolean type.
+	TypeBool
+	// TypeFloat32 represents a 32-bit floating point number (float).
+	TypeFloat32
 )
 
 const (
@@ -77,19 +98,19 @@ func (d *DataDecoder) decodeToDeserializer(
 	return d.decodeFromTypeToDeserializer(typeNum, size, newOffset, dser, depth+1)
 }
 
-func (d *DataDecoder) decodeCtrlData(offset uint) (dataType, uint, uint, error) {
+func (d *DataDecoder) decodeCtrlData(offset uint) (Type, uint, uint, error) {
 	newOffset := offset + 1
 	if offset >= uint(len(d.buffer)) {
 		return 0, 0, 0, mmdberrors.NewOffsetError()
 	}
 	ctrlByte := d.buffer[offset]
 
-	typeNum := dataType(ctrlByte >> 5)
-	if typeNum == _Extended {
+	typeNum := Type(ctrlByte >> 5)
+	if typeNum == TypeExtended {
 		if newOffset >= uint(len(d.buffer)) {
 			return 0, 0, 0, mmdberrors.NewOffsetError()
 		}
-		typeNum = dataType(d.buffer[newOffset] + 7)
+		typeNum = Type(d.buffer[newOffset] + 7)
 		newOffset++
 	}
 
@@ -101,10 +122,10 @@ func (d *DataDecoder) decodeCtrlData(offset uint) (dataType, uint, uint, error) 
 func (d *DataDecoder) sizeFromCtrlByte(
 	ctrlByte byte,
 	offset uint,
-	typeNum dataType,
+	typeNum Type,
 ) (uint, uint, error) {
 	size := uint(ctrlByte & 0x1f)
-	if typeNum == _Extended {
+	if typeNum == TypeExtended {
 		return size, offset, nil
 	}
 
@@ -134,7 +155,7 @@ func (d *DataDecoder) sizeFromCtrlByte(
 }
 
 func (d *DataDecoder) decodeFromTypeToDeserializer(
-	dtype dataType,
+	dtype Type,
 	size uint,
 	offset uint,
 	dser deserializer,
@@ -142,75 +163,75 @@ func (d *DataDecoder) decodeFromTypeToDeserializer(
 ) (uint, error) {
 	// For these types, size has a special meaning
 	switch dtype {
-	case _Bool:
+	case TypeBool:
 		v, offset := decodeBool(size, offset)
 		return offset, dser.Bool(v)
-	case _Map:
+	case TypeMap:
 		return d.decodeMapToDeserializer(size, offset, dser, depth)
-	case _Pointer:
+	case TypePointer:
 		pointer, newOffset, err := d.decodePointer(size, offset)
 		if err != nil {
 			return 0, err
 		}
 		_, err = d.decodeToDeserializer(pointer, dser, depth, false)
 		return newOffset, err
-	case _Slice:
+	case TypeSlice:
 		return d.decodeSliceToDeserializer(size, offset, dser, depth)
-	case _Bytes:
+	case TypeBytes:
 		v, offset, err := d.decodeBytes(size, offset)
 		if err != nil {
 			return 0, err
 		}
 		return offset, dser.Bytes(v)
-	case _Float32:
+	case TypeFloat32:
 		v, offset, err := d.decodeFloat32(size, offset)
 		if err != nil {
 			return 0, err
 		}
 		return offset, dser.Float32(v)
-	case _Float64:
+	case TypeFloat64:
 		v, offset, err := d.decodeFloat64(size, offset)
 		if err != nil {
 			return 0, err
 		}
 
 		return offset, dser.Float64(v)
-	case _Int32:
+	case TypeInt32:
 		v, offset, err := d.decodeInt(size, offset)
 		if err != nil {
 			return 0, err
 		}
 
 		return offset, dser.Int32(int32(v))
-	case _String:
+	case TypeString:
 		v, offset, err := d.decodeString(size, offset)
 		if err != nil {
 			return 0, err
 		}
 
 		return offset, dser.String(v)
-	case _Uint16:
+	case TypeUint16:
 		v, offset, err := d.decodeUint(size, offset)
 		if err != nil {
 			return 0, err
 		}
 
 		return offset, dser.Uint16(uint16(v))
-	case _Uint32:
+	case TypeUint32:
 		v, offset, err := d.decodeUint(size, offset)
 		if err != nil {
 			return 0, err
 		}
 
 		return offset, dser.Uint32(uint32(v))
-	case _Uint64:
+	case TypeUint64:
 		v, offset, err := d.decodeUint(size, offset)
 		if err != nil {
 			return 0, err
 		}
 
 		return offset, dser.Uint64(v)
-	case _Uint128:
+	case TypeUint128:
 		v, offset, err := d.decodeUint128(size, offset)
 		if err != nil {
 			return 0, err
@@ -410,7 +431,7 @@ func (d *DataDecoder) decodeKey(offset uint) ([]byte, uint, error) {
 	if err != nil {
 		return nil, 0, err
 	}
-	if typeNum == _Pointer {
+	if typeNum == TypePointer {
 		pointer, ptrOffset, err := d.decodePointer(size, dataOffset)
 		if err != nil {
 			return nil, 0, err
@@ -418,7 +439,7 @@ func (d *DataDecoder) decodeKey(offset uint) ([]byte, uint, error) {
 		key, _, err := d.decodeKey(pointer)
 		return key, ptrOffset, err
 	}
-	if typeNum != _String {
+	if typeNum != TypeString {
 		return nil, 0, mmdberrors.NewInvalidDatabaseError(
 			"unexpected type when decoding string: %v",
 			typeNum,
@@ -443,16 +464,16 @@ func (d *DataDecoder) nextValueOffset(offset, numberToSkip uint) (uint, error) {
 		return 0, err
 	}
 	switch typeNum {
-	case _Pointer:
+	case TypePointer:
 		_, offset, err = d.decodePointer(size, offset)
 		if err != nil {
 			return 0, err
 		}
-	case _Map:
+	case TypeMap:
 		numberToSkip += 2 * size
-	case _Slice:
+	case TypeSlice:
 		numberToSkip += size
-	case _Bool:
+	case TypeBool:
 	default:
 		offset += size
 	}
