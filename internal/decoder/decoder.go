@@ -156,39 +156,66 @@ func (d *DataDecoder) decodeFromTypeToDeserializer(
 		return newOffset, err
 	case _Slice:
 		return d.decodeSliceToDeserializer(size, offset, dser, depth)
-	}
-
-	// For the remaining types, size is the byte size
-	if offset+size > uint(len(d.buffer)) {
-		return 0, mmdberrors.NewOffsetError()
-	}
-	switch dtype {
 	case _Bytes:
-		v, offset := d.decodeBytes(size, offset)
+		v, offset, err := d.decodeBytes(size, offset)
+		if err != nil {
+			return 0, err
+		}
 		return offset, dser.Bytes(v)
 	case _Float32:
-		v, offset := d.decodeFloat32(size, offset)
+		v, offset, err := d.decodeFloat32(size, offset)
+		if err != nil {
+			return 0, err
+		}
 		return offset, dser.Float32(v)
 	case _Float64:
-		v, offset := d.decodeFloat64(size, offset)
+		v, offset, err := d.decodeFloat64(size, offset)
+		if err != nil {
+			return 0, err
+		}
+
 		return offset, dser.Float64(v)
 	case _Int32:
-		v, offset := d.decodeInt(size, offset)
+		v, offset, err := d.decodeInt(size, offset)
+		if err != nil {
+			return 0, err
+		}
+
 		return offset, dser.Int32(int32(v))
 	case _String:
-		v, offset := d.decodeString(size, offset)
+		v, offset, err := d.decodeString(size, offset)
+		if err != nil {
+			return 0, err
+		}
+
 		return offset, dser.String(v)
 	case _Uint16:
-		v, offset := d.decodeUint(size, offset)
+		v, offset, err := d.decodeUint(size, offset)
+		if err != nil {
+			return 0, err
+		}
+
 		return offset, dser.Uint16(uint16(v))
 	case _Uint32:
-		v, offset := d.decodeUint(size, offset)
+		v, offset, err := d.decodeUint(size, offset)
+		if err != nil {
+			return 0, err
+		}
+
 		return offset, dser.Uint32(uint32(v))
 	case _Uint64:
-		v, offset := d.decodeUint(size, offset)
+		v, offset, err := d.decodeUint(size, offset)
+		if err != nil {
+			return 0, err
+		}
+
 		return offset, dser.Uint64(v)
 	case _Uint128:
-		v, offset := d.decodeUint128(size, offset)
+		v, offset, err := d.decodeUint128(size, offset)
+		if err != nil {
+			return 0, err
+		}
+
 		return offset, dser.Uint128(v)
 	default:
 		return 0, mmdberrors.NewInvalidDatabaseError("unknown type: %d", dtype)
@@ -199,32 +226,48 @@ func decodeBool(size, offset uint) (bool, uint) {
 	return size != 0, offset
 }
 
-func (d *DataDecoder) decodeBytes(size, offset uint) ([]byte, uint) {
+func (d *DataDecoder) decodeBytes(size, offset uint) ([]byte, uint, error) {
+	if offset+size > uint(len(d.buffer)) {
+		return nil, 0, mmdberrors.NewOffsetError()
+	}
+
 	newOffset := offset + size
 	bytes := make([]byte, size)
 	copy(bytes, d.buffer[offset:newOffset])
-	return bytes, newOffset
+	return bytes, newOffset, nil
 }
 
-func (d *DataDecoder) decodeFloat64(size, offset uint) (float64, uint) {
+func (d *DataDecoder) decodeFloat64(size, offset uint) (float64, uint, error) {
+	if offset+size > uint(len(d.buffer)) {
+		return 0, 0, mmdberrors.NewOffsetError()
+	}
+
 	newOffset := offset + size
 	bits := binary.BigEndian.Uint64(d.buffer[offset:newOffset])
-	return math.Float64frombits(bits), newOffset
+	return math.Float64frombits(bits), newOffset, nil
 }
 
-func (d *DataDecoder) decodeFloat32(size, offset uint) (float32, uint) {
+func (d *DataDecoder) decodeFloat32(size, offset uint) (float32, uint, error) {
+	if offset+size > uint(len(d.buffer)) {
+		return 0, 0, mmdberrors.NewOffsetError()
+	}
+
 	newOffset := offset + size
 	bits := binary.BigEndian.Uint32(d.buffer[offset:newOffset])
-	return math.Float32frombits(bits), newOffset
+	return math.Float32frombits(bits), newOffset, nil
 }
 
-func (d *DataDecoder) decodeInt(size, offset uint) (int, uint) {
+func (d *DataDecoder) decodeInt(size, offset uint) (int, uint, error) {
+	if offset+size > uint(len(d.buffer)) {
+		return 0, 0, mmdberrors.NewOffsetError()
+	}
+
 	newOffset := offset + size
 	var val int32
 	for _, b := range d.buffer[offset:newOffset] {
 		val = (val << 8) | int32(b)
 	}
-	return int(val), newOffset
+	return int(val), newOffset, nil
 }
 
 func (d *DataDecoder) decodeMapToDeserializer(
@@ -314,12 +357,20 @@ func (d *DataDecoder) decodeSliceToDeserializer(
 	return offset, nil
 }
 
-func (d *DataDecoder) decodeString(size, offset uint) (string, uint) {
+func (d *DataDecoder) decodeString(size, offset uint) (string, uint, error) {
+	if offset+size > uint(len(d.buffer)) {
+		return "", 0, mmdberrors.NewOffsetError()
+	}
+
 	newOffset := offset + size
-	return string(d.buffer[offset:newOffset]), newOffset
+	return string(d.buffer[offset:newOffset]), newOffset, nil
 }
 
-func (d *DataDecoder) decodeUint(size, offset uint) (uint64, uint) {
+func (d *DataDecoder) decodeUint(size, offset uint) (uint64, uint, error) {
+	if offset+size > uint(len(d.buffer)) {
+		return 0, 0, mmdberrors.NewOffsetError()
+	}
+
 	newOffset := offset + size
 	bytes := d.buffer[offset:newOffset]
 
@@ -327,15 +378,19 @@ func (d *DataDecoder) decodeUint(size, offset uint) (uint64, uint) {
 	for _, b := range bytes {
 		val = (val << 8) | uint64(b)
 	}
-	return val, newOffset
+	return val, newOffset, nil
 }
 
-func (d *DataDecoder) decodeUint128(size, offset uint) (*big.Int, uint) {
+func (d *DataDecoder) decodeUint128(size, offset uint) (*big.Int, uint, error) {
+	if offset+size > uint(len(d.buffer)) {
+		return nil, 0, mmdberrors.NewOffsetError()
+	}
+
 	newOffset := offset + size
 	val := new(big.Int)
 	val.SetBytes(d.buffer[offset:newOffset])
 
-	return val, newOffset
+	return val, newOffset, nil
 }
 
 func uintFromBytes(prefix uint, uintBytes []byte) uint {
