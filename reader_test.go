@@ -1,6 +1,7 @@
 package maxminddb
 
 import (
+	"embed"
 	"errors"
 	"fmt"
 	"math/big"
@@ -16,6 +17,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+//go:embed test-data/test-data/*
+var f embed.FS
+
 func TestReader(t *testing.T) {
 	for _, recordSize := range []uint{24, 28, 32} {
 		for _, ipVersion := range []uint{4, 6} {
@@ -24,8 +28,23 @@ func TestReader(t *testing.T) {
 				ipVersion,
 				recordSize,
 			)
+			// log.Printf("Checking %s", fileName)
+
 			t.Run(fileName, func(t *testing.T) {
+				// reader, err := Open(testFile(fileName))
 				reader, err := Open(testFile(fileName))
+				require.NoError(t, err, "unexpected error while opening database: %v", err)
+				checkMetadata(t, reader, ipVersion, recordSize)
+
+				if ipVersion == 4 {
+					checkIpv4(t, reader)
+				} else {
+					checkIpv6(t, reader)
+				}
+			})
+
+			t.Run(fileName, func(t *testing.T) {
+				reader, err := OpenWithEmbedFS(f, testFile(fileName))
 				require.NoError(t, err, "unexpected error while opening database: %v", err)
 				checkMetadata(t, reader, ipVersion, recordSize)
 

@@ -3,6 +3,7 @@ package maxminddb
 
 import (
 	"bytes"
+	"embed"
 	"errors"
 	"fmt"
 	"io"
@@ -46,6 +47,23 @@ type Metadata struct {
 	IPVersion                uint              `maxminddb:"ip_version"`
 	NodeCount                uint              `maxminddb:"node_count"`
 	RecordSize               uint              `maxminddb:"record_size"`
+}
+
+func OpenWithEmbedFS(f embed.FS, path string) (*Reader, error) {
+	data, err := f.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	reader, err := FromBytes(data)
+	if err != nil {
+		_ = munmap(data)
+		return nil, err
+	}
+
+	reader.hasMappedFile = true
+	runtime.SetFinalizer(reader, (*Reader).Close)
+	return reader, nil
 }
 
 // Open takes a string path to a MaxMind DB file and returns a Reader
