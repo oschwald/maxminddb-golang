@@ -18,7 +18,9 @@ type ReflectionDecoder struct {
 
 // New creates a [ReflectionDecoder].
 func New(buffer []byte) ReflectionDecoder {
-	return ReflectionDecoder{DataDecoder: NewDataDecoder(buffer)}
+	return ReflectionDecoder{
+		DataDecoder: NewDataDecoder(buffer),
+	}
 }
 
 // Decode decodes the data value at offset and stores it in the value
@@ -29,6 +31,12 @@ func (d *ReflectionDecoder) Decode(offset uint, v any) error {
 		return errors.New("result param must be a pointer")
 	}
 
+	// Check if the type implements Unmarshaler interface
+	if unmarshaler, ok := v.(Unmarshaler); ok {
+		decoder := &Decoder{d: d.DataDecoder, offset: offset}
+		return unmarshaler.UnmarshalMaxMindDB(decoder)
+	}
+
 	if dser, ok := v.(deserializer); ok {
 		_, err := d.decodeToDeserializer(offset, dser, 0, false)
 		return err
@@ -36,24 +44,6 @@ func (d *ReflectionDecoder) Decode(offset uint, v any) error {
 
 	_, err := d.decode(offset, rv, 0)
 	return err
-}
-
-func (d *ReflectionDecoder) decode(offset uint, result reflect.Value, depth int) (uint, error) {
-	if depth > maximumDataStructureDepth {
-		return 0, mmdberrors.NewInvalidDatabaseError(
-			"exceeded maximum data structure depth; database is likely corrupt",
-		)
-	}
-	typeNum, size, newOffset, err := d.decodeCtrlData(offset)
-	if err != nil {
-		return 0, err
-	}
-
-	if typeNum != TypePointer && result.Kind() == reflect.Uintptr {
-		result.Set(reflect.ValueOf(uintptr(offset)))
-		return d.nextValueOffset(offset, 1)
-	}
-	return d.decodeFromType(typeNum, size, newOffset, result, depth+1)
 }
 
 // DecodePath decodes the data value at offset and stores the value assocated
@@ -145,6 +135,24 @@ PATH:
 	}
 	_, err := d.decode(offset, result, len(path))
 	return err
+}
+
+func (d *ReflectionDecoder) decode(offset uint, result reflect.Value, depth int) (uint, error) {
+	if depth > maximumDataStructureDepth {
+		return 0, mmdberrors.NewInvalidDatabaseError(
+			"exceeded maximum data structure depth; database is likely corrupt",
+		)
+	}
+	typeNum, size, newOffset, err := d.decodeCtrlData(offset)
+	if err != nil {
+		return 0, err
+	}
+
+	if typeNum != TypePointer && result.Kind() == reflect.Uintptr {
+		result.Set(reflect.ValueOf(uintptr(offset)))
+		return d.nextValueOffset(offset, 1)
+	}
+	return d.decodeFromType(typeNum, size, newOffset, result, depth+1)
 }
 
 func (d *ReflectionDecoder) decodeFromType(

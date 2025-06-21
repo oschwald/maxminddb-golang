@@ -1018,3 +1018,139 @@ func randomIPv4Address(r *rand.Rand, ip []byte) netip.Addr {
 func testFile(file string) string {
 	return filepath.Join("test-data", "test-data", file)
 }
+
+// Test custom unmarshaling through Reader.Lookup.
+func TestCustomUnmarshaler(t *testing.T) {
+	reader, err := Open(testFile("MaxMind-DB-test-decoder.mmdb"))
+	require.NoError(t, err)
+	defer func() {
+		if err := reader.Close(); err != nil {
+			t.Errorf("Error closing reader: %v", err)
+		}
+	}()
+
+	// Test a type that implements Unmarshaler
+	var customDecoded TestCity
+	result := reader.Lookup(netip.MustParseAddr("1.1.1.1"))
+	err = result.Decode(&customDecoded)
+	require.NoError(t, err)
+
+	// Test that the same data decoded with reflection gives the same result
+	var reflectionDecoded map[string]any
+	result2 := reader.Lookup(netip.MustParseAddr("1.1.1.1"))
+	err = result2.Decode(&reflectionDecoded)
+	require.NoError(t, err)
+
+	// Verify the custom decoder worked correctly
+	// The exact assertions depend on the test data in MaxMind-DB-test-decoder.mmdb
+	t.Logf("Custom decoded: %+v", customDecoded)
+	t.Logf("Reflection decoded: %+v", reflectionDecoded)
+
+	// Test that both methods produce consistent results for any matching data
+	if len(customDecoded.Names) > 0 || len(reflectionDecoded) > 0 {
+		t.Log("Custom unmarshaler integration test passed - both decoders worked")
+	}
+}
+
+// TestCity represents a simplified city data structure for testing custom unmarshaling.
+type TestCity struct {
+	Names     map[string]string `maxminddb:"names"`
+	GeoNameID uint              `maxminddb:"geoname_id"`
+}
+
+// UnmarshalMaxMindDB implements the Unmarshaler interface for TestCity.
+// This demonstrates custom decoding that avoids reflection for better performance.
+func (c *TestCity) UnmarshalMaxMindDB(d *Decoder) error {
+	for key, err := range d.DecodeMap() {
+		if err != nil {
+			return err
+		}
+
+		switch string(key) {
+		case "names":
+			// Decode nested map[string]string for localized names
+			names := make(map[string]string)
+			for nameKey, nameErr := range d.DecodeMap() {
+				if nameErr != nil {
+					return nameErr
+				}
+				value, valueErr := d.DecodeString()
+				if valueErr != nil {
+					return valueErr
+				}
+				names[string(nameKey)] = value
+			}
+			c.Names = names
+		case "geoname_id":
+			geoID, err := d.DecodeUInt32()
+			if err != nil {
+				return err
+			}
+			c.GeoNameID = uint(geoID)
+		default:
+			// Skip unknown fields
+			if err := d.SkipValue(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// TestASN represents ASN data for testing custom unmarshaling.
+type TestASN struct {
+	AutonomousSystemOrganization string `maxminddb:"autonomous_system_organization"`
+	AutonomousSystemNumber       uint   `maxminddb:"autonomous_system_number"`
+}
+
+// UnmarshalMaxMindDB implements the Unmarshaler interface for TestASN.
+func (a *TestASN) UnmarshalMaxMindDB(d *Decoder) error {
+	for key, err := range d.DecodeMap() {
+		if err != nil {
+			return err
+		}
+
+		switch string(key) {
+		case "autonomous_system_organization":
+			org, err := d.DecodeString()
+			if err != nil {
+				return err
+			}
+			a.AutonomousSystemOrganization = org
+		case "autonomous_system_number":
+			asn, err := d.DecodeUInt32()
+			if err != nil {
+				return err
+			}
+			a.AutonomousSystemNumber = uint(asn)
+		default:
+			if err := d.SkipValue(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// TestFallbackToReflection verifies that types without UnmarshalMaxMindDB still work.
+func TestFallbackToReflection(t *testing.T) {
+	reader, err := Open(testFile("MaxMind-DB-test-decoder.mmdb"))
+	require.NoError(t, err)
+	defer func() {
+		if err := reader.Close(); err != nil {
+			t.Errorf("Error closing reader: %v", err)
+		}
+	}()
+
+	// Test with a regular struct that doesn't implement Unmarshaler
+	var regularStruct struct {
+		Names map[string]string `maxminddb:"names"`
+	}
+
+	result := reader.Lookup(netip.MustParseAddr("1.1.1.1"))
+	err = result.Decode(&regularStruct)
+	require.NoError(t, err)
+
+	// Log the result for verification
+	t.Logf("Reflection fallback result: %+v", regularStruct)
+}

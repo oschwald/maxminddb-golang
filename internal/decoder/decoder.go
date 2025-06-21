@@ -17,52 +17,6 @@ type Decoder struct {
 	nextOffset    uint
 }
 
-func (d *Decoder) reset(offset uint) {
-	d.offset = offset
-	d.hasNextOffset = false
-	d.nextOffset = 0
-}
-
-func (d *Decoder) setNextOffset(offset uint) {
-	if !d.hasNextOffset {
-		d.hasNextOffset = true
-		d.nextOffset = offset
-	}
-}
-
-func unexpectedTypeErr(expectedType, actualType Type) error {
-	return fmt.Errorf("unexpected type %d, expected %d", actualType, expectedType)
-}
-
-func (d *Decoder) decodeCtrlDataAndFollow(expectedType Type) (uint, uint, error) {
-	dataOffset := d.offset
-	for {
-		var typeNum Type
-		var size uint
-		var err error
-		typeNum, size, dataOffset, err = d.d.decodeCtrlData(dataOffset)
-		if err != nil {
-			return 0, 0, err
-		}
-
-		if typeNum == TypePointer {
-			var nextOffset uint
-			dataOffset, nextOffset, err = d.d.decodePointer(size, dataOffset)
-			if err != nil {
-				return 0, 0, err
-			}
-			d.setNextOffset(nextOffset)
-			continue
-		}
-
-		if typeNum != expectedType {
-			return 0, 0, unexpectedTypeErr(expectedType, typeNum)
-		}
-
-		return size, dataOffset, nil
-	}
-}
-
 // DecodeBool decodes the value pointed by the decoder as a bool.
 //
 // Returns an error if the database is malformed or if the pointed value is not a bool.
@@ -83,15 +37,6 @@ func (d *Decoder) DecodeBool() (bool, error) {
 	value, _ = decodeBool(size, offset)
 	d.setNextOffset(offset)
 	return value, nil
-}
-
-func (d *Decoder) decodeBytes(typ Type) ([]byte, error) {
-	size, offset, err := d.decodeCtrlDataAndFollow(typ)
-	if err != nil {
-		return nil, err
-	}
-	d.setNextOffset(offset + size)
-	return d.d.buffer[offset : offset+size], nil
 }
 
 // DecodeString decodes the value pointed by the decoder as a string.
@@ -381,4 +326,72 @@ func (d *Decoder) DecodeSlice() iter.Seq[error] {
 		// Set final offset after slice iteration
 		d.reset(currentOffset)
 	}
+}
+
+// SkipValue skips over the current value without decoding it.
+// This is useful in custom decoders when encountering unknown fields.
+// The decoder will be positioned after the skipped value.
+func (d *Decoder) SkipValue() error {
+	// We can reuse the existing nextValueOffset logic by jumping to the next value
+	nextOffset, err := d.d.nextValueOffset(d.offset, 1)
+	if err != nil {
+		return err
+	}
+	d.reset(nextOffset)
+	return nil
+}
+
+func (d *Decoder) reset(offset uint) {
+	d.offset = offset
+	d.hasNextOffset = false
+	d.nextOffset = 0
+}
+
+func (d *Decoder) setNextOffset(offset uint) {
+	if !d.hasNextOffset {
+		d.hasNextOffset = true
+		d.nextOffset = offset
+	}
+}
+
+func unexpectedTypeErr(expectedType, actualType Type) error {
+	return fmt.Errorf("unexpected type %d, expected %d", actualType, expectedType)
+}
+
+func (d *Decoder) decodeCtrlDataAndFollow(expectedType Type) (uint, uint, error) {
+	dataOffset := d.offset
+	for {
+		var typeNum Type
+		var size uint
+		var err error
+		typeNum, size, dataOffset, err = d.d.decodeCtrlData(dataOffset)
+		if err != nil {
+			return 0, 0, err
+		}
+
+		if typeNum == TypePointer {
+			var nextOffset uint
+			dataOffset, nextOffset, err = d.d.decodePointer(size, dataOffset)
+			if err != nil {
+				return 0, 0, err
+			}
+			d.setNextOffset(nextOffset)
+			continue
+		}
+
+		if typeNum != expectedType {
+			return 0, 0, unexpectedTypeErr(expectedType, typeNum)
+		}
+
+		return size, dataOffset, nil
+	}
+}
+
+func (d *Decoder) decodeBytes(typ Type) ([]byte, error) {
+	size, offset, err := d.decodeCtrlDataAndFollow(typ)
+	if err != nil {
+		return nil, err
+	}
+	d.setNextOffset(offset + size)
+	return d.d.buffer[offset : offset+size], nil
 }

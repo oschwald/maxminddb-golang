@@ -196,23 +196,6 @@ func FromBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
 	return reader, err
 }
 
-func (r *Reader) setIPv4Start() {
-	if r.Metadata.IPVersion != 6 {
-		r.ipv4StartBitDepth = 96
-		return
-	}
-
-	nodeCount := r.Metadata.NodeCount
-
-	node := uint(0)
-	i := 0
-	for ; i < 96 && node < nodeCount; i++ {
-		node = r.nodeReader.readLeft(node * r.nodeOffsetMult)
-	}
-	r.ipv4Start = node
-	r.ipv4StartBitDepth = i
-}
-
 // Lookup retrieves the database record for ip and returns Result, which can
 // be used to decode the data..
 func (r *Reader) Lookup(ip netip.Addr) Result {
@@ -252,6 +235,23 @@ func (r *Reader) LookupOffset(offset uintptr) Result {
 	}
 
 	return Result{decoder: r.decoder, offset: uint(offset)}
+}
+
+func (r *Reader) setIPv4Start() {
+	if r.Metadata.IPVersion != 6 {
+		r.ipv4StartBitDepth = 96
+		return
+	}
+
+	nodeCount := r.Metadata.NodeCount
+
+	node := uint(0)
+	i := 0
+	for ; i < 96 && node < nodeCount; i++ {
+		node = r.nodeReader.readLeft(node * r.nodeOffsetMult)
+	}
+	r.ipv4Start = node
+	r.ipv4StartBitDepth = i
 }
 
 var zeroIP = netip.MustParseAddr("::")
