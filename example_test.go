@@ -137,3 +137,93 @@ func ExampleReader_NetworksWithin() {
 	// 1.0.64.0/18: Cable/DSL
 	// 1.0.128.0/17: Cable/DSL
 }
+
+// CustomCity represents a simplified city record with custom unmarshaling.
+// This demonstrates the Unmarshaler interface for high-performance decoding.
+type CustomCity struct {
+	Names     map[string]string
+	GeoNameID uint
+}
+
+// UnmarshalMaxMindDB implements the maxminddb.Unmarshaler interface.
+// This provides significant performance improvements over reflection-based decoding
+// by allowing custom, optimized decoding logic for performance-critical applications.
+func (c *CustomCity) UnmarshalMaxMindDB(d *maxminddb.Decoder) error {
+	for key, err := range d.DecodeMap() {
+		if err != nil {
+			return err
+		}
+
+		switch string(key) {
+		case "city":
+			// Decode nested city structure
+			for cityKey, cityErr := range d.DecodeMap() {
+				if cityErr != nil {
+					return cityErr
+				}
+				switch string(cityKey) {
+				case "names":
+					// Decode nested map[string]string for localized names
+					names := make(map[string]string)
+					for nameKey, nameErr := range d.DecodeMap() {
+						if nameErr != nil {
+							return nameErr
+						}
+						value, valueErr := d.DecodeString()
+						if valueErr != nil {
+							return valueErr
+						}
+						names[string(nameKey)] = value
+					}
+					c.Names = names
+				case "geoname_id":
+					geoID, err := d.DecodeUInt32()
+					if err != nil {
+						return err
+					}
+					c.GeoNameID = uint(geoID)
+				default:
+					if err := d.SkipValue(); err != nil {
+						return err
+					}
+				}
+			}
+		default:
+			// Skip unknown fields to ensure forward compatibility
+			if err := d.SkipValue(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// This example demonstrates how to use the Unmarshaler interface for high-performance
+// custom decoding. Types implementing Unmarshaler automatically use custom decoding
+// logic instead of reflection, providing better performance for critical applications.
+func ExampleUnmarshaler() {
+	db, err := maxminddb.Open("test-data/test-data/GeoIP2-City-Test.mmdb")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close() //nolint:errcheck // error doesn't matter
+
+	addr := netip.MustParseAddr("81.2.69.142")
+
+	// CustomCity implements Unmarshaler, so it will automatically use
+	// the custom UnmarshalMaxMindDB method instead of reflection
+	var city CustomCity
+	err = db.Lookup(addr).Decode(&city)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	fmt.Printf("City ID: %d\n", city.GeoNameID)
+	fmt.Printf("English name: %s\n", city.Names["en"])
+	fmt.Printf("German name: %s\n", city.Names["de"])
+
+	// Output:
+	// City ID: 2643743
+	// English name: London
+	// German name: London
+}

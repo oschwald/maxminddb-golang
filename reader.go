@@ -1,4 +1,105 @@
 // Package maxminddb provides a reader for the MaxMind DB file format.
+//
+// This package provides an API for reading MaxMind GeoIP2 and GeoLite2
+// databases in the MaxMind DB file format (.mmdb files). The API is designed
+// to be simple to use while providing high performance for IP geolocation
+// lookups and related data.
+//
+// # Basic Usage
+//
+// The most common use case is looking up geolocation data for an IP address:
+//
+//	db, err := maxminddb.Open("GeoLite2-City.mmdb")
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//	defer db.Close()
+//
+//	ip, err := netip.ParseAddr("81.2.69.142")
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//
+//	var record struct {
+//		Country struct {
+//			ISOCode string `maxminddb:"iso_code"`
+//			Names   map[string]string `maxminddb:"names"`
+//		} `maxminddb:"country"`
+//		City struct {
+//			Names map[string]string `maxminddb:"names"`
+//		} `maxminddb:"city"`
+//	}
+//
+//	err = db.Lookup(ip).Decode(&record)
+//	if err != nil {
+//		log.Fatal(err)
+//	}
+//
+//	fmt.Printf("Country: %s\n", record.Country.Names["en"])
+//	fmt.Printf("City: %s\n", record.City.Names["en"])
+//
+// # Database Types
+//
+// This library supports all MaxMind database types:
+//   - GeoLite2/GeoIP2 City: Comprehensive location data including city, country, subdivisions
+//   - GeoLite2/GeoIP2 Country: Country-level geolocation data
+//   - GeoLite2 ASN: Autonomous System Number and organization data
+//   - GeoIP2 Anonymous IP: Anonymous network and proxy detection
+//   - GeoIP2 Enterprise: Enhanced City data with additional business fields
+//   - GeoIP2 ISP: Internet service provider information
+//   - GeoIP2 Domain: Second-level domain data
+//   - GeoIP2 Connection Type: Connection type identification
+//
+// # Performance
+//
+// For maximum performance in high-throughput applications, consider:
+//
+//  1. Using custom struct types that only include the fields you need
+//  2. Implementing the Unmarshaler interface for zero-allocation decoding
+//  3. Reusing the Reader instance across multiple goroutines (it's thread-safe)
+//
+// # Custom Unmarshaling
+//
+// For performance-critical applications, you can implement the Unmarshaler
+// interface to avoid reflection overhead:
+//
+//	type FastCity struct {
+//		CountryISO string
+//		CityName   string
+//	}
+//
+//	func (c *FastCity) UnmarshalMaxMindDB(d *maxminddb.Decoder) error {
+//		// Custom decoding logic using d.DecodeMap(), d.DecodeString(), etc.
+//		// See ExampleUnmarshaler for a complete implementation
+//	}
+//
+// # Network Iteration
+//
+// You can iterate over all networks in a database:
+//
+//	for result := range db.Networks() {
+//		var record struct {
+//			Country struct {
+//				ISOCode string `maxminddb:"iso_code"`
+//			} `maxminddb:"country"`
+//		}
+//		err := result.Decode(&record)
+//		if err != nil {
+//			log.Fatal(err)
+//		}
+//		fmt.Printf("%s: %s\n", result.Prefix(), record.Country.ISOCode)
+//	}
+//
+// # Database Files
+//
+// MaxMind provides both free (GeoLite2) and commercial (GeoIP2) databases:
+//   - Free: https://dev.maxmind.com/geoip/geolite2-free-geolocation-data
+//   - Commercial: https://www.maxmind.com/en/geoip2-databases
+//
+// # Thread Safety
+//
+// All Reader methods are thread-safe. The Reader can be safely shared across
+// multiple goroutines.
 package maxminddb
 
 import (
