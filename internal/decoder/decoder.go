@@ -224,6 +224,14 @@ func (d *Decoder) DecodeUInt128() (hi, lo uint64, err error) {
 		)
 	}
 
+	if offset+size > uint(len(d.d.buffer)) {
+		return 0, 0, mmdberrors.NewInvalidDatabaseError(
+			"the MaxMind DB file's data section contains bad data (offset+size %d exceeds buffer length %d)",
+			offset+size,
+			len(d.d.buffer),
+		)
+	}
+
 	for _, b := range d.d.buffer[offset : offset+size] {
 		var carry byte
 		lo, carry = append64(lo, b)
@@ -391,6 +399,13 @@ func (d *Decoder) decodeBytes(typ Type) ([]byte, error) {
 	size, offset, err := d.decodeCtrlDataAndFollow(typ)
 	if err != nil {
 		return nil, err
+	}
+	if offset+size > uint(len(d.d.buffer)) {
+		return nil, mmdberrors.NewInvalidDatabaseError(
+			"the MaxMind DB file's data section contains bad data (offset+size %d exceeds buffer length %d)",
+			offset+size,
+			len(d.d.buffer),
+		)
 	}
 	d.setNextOffset(offset + size)
 	return d.d.buffer[offset : offset+size], nil

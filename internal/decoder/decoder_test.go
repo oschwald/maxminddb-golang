@@ -366,3 +366,36 @@ func TestPointersInDecoder(t *testing.T) {
 		})
 	}
 }
+
+// TestBoundsChecking verifies that buffer access is properly bounds-checked
+// to prevent panics on malformed databases.
+func TestBoundsChecking(t *testing.T) {
+	// Create a very small buffer that would cause out-of-bounds access
+	// if bounds checking is not working
+	smallBuffer := []byte{0x44, 0x41} // Type string (0x4), size 4, but only 2 bytes total
+	dd := NewDataDecoder(smallBuffer)
+	decoder := &Decoder{d: dd, offset: 0}
+
+	// This should fail gracefully with an error instead of panicking
+	_, err := decoder.DecodeString()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "exceeds buffer length")
+
+	// Test DecodeBytes bounds checking with a separate buffer
+	bytesBuffer := []byte{0x84, 0x41} // Type bytes (4 << 5 = 0x80), size 4 (0x04), but only 2 bytes total
+	dd3 := NewDataDecoder(bytesBuffer)
+	decoder3 := &Decoder{d: dd3, offset: 0}
+	
+	_, err = decoder3.DecodeBytes()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "exceeds buffer length")
+
+	// Test DecodeUInt128 bounds checking  
+	uint128Buffer := []byte{0x0B, 0x03} // Extended type (0x0), size 11, TypeUint128-7=3, but only 2 bytes total
+	dd2 := NewDataDecoder(uint128Buffer)
+	decoder2 := &Decoder{d: dd2, offset: 0}
+
+	_, _, err = decoder2.DecodeUInt128()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "exceeds buffer length")
+}
