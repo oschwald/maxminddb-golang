@@ -8,8 +8,8 @@
   the documentation organization.
 - Added `Unmarshaler` interface to allow custom decoding implementations for
   performance-critical applications. Types implementing
-  `UnmarshalMaxMindDB(d *Decoder) error` will automatically use custom
-  decoding logic instead of reflection, following the same pattern as
+  `UnmarshalMaxMindDB(d *Decoder) error` will automatically use custom decoding
+  logic instead of reflection, following the same pattern as
   `json.Unmarshaler`.
 - Added public `Decoder` type with methods for manual decoding including
   `DecodeMap()`, `DecodeSlice()`, `DecodeString()`, `DecodeUInt32()`, etc.
