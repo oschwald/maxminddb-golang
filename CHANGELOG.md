@@ -13,6 +13,10 @@
   `json.Unmarshaler`.
 - Added public `Decoder` type with methods for manual decoding including
   `DecodeMap()`, `DecodeSlice()`, `DecodeString()`, `DecodeUInt32()`, etc.
+- Enhanced `UnmarshalMaxMindDB` to work with nested struct fields, slice
+  elements, and map values. The custom unmarshaler is now called recursively
+  for any type that implements the `Unmarshaler` interface, similar to
+  `encoding/json`.
 
 ## 2.0.0-beta.3 - 2025-02-16
 

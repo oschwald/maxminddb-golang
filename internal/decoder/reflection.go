@@ -143,6 +143,37 @@ func (d *ReflectionDecoder) decode(offset uint, result reflect.Value, depth int)
 			"exceeded maximum data structure depth; database is likely corrupt",
 		)
 	}
+
+	// First handle pointers by creating the value if needed, similar to indirect()
+	// but we don't want to fully indirect yet as we need to check for Unmarshaler
+	if result.Kind() == reflect.Ptr {
+		if result.IsNil() {
+			result.Set(reflect.New(result.Type().Elem()))
+		}
+		// Now check if the pointed-to type implements Unmarshaler
+		if unmarshaler, ok := result.Interface().(Unmarshaler); ok {
+			decoder := &Decoder{d: d.DataDecoder, offset: offset}
+			if err := unmarshaler.UnmarshalMaxMindDB(decoder); err != nil {
+				return 0, err
+			}
+			return decoder.getNextOffset()
+		}
+		// Continue with the pointed-to value
+		return d.decode(offset, result.Elem(), depth)
+	}
+
+	// Check if the value implements Unmarshaler interface
+	// We need to check if result can be addressed and if the pointer type implements Unmarshaler
+	if result.CanAddr() {
+		if unmarshaler, ok := result.Addr().Interface().(Unmarshaler); ok {
+			decoder := &Decoder{d: d.DataDecoder, offset: offset}
+			if err := unmarshaler.UnmarshalMaxMindDB(decoder); err != nil {
+				return 0, err
+			}
+			return decoder.getNextOffset()
+		}
+	}
+
 	typeNum, size, newOffset, err := d.decodeCtrlData(offset)
 	if err != nil {
 		return 0, err

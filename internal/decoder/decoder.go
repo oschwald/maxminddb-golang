@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"errors"
 	"fmt"
 	"iter"
 
@@ -360,6 +361,13 @@ func (d *Decoder) setNextOffset(offset uint) {
 		d.hasNextOffset = true
 		d.nextOffset = offset
 	}
+}
+
+func (d *Decoder) getNextOffset() (uint, error) {
+	if !d.hasNextOffset {
+		return 0, errors.New("no next offset available")
+	}
+	return d.nextOffset, nil
 }
 
 func unexpectedTypeErr(expectedType, actualType Type) error {
