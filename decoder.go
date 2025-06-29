@@ -1,6 +1,6 @@
 package maxminddb
 
-import "github.com/oschwald/maxminddb-golang/v2/internal/decoder"
+import "github.com/oschwald/maxminddb-golang/v2/mmdbdata"
 
 // Decoder provides methods for decoding MaxMind DB data values.
 // This interface is passed to UnmarshalMaxMindDB methods to allow
@@ -40,8 +40,8 @@ import "github.com/oschwald/maxminddb-golang/v2/internal/decoder"
 //		}
 //		return nil
 //	}
-type Decoder = decoder.Decoder
+type Decoder = mmdbdata.Decoder
 
 // Unmarshaler is implemented by types that can unmarshal MaxMind DB data.
 // This follows the same pattern as json.Unmarshaler and other Go standard library interfaces.
-type Unmarshaler = decoder.Unmarshaler
+type Unmarshaler = mmdbdata.Unmarshaler

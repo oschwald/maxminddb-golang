@@ -11,15 +11,14 @@
   `UnmarshalMaxMindDB(d *Decoder) error` will automatically use custom decoding
   logic instead of reflection, following the same pattern as
   `json.Unmarshaler`.
-- Added public `Decoder` type with methods for manual decoding including
-  `DecodeMap()`, `DecodeSlice()`, `DecodeString()`, `DecodeUInt32()`, etc.
+- Added public `Decoder` type in `mmdbdata` package with methods for manual
+  decoding including `DecodeMap()`, `DecodeSlice()`, `DecodeString()`,
+  `DecodeUInt32()`, `PeekType()`, etc. The main `maxminddb` package re-exports
+  these types for backward compatibility.
 - Enhanced `UnmarshalMaxMindDB` to work with nested struct fields, slice
   elements, and map values. The custom unmarshaler is now called recursively
   for any type that implements the `Unmarshaler` interface, similar to
   `encoding/json`.
-- Added `PeekType()` method to `Decoder` that returns the type of the current
-  value without consuming it. This enables look-ahead parsing for conditional
-  decoding logic.
 
 ## 2.0.0-beta.3 - 2025-02-16
 

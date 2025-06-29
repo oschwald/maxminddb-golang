@@ -18,6 +18,11 @@ type Decoder struct {
 	nextOffset    uint
 }
 
+// NewDecoder creates a new Decoder with the given DataDecoder and offset.
+func NewDecoder(d DataDecoder, offset uint) *Decoder {
+	return &Decoder{d: d, offset: offset}
+}
+
 // DecodeBool decodes the value pointed by the decoder as a bool.
 //
 // Returns an error if the database is malformed or if the pointed value is not a bool.
@@ -74,7 +79,7 @@ func (d *Decoder) DecodeFloat32() (float32, error) {
 		)
 	}
 
-	value, nextOffset, err := d.d.decodeFloat32(size, offset)
+	value, nextOffset, err := d.d.DecodeFloat32(size, offset)
 	if err != nil {
 		return 0, err
 	}
@@ -99,7 +104,7 @@ func (d *Decoder) DecodeFloat64() (float64, error) {
 		)
 	}
 
-	value, nextOffset, err := d.d.decodeFloat64(size, offset)
+	value, nextOffset, err := d.d.DecodeFloat64(size, offset)
 	if err != nil {
 		return 0, err
 	}
@@ -124,7 +129,7 @@ func (d *Decoder) DecodeInt32() (int32, error) {
 		)
 	}
 
-	value, nextOffset, err := d.d.decodeInt32(size, offset)
+	value, nextOffset, err := d.d.DecodeInt32(size, offset)
 	if err != nil {
 		return 0, err
 	}
@@ -150,7 +155,7 @@ func (d *Decoder) DecodeUInt16() (uint16, error) {
 		)
 	}
 
-	value, nextOffset, err := d.d.decodeUint16(size, offset)
+	value, nextOffset, err := d.d.DecodeUint16(size, offset)
 	if err != nil {
 		return 0, err
 	}
@@ -175,7 +180,7 @@ func (d *Decoder) DecodeUInt32() (uint32, error) {
 		)
 	}
 
-	value, nextOffset, err := d.d.decodeUint32(size, offset)
+	value, nextOffset, err := d.d.DecodeUint32(size, offset)
 	if err != nil {
 		return 0, err
 	}
@@ -200,7 +205,7 @@ func (d *Decoder) DecodeUInt64() (uint64, error) {
 		)
 	}
 
-	value, nextOffset, err := d.d.decodeUint64(size, offset)
+	value, nextOffset, err := d.d.DecodeUint64(size, offset)
 	if err != nil {
 		return 0, err
 	}
@@ -225,15 +230,15 @@ func (d *Decoder) DecodeUInt128() (hi, lo uint64, err error) {
 		)
 	}
 
-	if offset+size > uint(len(d.d.buffer)) {
+	if offset+size > uint(len(d.d.Buffer())) {
 		return 0, 0, mmdberrors.NewInvalidDatabaseError(
 			"the MaxMind DB file's data section contains bad data (offset+size %d exceeds buffer length %d)",
 			offset+size,
-			len(d.d.buffer),
+			len(d.d.Buffer()),
 		)
 	}
 
-	for _, b := range d.d.buffer[offset : offset+size] {
+	for _, b := range d.d.Buffer()[offset : offset+size] {
 		var carry byte
 		lo, carry = append64(lo, b)
 		hi, _ = append64(hi, carry)
@@ -265,7 +270,7 @@ func (d *Decoder) DecodeMap() iter.Seq2[[]byte, error] {
 		currentOffset := offset
 
 		for range size {
-			key, keyEndOffset, err := d.d.decodeKey(currentOffset)
+			key, keyEndOffset, err := d.d.DecodeKey(currentOffset)
 			if err != nil {
 				yield(nil, err)
 				return
@@ -280,7 +285,7 @@ func (d *Decoder) DecodeMap() iter.Seq2[[]byte, error] {
 			}
 
 			// Skip the value to get to next key-value pair
-			valueEndOffset, err := d.d.nextValueOffset(keyEndOffset, 1)
+			valueEndOffset, err := d.d.NextValueOffset(keyEndOffset, 1)
 			if err != nil {
 				yield(nil, err)
 				return
@@ -315,7 +320,7 @@ func (d *Decoder) DecodeSlice() iter.Seq[error] {
 				// Skip the unvisited elements
 				remaining := size - i - 1
 				if remaining > 0 {
-					endOffset, err := d.d.nextValueOffset(currentOffset, remaining)
+					endOffset, err := d.d.NextValueOffset(currentOffset, remaining)
 					if err == nil {
 						d.reset(endOffset)
 					}
@@ -324,7 +329,7 @@ func (d *Decoder) DecodeSlice() iter.Seq[error] {
 			}
 
 			// Advance to next element
-			nextOffset, err := d.d.nextValueOffset(currentOffset, 1)
+			nextOffset, err := d.d.NextValueOffset(currentOffset, 1)
 			if err != nil {
 				yield(err)
 				return
@@ -342,7 +347,7 @@ func (d *Decoder) DecodeSlice() iter.Seq[error] {
 // The decoder will be positioned after the skipped value.
 func (d *Decoder) SkipValue() error {
 	// We can reuse the existing nextValueOffset logic by jumping to the next value
-	nextOffset, err := d.d.nextValueOffset(d.offset, 1)
+	nextOffset, err := d.d.NextValueOffset(d.offset, 1)
 	if err != nil {
 		return err
 	}
@@ -353,7 +358,7 @@ func (d *Decoder) SkipValue() error {
 // PeekType returns the type of the current value without consuming it.
 // This allows for look-ahead parsing similar to jsontext.Decoder.PeekKind().
 func (d *Decoder) PeekType() (Type, error) {
-	typeNum, _, _, err := d.d.decodeCtrlData(d.offset)
+	typeNum, _, _, err := d.d.DecodeCtrlData(d.offset)
 	if err != nil {
 		return 0, err
 	}
@@ -364,14 +369,14 @@ func (d *Decoder) PeekType() (Type, error) {
 		dataOffset := d.offset
 		for {
 			var size uint
-			typeNum, size, dataOffset, err = d.d.decodeCtrlData(dataOffset)
+			typeNum, size, dataOffset, err = d.d.DecodeCtrlData(dataOffset)
 			if err != nil {
 				return 0, err
 			}
 			if typeNum != TypePointer {
 				break
 			}
-			dataOffset, _, err = d.d.decodePointer(size, dataOffset)
+			dataOffset, _, err = d.d.DecodePointer(size, dataOffset)
 			if err != nil {
 				return 0, err
 			}
@@ -411,14 +416,14 @@ func (d *Decoder) decodeCtrlDataAndFollow(expectedType Type) (uint, uint, error)
 		var typeNum Type
 		var size uint
 		var err error
-		typeNum, size, dataOffset, err = d.d.decodeCtrlData(dataOffset)
+		typeNum, size, dataOffset, err = d.d.DecodeCtrlData(dataOffset)
 		if err != nil {
 			return 0, 0, err
 		}
 
 		if typeNum == TypePointer {
 			var nextOffset uint
-			dataOffset, nextOffset, err = d.d.decodePointer(size, dataOffset)
+			dataOffset, nextOffset, err = d.d.DecodePointer(size, dataOffset)
 			if err != nil {
 				return 0, 0, err
 			}
@@ -439,13 +444,13 @@ func (d *Decoder) decodeBytes(typ Type) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if offset+size > uint(len(d.d.buffer)) {
+	if offset+size > uint(len(d.d.Buffer())) {
 		return nil, mmdberrors.NewInvalidDatabaseError(
 			"the MaxMind DB file's data section contains bad data (offset+size %d exceeds buffer length %d)",
 			offset+size,
-			len(d.d.buffer),
+			len(d.d.Buffer()),
 		)
 	}
 	d.setNextOffset(offset + size)
-	return d.d.buffer[offset : offset+size], nil
+	return d.d.Buffer()[offset : offset+size], nil
 }
