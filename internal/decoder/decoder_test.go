@@ -530,7 +530,7 @@ func ExampleDecoder_PeekKind() {
 		}
 
 		if typ != typ2 {
-			fmt.Printf("ERROR: PeekKind consumed the value!\n")
+			fmt.Println("ERROR: PeekKind consumed the value!")
 		}
 	}
 

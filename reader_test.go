@@ -454,9 +454,10 @@ type NestedPointerMapX struct {
 
 type PointerMap struct {
 	MapX struct {
-		Ignored string
 		NestedMapX
 		*NestedPointerMapX
+
+		Ignored string
 	} `maxminddb:"mapX"`
 }
 
