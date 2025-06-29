@@ -17,6 +17,9 @@
   elements, and map values. The custom unmarshaler is now called recursively
   for any type that implements the `Unmarshaler` interface, similar to
   `encoding/json`.
+- Added `PeekType()` method to `Decoder` that returns the type of the current
+  value without consuming it. This enables look-ahead parsing for conditional
+  decoding logic.
 
 ## 2.0.0-beta.3 - 2025-02-16
 

@@ -350,6 +350,37 @@ func (d *Decoder) SkipValue() error {
 	return nil
 }
 
+// PeekType returns the type of the current value without consuming it.
+// This allows for look-ahead parsing similar to jsontext.Decoder.PeekKind().
+func (d *Decoder) PeekType() (Type, error) {
+	typeNum, _, _, err := d.d.decodeCtrlData(d.offset)
+	if err != nil {
+		return 0, err
+	}
+
+	// Follow pointers to get the actual type
+	if typeNum == TypePointer {
+		// We need to follow the pointer to get the real type
+		dataOffset := d.offset
+		for {
+			var size uint
+			typeNum, size, dataOffset, err = d.d.decodeCtrlData(dataOffset)
+			if err != nil {
+				return 0, err
+			}
+			if typeNum != TypePointer {
+				break
+			}
+			dataOffset, _, err = d.d.decodePointer(size, dataOffset)
+			if err != nil {
+				return 0, err
+			}
+		}
+	}
+
+	return typeNum, nil
+}
+
 func (d *Decoder) reset(offset uint) {
 	d.offset = offset
 	d.hasNextOffset = false
