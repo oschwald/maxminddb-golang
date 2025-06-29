@@ -10,9 +10,23 @@ type verifier struct {
 	reader *Reader
 }
 
-// Verify checks that the database is valid. It validates the search tree,
-// the data section, and the metadata section. This verifier is stricter than
-// the specification and may return errors on databases that are readable.
+// Verify performs comprehensive validation of the MaxMind DB file.
+//
+// This method validates:
+//   - Metadata section: format versions, required fields, and value constraints
+//   - Search tree: traverses all networks to verify tree structure integrity
+//   - Data section separator: validates the 16-byte separator between tree and data
+//   - Data section: verifies all data records referenced by the search tree
+//
+// The verifier is stricter than the MaxMind DB specification and may return
+// errors on some databases that are still readable by normal operations.
+// This method is useful for:
+//   - Validating database files after download or generation
+//   - Debugging database corruption issues
+//   - Ensuring database integrity in critical applications
+//
+// Note: Verification traverses the entire database and may be slow on large files.
+// The method is thread-safe and can be called on an active Reader.
 func (r *Reader) Verify() error {
 	v := verifier{r}
 	if err := v.verifyMetadata(); err != nil {

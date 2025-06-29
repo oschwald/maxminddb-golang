@@ -102,6 +102,39 @@ func ExampleReader_Networks() {
 	// 2003::/24: Cable/DSL
 }
 
+// This example demonstrates how to validate a MaxMind DB file and access metadata.
+func ExampleReader_Verify() {
+	db, err := maxminddb.Open("test-data/test-data/GeoIP2-City-Test.mmdb")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close() //nolint:errcheck // error doesn't matter
+
+	// Verify database integrity
+	if err := db.Verify(); err != nil {
+		log.Printf("Database validation failed: %v", err)
+		return
+	}
+
+	// Access metadata information
+	metadata := db.Metadata
+	fmt.Printf("Database type: %s\n", metadata.DatabaseType)
+	fmt.Printf("Build time: %s\n", metadata.BuildTime().UTC().Format("2006-01-02 15:04:05"))
+	fmt.Printf("IP version: IPv%d\n", metadata.IPVersion)
+	fmt.Printf("Languages: %v\n", metadata.Languages)
+
+	if desc, ok := metadata.Description["en"]; ok {
+		fmt.Printf("Description: %s\n", desc)
+	}
+
+	// Output:
+	// Database type: GeoIP2-City
+	// Build time: 2022-07-26 14:53:10
+	// IP version: IPv6
+	// Languages: [en zh]
+	// Description: GeoIP2 City Test Database (fake GeoIP2 data, for example purposes only)
+}
+
 // This example demonstrates how to iterate over all networks in the
 // database which are contained within an arbitrary network.
 func ExampleReader_NetworksWithin() {

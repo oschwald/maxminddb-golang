@@ -1156,3 +1156,27 @@ func TestFallbackToReflection(t *testing.T) {
 	// Log the result for verification
 	t.Logf("Reflection fallback result: %+v", regularStruct)
 }
+
+func TestMetadataBuildTime(t *testing.T) {
+	reader, err := Open(testFile("GeoIP2-City-Test.mmdb"))
+	require.NoError(t, err)
+	defer func() {
+		if err := reader.Close(); err != nil {
+			t.Errorf("Error closing reader: %v", err)
+		}
+	}()
+
+	metadata := reader.Metadata
+
+	// Test that BuildTime() returns a valid time
+	buildTime := metadata.BuildTime()
+	assert.False(t, buildTime.IsZero(), "BuildTime should not be zero")
+
+	// Test that BuildTime() matches BuildEpoch
+	expectedTime := time.Unix(int64(metadata.BuildEpoch), 0)
+	assert.Equal(t, expectedTime, buildTime, "BuildTime should match time.Unix(BuildEpoch, 0)")
+
+	// Verify the build time is reasonable (after 2010, before 2030)
+	assert.True(t, buildTime.After(time.Date(2010, 1, 1, 0, 0, 0, 0, time.UTC)))
+	assert.True(t, buildTime.Before(time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)))
+}

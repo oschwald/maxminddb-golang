@@ -112,6 +112,7 @@ import (
 	"net/netip"
 	"os"
 	"runtime"
+	"time"
 
 	"github.com/oschwald/maxminddb-golang/v2/internal/decoder"
 	"github.com/oschwald/maxminddb-golang/v2/internal/mmdberrors"
@@ -137,20 +138,62 @@ type Reader struct {
 	hasMappedFile     bool
 }
 
-// Metadata holds the metadata decoded from the MaxMind DB file. In particular
-// it has the format version, the build time as Unix epoch time, the database
-// type and description, the IP version supported, and a slice of the natural
-// languages included.
+// Metadata holds the metadata decoded from the MaxMind DB file.
+//
+// Key fields include:
+//   - DatabaseType: indicates the structure of data records (e.g., "GeoIP2-City")
+//   - Description: localized descriptions in various languages
+//   - Languages: locale codes for which the database may contain localized data
+//   - BuildEpoch: database build timestamp as Unix epoch seconds
+//   - IPVersion: supported IP version (4 for IPv4-only, 6 for IPv4/IPv6)
+//   - NodeCount: number of nodes in the search tree
+//   - RecordSize: size in bits of each record in the search tree (24, 28, or 32)
+//
+// For detailed field descriptions, see the MaxMind DB specification:
+// https://maxmind.github.io/MaxMind-DB/
 type Metadata struct {
-	Description              map[string]string `maxminddb:"description"`
-	DatabaseType             string            `maxminddb:"database_type"`
-	Languages                []string          `maxminddb:"languages"`
-	BinaryFormatMajorVersion uint              `maxminddb:"binary_format_major_version"`
-	BinaryFormatMinorVersion uint              `maxminddb:"binary_format_minor_version"`
-	BuildEpoch               uint              `maxminddb:"build_epoch"`
-	IPVersion                uint              `maxminddb:"ip_version"`
-	NodeCount                uint              `maxminddb:"node_count"`
-	RecordSize               uint              `maxminddb:"record_size"`
+	// Description contains localized database descriptions.
+	// Keys are language codes (e.g., "en", "zh-CN"), values are UTF-8 descriptions.
+	Description map[string]string `maxminddb:"description"`
+
+	// DatabaseType indicates the structure of data records associated with IP addresses.
+	// Names starting with "GeoIP" are reserved for MaxMind databases.
+	DatabaseType string `maxminddb:"database_type"`
+
+	// Languages lists locale codes for which this database may contain localized data.
+	// Records should not contain localized data for locales not in this array.
+	Languages []string `maxminddb:"languages"`
+
+	// BinaryFormatMajorVersion is the major version of the MaxMind DB binary format.
+	// Current supported version is 2.
+	BinaryFormatMajorVersion uint `maxminddb:"binary_format_major_version"`
+
+	// BinaryFormatMinorVersion is the minor version of the MaxMind DB binary format.
+	// Current supported version is 0.
+	BinaryFormatMinorVersion uint `maxminddb:"binary_format_minor_version"`
+
+	// BuildEpoch contains the database build timestamp as Unix epoch seconds.
+	// Use BuildTime() method for a time.Time representation.
+	BuildEpoch uint `maxminddb:"build_epoch"`
+
+	// IPVersion indicates the IP version support:
+	//   4: IPv4 addresses only
+	//   6: Both IPv4 and IPv6 addresses
+	IPVersion uint `maxminddb:"ip_version"`
+
+	// NodeCount is the number of nodes in the search tree.
+	NodeCount uint `maxminddb:"node_count"`
+
+	// RecordSize is the size in bits of each record in the search tree.
+	// Valid values are 24, 28, or 32.
+	RecordSize uint `maxminddb:"record_size"`
+}
+
+// BuildTime returns the database build time as a time.Time.
+// This is a convenience method that converts the BuildEpoch field
+// from Unix epoch seconds to a time.Time value.
+func (m Metadata) BuildTime() time.Time {
+	return time.Unix(int64(m.BuildEpoch), 0)
 }
 
 type readerOptions struct{}
