@@ -33,7 +33,14 @@ func NewDecoder(d DataDecoder, offset uint, options ...DecoderOption) *Decoder {
 	for _, option := range options {
 		option(&opts)
 	}
-	return &Decoder{d: d, offset: offset, opts: opts}
+
+	decoder := &Decoder{
+		d:      d,
+		offset: offset,
+		opts:   opts,
+	}
+
+	return decoder
 }
 
 // ReadBool reads the value pointed by the decoder as a bool.
@@ -42,14 +49,14 @@ func NewDecoder(d DataDecoder, offset uint, options ...DecoderOption) *Decoder {
 func (d *Decoder) ReadBool() (bool, error) {
 	size, offset, err := d.decodeCtrlDataAndFollow(KindBool)
 	if err != nil {
-		return false, err
+		return false, d.wrapError(err)
 	}
 
 	if size > 1 {
-		return false, mmdberrors.NewInvalidDatabaseError(
+		return false, d.wrapError(mmdberrors.NewInvalidDatabaseError(
 			"the MaxMind DB file's data section contains bad data (bool size of %v)",
 			size,
-		)
+		))
 	}
 
 	var value bool
@@ -64,16 +71,20 @@ func (d *Decoder) ReadBool() (bool, error) {
 func (d *Decoder) ReadString() (string, error) {
 	val, err := d.readBytes(KindString)
 	if err != nil {
-		return "", err
+		return "", d.wrapError(err)
 	}
-	return string(val), err
+	return string(val), nil
 }
 
 // ReadBytes reads the value pointed by the decoder as bytes.
 //
 // Returns an error if the database is malformed or if the pointed value is not bytes.
 func (d *Decoder) ReadBytes() ([]byte, error) {
-	return d.readBytes(KindBytes)
+	val, err := d.readBytes(KindBytes)
+	if err != nil {
+		return nil, d.wrapError(err)
+	}
+	return val, nil
 }
 
 // ReadFloat32 reads the value pointed by the decoder as a float32.
@@ -82,19 +93,19 @@ func (d *Decoder) ReadBytes() ([]byte, error) {
 func (d *Decoder) ReadFloat32() (float32, error) {
 	size, offset, err := d.decodeCtrlDataAndFollow(KindFloat32)
 	if err != nil {
-		return 0, err
+		return 0, d.wrapError(err)
 	}
 
 	if size != 4 {
-		return 0, mmdberrors.NewInvalidDatabaseError(
+		return 0, d.wrapError(mmdberrors.NewInvalidDatabaseError(
 			"the MaxMind DB file's data section contains bad data (float32 size of %v)",
 			size,
-		)
+		))
 	}
 
 	value, nextOffset, err := d.d.DecodeFloat32(size, offset)
 	if err != nil {
-		return 0, err
+		return 0, d.wrapError(err)
 	}
 
 	d.setNextOffset(nextOffset)
@@ -107,19 +118,19 @@ func (d *Decoder) ReadFloat32() (float32, error) {
 func (d *Decoder) ReadFloat64() (float64, error) {
 	size, offset, err := d.decodeCtrlDataAndFollow(KindFloat64)
 	if err != nil {
-		return 0, err
+		return 0, d.wrapError(err)
 	}
 
 	if size != 8 {
-		return 0, mmdberrors.NewInvalidDatabaseError(
+		return 0, d.wrapError(mmdberrors.NewInvalidDatabaseError(
 			"the MaxMind DB file's data section contains bad data (float64 size of %v)",
 			size,
-		)
+		))
 	}
 
 	value, nextOffset, err := d.d.DecodeFloat64(size, offset)
 	if err != nil {
-		return 0, err
+		return 0, d.wrapError(err)
 	}
 
 	d.setNextOffset(nextOffset)
@@ -132,19 +143,19 @@ func (d *Decoder) ReadFloat64() (float64, error) {
 func (d *Decoder) ReadInt32() (int32, error) {
 	size, offset, err := d.decodeCtrlDataAndFollow(KindInt32)
 	if err != nil {
-		return 0, err
+		return 0, d.wrapError(err)
 	}
 
 	if size > 4 {
-		return 0, mmdberrors.NewInvalidDatabaseError(
+		return 0, d.wrapError(mmdberrors.NewInvalidDatabaseError(
 			"the MaxMind DB file's data section contains bad data (int32 size of %v)",
 			size,
-		)
+		))
 	}
 
 	value, nextOffset, err := d.d.DecodeInt32(size, offset)
 	if err != nil {
-		return 0, err
+		return 0, d.wrapError(err)
 	}
 
 	d.setNextOffset(nextOffset)
@@ -158,19 +169,19 @@ func (d *Decoder) ReadInt32() (int32, error) {
 func (d *Decoder) ReadUInt16() (uint16, error) {
 	size, offset, err := d.decodeCtrlDataAndFollow(KindUint16)
 	if err != nil {
-		return 0, err
+		return 0, d.wrapError(err)
 	}
 
 	if size > 2 {
-		return 0, mmdberrors.NewInvalidDatabaseError(
+		return 0, d.wrapError(mmdberrors.NewInvalidDatabaseError(
 			"the MaxMind DB file's data section contains bad data (uint16 size of %v)",
 			size,
-		)
+		))
 	}
 
 	value, nextOffset, err := d.d.DecodeUint16(size, offset)
 	if err != nil {
-		return 0, err
+		return 0, d.wrapError(err)
 	}
 
 	d.setNextOffset(nextOffset)
@@ -183,19 +194,19 @@ func (d *Decoder) ReadUInt16() (uint16, error) {
 func (d *Decoder) ReadUInt32() (uint32, error) {
 	size, offset, err := d.decodeCtrlDataAndFollow(KindUint32)
 	if err != nil {
-		return 0, err
+		return 0, d.wrapError(err)
 	}
 
 	if size > 4 {
-		return 0, mmdberrors.NewInvalidDatabaseError(
+		return 0, d.wrapError(mmdberrors.NewInvalidDatabaseError(
 			"the MaxMind DB file's data section contains bad data (uint32 size of %v)",
 			size,
-		)
+		))
 	}
 
 	value, nextOffset, err := d.d.DecodeUint32(size, offset)
 	if err != nil {
-		return 0, err
+		return 0, d.wrapError(err)
 	}
 
 	d.setNextOffset(nextOffset)
@@ -208,19 +219,19 @@ func (d *Decoder) ReadUInt32() (uint32, error) {
 func (d *Decoder) ReadUInt64() (uint64, error) {
 	size, offset, err := d.decodeCtrlDataAndFollow(KindUint64)
 	if err != nil {
-		return 0, err
+		return 0, d.wrapError(err)
 	}
 
 	if size > 8 {
-		return 0, mmdberrors.NewInvalidDatabaseError(
+		return 0, d.wrapError(mmdberrors.NewInvalidDatabaseError(
 			"the MaxMind DB file's data section contains bad data (uint64 size of %v)",
 			size,
-		)
+		))
 	}
 
 	value, nextOffset, err := d.d.DecodeUint64(size, offset)
 	if err != nil {
-		return 0, err
+		return 0, d.wrapError(err)
 	}
 
 	d.setNextOffset(nextOffset)
@@ -233,22 +244,22 @@ func (d *Decoder) ReadUInt64() (uint64, error) {
 func (d *Decoder) ReadUInt128() (hi, lo uint64, err error) {
 	size, offset, err := d.decodeCtrlDataAndFollow(KindUint128)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, d.wrapError(err)
 	}
 
 	if size > 16 {
-		return 0, 0, mmdberrors.NewInvalidDatabaseError(
+		return 0, 0, d.wrapError(mmdberrors.NewInvalidDatabaseError(
 			"the MaxMind DB file's data section contains bad data (uint128 size of %v)",
 			size,
-		)
+		))
 	}
 
 	if offset+size > uint(len(d.d.Buffer())) {
-		return 0, 0, mmdberrors.NewInvalidDatabaseError(
+		return 0, 0, d.wrapError(mmdberrors.NewInvalidDatabaseError(
 			"the MaxMind DB file's data section contains bad data (offset+size %d exceeds buffer length %d)",
 			offset+size,
 			len(d.d.Buffer()),
-		)
+		))
 	}
 
 	for _, b := range d.d.Buffer()[offset : offset+size] {
@@ -276,7 +287,7 @@ func (d *Decoder) ReadMap() iter.Seq2[[]byte, error] {
 	return func(yield func([]byte, error) bool) {
 		size, offset, err := d.decodeCtrlDataAndFollow(KindMap)
 		if err != nil {
-			yield(nil, err)
+			yield(nil, d.wrapError(err))
 			return
 		}
 
@@ -285,7 +296,7 @@ func (d *Decoder) ReadMap() iter.Seq2[[]byte, error] {
 		for range size {
 			key, keyEndOffset, err := d.d.DecodeKey(currentOffset)
 			if err != nil {
-				yield(nil, err)
+				yield(nil, d.wrapErrorAtOffset(err, currentOffset))
 				return
 			}
 
@@ -300,7 +311,7 @@ func (d *Decoder) ReadMap() iter.Seq2[[]byte, error] {
 			// Skip the value to get to next key-value pair
 			valueEndOffset, err := d.d.NextValueOffset(keyEndOffset, 1)
 			if err != nil {
-				yield(nil, err)
+				yield(nil, d.wrapError(err))
 				return
 			}
 			currentOffset = valueEndOffset
@@ -318,7 +329,7 @@ func (d *Decoder) ReadSlice() iter.Seq[error] {
 	return func(yield func(error) bool) {
 		size, offset, err := d.decodeCtrlDataAndFollow(KindSlice)
 		if err != nil {
-			yield(err)
+			yield(d.wrapError(err))
 			return
 		}
 
@@ -344,7 +355,7 @@ func (d *Decoder) ReadSlice() iter.Seq[error] {
 			// Advance to next element
 			nextOffset, err := d.d.NextValueOffset(currentOffset, 1)
 			if err != nil {
-				yield(err)
+				yield(d.wrapError(err))
 				return
 			}
 			currentOffset = nextOffset
@@ -362,7 +373,7 @@ func (d *Decoder) SkipValue() error {
 	// We can reuse the existing nextValueOffset logic by jumping to the next value
 	nextOffset, err := d.d.NextValueOffset(d.offset, 1)
 	if err != nil {
-		return err
+		return d.wrapError(err)
 	}
 	d.reset(nextOffset)
 	return nil
@@ -373,7 +384,7 @@ func (d *Decoder) SkipValue() error {
 func (d *Decoder) PeekKind() (Kind, error) {
 	kindNum, _, _, err := d.d.DecodeCtrlData(d.offset)
 	if err != nil {
-		return 0, err
+		return 0, d.wrapError(err)
 	}
 
 	// Follow pointers to get the actual kind
@@ -384,14 +395,14 @@ func (d *Decoder) PeekKind() (Kind, error) {
 			var size uint
 			kindNum, size, dataOffset, err = d.d.DecodeCtrlData(dataOffset)
 			if err != nil {
-				return 0, err
+				return 0, d.wrapError(err)
 			}
 			if kindNum != KindPointer {
 				break
 			}
 			dataOffset, _, err = d.d.DecodePointer(size, dataOffset)
 			if err != nil {
-				return 0, err
+				return 0, d.wrapError(err)
 			}
 		}
 	}
@@ -431,14 +442,14 @@ func (d *Decoder) decodeCtrlDataAndFollow(expectedKind Kind) (uint, uint, error)
 		var err error
 		kindNum, size, dataOffset, err = d.d.DecodeCtrlData(dataOffset)
 		if err != nil {
-			return 0, 0, err
+			return 0, 0, err // Don't wrap here, let caller wrap
 		}
 
 		if kindNum == KindPointer {
 			var nextOffset uint
 			dataOffset, nextOffset, err = d.d.DecodePointer(size, dataOffset)
 			if err != nil {
-				return 0, 0, err
+				return 0, 0, err // Don't wrap here, let caller wrap
 			}
 			d.setNextOffset(nextOffset)
 			continue
@@ -455,7 +466,7 @@ func (d *Decoder) decodeCtrlDataAndFollow(expectedKind Kind) (uint, uint, error)
 func (d *Decoder) readBytes(kind Kind) ([]byte, error) {
 	size, offset, err := d.decodeCtrlDataAndFollow(kind)
 	if err != nil {
-		return nil, err
+		return nil, err // Return unwrapped - caller will wrap
 	}
 
 	if offset+size > uint(len(d.d.Buffer())) {

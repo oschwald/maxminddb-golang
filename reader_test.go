@@ -395,7 +395,7 @@ func TestNonEmptyNilInterface(t *testing.T) {
 	err = reader.Lookup(netip.MustParseAddr("::1.1.1.0")).Decode(&result)
 	assert.Equal(
 		t,
-		"maxminddb: cannot unmarshal map into type maxminddb.TestInterface",
+		"at offset 115: maxminddb: cannot unmarshal map into type maxminddb.TestInterface",
 		err.Error(),
 	)
 }

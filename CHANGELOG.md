@@ -22,6 +22,11 @@
   elements, and map values. The custom unmarshaler is now called recursively
   for any type that implements the `Unmarshaler` interface, similar to
   `encoding/json`.
+- Improved error messages to include byte offset information and, for the
+  reflection-based API, path information for nested structures using JSON
+  Pointer format. For example, errors may now show "at offset 1234, path
+  /city/names/en" or "at offset 1234, path /list/0/name" instead of just the
+  underlying error message.
 
 ## 2.0.0-beta.3 - 2025-02-16
 

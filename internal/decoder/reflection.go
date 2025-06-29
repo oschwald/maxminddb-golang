@@ -49,11 +49,27 @@ func (d *ReflectionDecoder) Decode(offset uint, v any) error {
 
 	if dser, ok := v.(deserializer); ok {
 		_, err := d.decodeToDeserializer(offset, dser, 0, false)
-		return err
+		return d.wrapError(err, offset)
 	}
 
 	_, err := d.decode(offset, rv, 0)
-	return err
+	if err == nil {
+		return nil
+	}
+
+	// Check if error already has context (including path), if so just add offset if missing
+	var contextErr mmdberrors.ContextualError
+	if errors.As(err, &contextErr) {
+		// If the outermost error already has offset and path info, return as-is
+		if contextErr.Offset != 0 || contextErr.Path != "" {
+			return err
+		}
+		// Otherwise, just add offset to root
+		return mmdberrors.WrapWithContext(contextErr.Err, offset, nil)
+	}
+
+	// Plain error, add offset
+	return mmdberrors.WrapWithContext(err, offset, nil)
 }
 
 // DecodePath decodes the data value at offset and stores the value assocated
@@ -144,7 +160,89 @@ PATH:
 		}
 	}
 	_, err := d.decode(offset, result, len(path))
-	return err
+	return d.wrapError(err, offset)
+}
+
+// wrapError wraps an error with context information when an error occurs.
+// Zero allocation on happy path - only allocates when error != nil.
+func (*ReflectionDecoder) wrapError(err error, offset uint) error {
+	if err == nil {
+		return nil
+	}
+	// Only wrap with context when an error actually occurs
+	return mmdberrors.WrapWithContext(err, offset, nil)
+}
+
+// wrapErrorWithMapKey wraps an error with map key context, building path retroactively.
+// Zero allocation on happy path - only allocates when error != nil.
+func (*ReflectionDecoder) wrapErrorWithMapKey(err error, key string) error {
+	if err == nil {
+		return nil
+	}
+
+	// Build path context retroactively by checking if the error already has context
+	var pathBuilder *mmdberrors.PathBuilder
+	var contextErr mmdberrors.ContextualError
+	if errors.As(err, &contextErr) {
+		// Error already has context, extract existing path and extend it
+		pathBuilder = mmdberrors.NewPathBuilder()
+		if contextErr.Path != "" && contextErr.Path != "/" {
+			// Parse existing path and rebuild
+			pathBuilder.ParseAndExtend(contextErr.Path)
+		}
+		pathBuilder.PrependMap(key)
+		// Return unwrapped error with extended path, preserving original offset
+		return mmdberrors.WrapWithContext(contextErr.Err, contextErr.Offset, pathBuilder)
+	}
+
+	// New error, start building path - extract offset if it's already a contextual error
+	pathBuilder = mmdberrors.NewPathBuilder()
+	pathBuilder.PrependMap(key)
+
+	// Try to get existing offset from any wrapped contextual error
+	var existingOffset uint
+	var existingErr mmdberrors.ContextualError
+	if errors.As(err, &existingErr) {
+		existingOffset = existingErr.Offset
+	}
+
+	return mmdberrors.WrapWithContext(err, existingOffset, pathBuilder)
+}
+
+// wrapErrorWithSliceIndex wraps an error with slice index context, building path retroactively.
+// Zero allocation on happy path - only allocates when error != nil.
+func (*ReflectionDecoder) wrapErrorWithSliceIndex(err error, index int) error {
+	if err == nil {
+		return nil
+	}
+
+	// Build path context retroactively by checking if the error already has context
+	var pathBuilder *mmdberrors.PathBuilder
+	var contextErr mmdberrors.ContextualError
+	if errors.As(err, &contextErr) {
+		// Error already has context, extract existing path and extend it
+		pathBuilder = mmdberrors.NewPathBuilder()
+		if contextErr.Path != "" && contextErr.Path != "/" {
+			// Parse existing path and rebuild
+			pathBuilder.ParseAndExtend(contextErr.Path)
+		}
+		pathBuilder.PrependSlice(index)
+		// Return unwrapped error with extended path, preserving original offset
+		return mmdberrors.WrapWithContext(contextErr.Err, contextErr.Offset, pathBuilder)
+	}
+
+	// New error, start building path - extract offset if it's already a contextual error
+	pathBuilder = mmdberrors.NewPathBuilder()
+	pathBuilder.PrependSlice(index)
+
+	// Try to get existing offset from any wrapped contextual error
+	var existingOffset uint
+	var existingErr mmdberrors.ContextualError
+	if errors.As(err, &existingErr) {
+		existingOffset = existingErr.Offset
+	}
+
+	return mmdberrors.WrapWithContext(err, existingOffset, pathBuilder)
 }
 
 func (d *ReflectionDecoder) decode(offset uint, result reflect.Value, depth int) (uint, error) {
@@ -596,10 +694,10 @@ func (d *ReflectionDecoder) decodeMap(
 
 		offset, err = d.decode(offset, elemValue, depth)
 		if err != nil {
-			return 0, fmt.Errorf("decoding value for %s: %w", key, err)
+			return 0, d.wrapErrorWithMapKey(err, string(key))
 		}
 
-		keyValue.SetString(string(key))
+		keyValue.SetString(string(key)) // This uses the compiler optimization
 		result.SetMapIndex(keyValue, elemValue)
 	}
 	return offset, nil
@@ -616,7 +714,7 @@ func (d *ReflectionDecoder) decodeSlice(
 		var err error
 		offset, err = d.decode(offset, result.Index(int(i)), depth)
 		if err != nil {
-			return 0, err
+			return 0, d.wrapErrorWithSliceIndex(err, int(i))
 		}
 	}
 	return offset, nil
@@ -661,7 +759,7 @@ func (d *ReflectionDecoder) decodeStruct(
 
 		offset, err = d.decode(offset, result.Field(j), depth)
 		if err != nil {
-			return 0, fmt.Errorf("decoding value for %s: %w", key, err)
+			return 0, d.wrapErrorWithMapKey(err, string(key))
 		}
 	}
 	return offset, nil
