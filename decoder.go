@@ -18,20 +18,20 @@ import "github.com/oschwald/maxminddb-golang/v2/mmdbdata"
 //	}
 //
 //	func (c *City) UnmarshalMaxMindDB(d *maxminddb.Decoder) error {
-//		for key, err := range d.DecodeMap() {
+//		for key, err := range d.ReadMap() {
 //			if err != nil { return err }
 //			switch string(key) {
 //			case "names":
 //				names := make(map[string]string)
-//				for nameKey, nameErr := range d.DecodeMap() {
+//				for nameKey, nameErr := range d.ReadMap() {
 //					if nameErr != nil { return nameErr }
-//					value, valueErr := d.DecodeString()
+//					value, valueErr := d.ReadString()
 //					if valueErr != nil { return valueErr }
 //					names[string(nameKey)] = value
 //				}
 //				c.Names = names
 //			case "geoname_id":
-//				geoID, err := d.DecodeUInt32()
+//				geoID, err := d.ReadUInt32()
 //				if err != nil { return err }
 //				c.GeoNameID = uint(geoID)
 //			default:

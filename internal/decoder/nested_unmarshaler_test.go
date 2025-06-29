@@ -14,7 +14,7 @@ type testInnerNested struct {
 
 func (i *testInnerNested) UnmarshalMaxMindDB(d *Decoder) error {
 	i.custom = true
-	str, err := d.DecodeString()
+	str, err := d.ReadString()
 	if err != nil {
 		return err
 	}
@@ -70,7 +70,7 @@ type testInnerPointer struct {
 
 func (i *testInnerPointer) UnmarshalMaxMindDB(d *Decoder) error {
 	i.custom = true
-	str, err := d.DecodeString()
+	str, err := d.ReadString()
 	if err != nil {
 		return err
 	}
@@ -125,7 +125,7 @@ type testItem struct {
 
 func (item *testItem) UnmarshalMaxMindDB(d *Decoder) error {
 	item.custom = true
-	id, err := d.DecodeUInt32()
+	id, err := d.ReadUInt32()
 	if err != nil {
 		return err
 	}
@@ -184,7 +184,7 @@ type testValue struct {
 
 func (v *testValue) UnmarshalMaxMindDB(d *Decoder) error {
 	v.custom = true
-	str, err := d.DecodeString()
+	str, err := d.ReadString()
 	if err != nil {
 		return err
 	}

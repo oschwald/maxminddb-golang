@@ -1061,7 +1061,7 @@ type TestCity struct {
 // UnmarshalMaxMindDB implements the Unmarshaler interface for TestCity.
 // This demonstrates custom decoding that avoids reflection for better performance.
 func (c *TestCity) UnmarshalMaxMindDB(d *Decoder) error {
-	for key, err := range d.DecodeMap() {
+	for key, err := range d.ReadMap() {
 		if err != nil {
 			return err
 		}
@@ -1070,11 +1070,11 @@ func (c *TestCity) UnmarshalMaxMindDB(d *Decoder) error {
 		case "names":
 			// Decode nested map[string]string for localized names
 			names := make(map[string]string)
-			for nameKey, nameErr := range d.DecodeMap() {
+			for nameKey, nameErr := range d.ReadMap() {
 				if nameErr != nil {
 					return nameErr
 				}
-				value, valueErr := d.DecodeString()
+				value, valueErr := d.ReadString()
 				if valueErr != nil {
 					return valueErr
 				}
@@ -1082,7 +1082,7 @@ func (c *TestCity) UnmarshalMaxMindDB(d *Decoder) error {
 			}
 			c.Names = names
 		case "geoname_id":
-			geoID, err := d.DecodeUInt32()
+			geoID, err := d.ReadUInt32()
 			if err != nil {
 				return err
 			}
@@ -1105,20 +1105,20 @@ type TestASN struct {
 
 // UnmarshalMaxMindDB implements the Unmarshaler interface for TestASN.
 func (a *TestASN) UnmarshalMaxMindDB(d *Decoder) error {
-	for key, err := range d.DecodeMap() {
+	for key, err := range d.ReadMap() {
 		if err != nil {
 			return err
 		}
 
 		switch string(key) {
 		case "autonomous_system_organization":
-			org, err := d.DecodeString()
+			org, err := d.ReadString()
 			if err != nil {
 				return err
 			}
 			a.AutonomousSystemOrganization = org
 		case "autonomous_system_number":
-			asn, err := d.DecodeUInt32()
+			asn, err := d.ReadUInt32()
 			if err != nil {
 				return err
 			}

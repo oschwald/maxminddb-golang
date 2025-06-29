@@ -29,7 +29,7 @@ func TestDecodeBool(t *testing.T) {
 	for hexStr, expected := range tests {
 		t.Run(hexStr, func(t *testing.T) {
 			decoder := newDecoderFromHex(t, hexStr)
-			result, err := decoder.DecodeBool() // [cite: 30]
+			result, err := decoder.ReadBool() // [cite: 30]
 			require.NoError(t, err)
 			require.Equal(t, expected, result)
 			// Check if offset was advanced correctly (simple check)
@@ -53,7 +53,7 @@ func TestDecodeDouble(t *testing.T) {
 	for hexStr, expected := range tests {
 		t.Run(hexStr, func(t *testing.T) {
 			decoder := newDecoderFromHex(t, hexStr)
-			result, err := decoder.DecodeFloat64() // [cite: 38]
+			result, err := decoder.ReadFloat64() // [cite: 38]
 			require.NoError(t, err)
 			if expected == 0 {
 				require.InDelta(t, expected, result, 0)
@@ -81,7 +81,7 @@ func TestDecodeFloat(t *testing.T) {
 	for hexStr, expected := range tests {
 		t.Run(hexStr, func(t *testing.T) {
 			decoder := newDecoderFromHex(t, hexStr)
-			result, err := decoder.DecodeFloat32() // [cite: 36]
+			result, err := decoder.ReadFloat32() // [cite: 36]
 			require.NoError(t, err)
 			if expected == 0 {
 				require.InDelta(t, expected, result, 0)
@@ -112,7 +112,7 @@ func TestDecodeInt32(t *testing.T) {
 	for hexStr, expected := range tests {
 		t.Run(hexStr, func(t *testing.T) {
 			decoder := newDecoderFromHex(t, hexStr)
-			result, err := decoder.DecodeInt32() // [cite: 40]
+			result, err := decoder.ReadInt32() // [cite: 40]
 			require.NoError(t, err)
 			require.Equal(t, expected, result)
 			require.True(t, decoder.hasNextOffset || decoder.offset > 0, "Offset was not advanced")
@@ -139,7 +139,7 @@ func TestDecodeMap(t *testing.T) {
 		t.Run(hexStr, func(t *testing.T) {
 			decoder := newDecoderFromHex(t, hexStr)
 			resultMap := make(map[string]any)
-			mapIter := decoder.DecodeMap() // [cite: 53]
+			mapIter := decoder.ReadMap() // [cite: 53]
 
 			// Iterate through the map [cite: 54]
 			for keyBytes, err := range mapIter { // [cite: 50]
@@ -147,8 +147,8 @@ func TestDecodeMap(t *testing.T) {
 				key := string(keyBytes) // [cite: 51] - Need to copy if stored
 
 				// Now decode the value corresponding to the key
-				// For simplicity, we'll decode as string here. Needs adjustment for mixed types.
-				value, err := decoder.DecodeString() // [cite: 32]
+				// For simplicity, we'll read as string here. Needs adjustment for mixed types.
+				value, err := decoder.ReadString() // [cite: 32]
 				require.NoError(t, err, "Failed to decode value for key %s", key)
 				resultMap[key] = value
 			}
@@ -171,15 +171,15 @@ func TestDecodeSlice(t *testing.T) {
 		t.Run(hexStr, func(t *testing.T) {
 			decoder := newDecoderFromHex(t, hexStr)
 			results := make([]any, 0)
-			sliceIter := decoder.DecodeSlice() // [cite: 56]
+			sliceIter := decoder.ReadSlice() // [cite: 56]
 
 			// Iterate through the slice [cite: 57]
 			for err := range sliceIter {
 				require.NoError(t, err, "Iterator returned error")
 
-				// Decode the current element
-				// For simplicity, decoding as string. Needs adjustment for mixed types.
-				elem, err := decoder.DecodeString() // [cite: 32]
+				// Read the current element
+				// For simplicity, reading as string. Needs adjustment for mixed types.
+				elem, err := decoder.ReadString() // [cite: 32]
 				require.NoError(t, err, "Failed to decode slice element")
 				results = append(results, elem)
 			}
@@ -194,7 +194,7 @@ func TestDecodeString(t *testing.T) {
 	for hexStr, expected := range testStrings {
 		t.Run(hexStr, func(t *testing.T) {
 			decoder := newDecoderFromHex(t, hexStr)
-			result, err := decoder.DecodeString() // [cite: 32]
+			result, err := decoder.ReadString() // [cite: 32]
 			require.NoError(t, err)
 			require.Equal(t, expected, result)
 			require.True(t, decoder.hasNextOffset || decoder.offset > 0, "Offset was not advanced")
@@ -221,7 +221,7 @@ func TestDecodeByte(t *testing.T) {
 	for hexStr, expected := range byteTests {
 		t.Run(hexStr, func(t *testing.T) {
 			decoder := newDecoderFromHex(t, hexStr)
-			result, err := decoder.DecodeBytes() // [cite: 34]
+			result, err := decoder.ReadBytes() // [cite: 34]
 			require.NoError(t, err)
 			require.Equal(t, expected, result)
 			require.True(t, decoder.hasNextOffset || decoder.offset > 0, "Offset was not advanced")
@@ -241,7 +241,7 @@ func TestDecodeUint16(t *testing.T) {
 	for hexStr, expected := range tests {
 		t.Run(hexStr, func(t *testing.T) {
 			decoder := newDecoderFromHex(t, hexStr)
-			result, err := decoder.DecodeUInt16() // [cite: 42]
+			result, err := decoder.ReadUInt16() // [cite: 42]
 			require.NoError(t, err)
 			require.Equal(t, expected, result)
 			require.True(t, decoder.hasNextOffset || decoder.offset > 0, "Offset was not advanced")
@@ -263,7 +263,7 @@ func TestDecodeUint32(t *testing.T) {
 	for hexStr, expected := range tests {
 		t.Run(hexStr, func(t *testing.T) {
 			decoder := newDecoderFromHex(t, hexStr)
-			result, err := decoder.DecodeUInt32() // [cite: 44]
+			result, err := decoder.ReadUInt32() // [cite: 44]
 			require.NoError(t, err)
 			require.Equal(t, expected, result)
 			require.True(t, decoder.hasNextOffset || decoder.offset > 0, "Offset was not advanced")
@@ -285,7 +285,7 @@ func TestDecodeUint64(t *testing.T) {
 	for hexStr, expected := range tests {
 		t.Run(hexStr, func(t *testing.T) {
 			decoder := newDecoderFromHex(t, hexStr)
-			result, err := decoder.DecodeUInt64() // [cite: 46]
+			result, err := decoder.ReadUInt64() // [cite: 46]
 			require.NoError(t, err)
 			require.Equal(t, expected, result)
 			require.True(t, decoder.hasNextOffset || decoder.offset > 0, "Offset was not advanced")
@@ -311,7 +311,7 @@ func TestDecodeUint128(t *testing.T) {
 	for hexStr, expected := range tests {
 		t.Run(hexStr, func(t *testing.T) {
 			decoder := newDecoderFromHex(t, hexStr)
-			hi, lo, err := decoder.DecodeUInt128() // [cite: 48]
+			hi, lo, err := decoder.ReadUInt128() // [cite: 48]
 			require.NoError(t, err)
 
 			// Reconstruct the big.Int from hi and lo parts for comparison
@@ -351,12 +351,12 @@ func TestPointersInDecoder(t *testing.T) {
 			actualValue := make(map[string]string)
 
 			// Expecting a map at the target offset (may be behind a pointer)
-			mapIter := decoder.DecodeMap()
+			mapIter := decoder.ReadMap()
 			for keyBytes, errIter := range mapIter {
 				require.NoError(t, errIter)
 				key := string(keyBytes)
 				// Value is expected to be a string
-				value, errDecode := decoder.DecodeString()
+				value, errDecode := decoder.ReadString()
 				require.NoError(t, errDecode)
 				actualValue[key] = value
 			}
@@ -377,7 +377,7 @@ func TestBoundsChecking(t *testing.T) {
 	decoder := &Decoder{d: dd, offset: 0}
 
 	// This should fail gracefully with an error instead of panicking
-	_, err := decoder.DecodeString()
+	_, err := decoder.ReadString()
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "exceeds buffer length")
 
@@ -389,7 +389,7 @@ func TestBoundsChecking(t *testing.T) {
 	dd3 := NewDataDecoder(bytesBuffer)
 	decoder3 := &Decoder{d: dd3, offset: 0}
 
-	_, err = decoder3.DecodeBytes()
+	_, err = decoder3.ReadBytes()
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "exceeds buffer length")
 
@@ -401,7 +401,7 @@ func TestBoundsChecking(t *testing.T) {
 	dd2 := NewDataDecoder(uint128Buffer)
 	decoder2 := &Decoder{d: dd2, offset: 0}
 
-	_, _, err = decoder2.DecodeUInt128()
+	_, _, err = decoder2.ReadUInt128()
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "exceeds buffer length")
 }

@@ -149,7 +149,7 @@ type CustomCity struct {
 // This provides significant performance improvements over reflection-based decoding
 // by allowing custom, optimized decoding logic for performance-critical applications.
 func (c *CustomCity) UnmarshalMaxMindDB(d *maxminddb.Decoder) error {
-	for key, err := range d.DecodeMap() {
+	for key, err := range d.ReadMap() {
 		if err != nil {
 			return err
 		}
@@ -157,7 +157,7 @@ func (c *CustomCity) UnmarshalMaxMindDB(d *maxminddb.Decoder) error {
 		switch string(key) {
 		case "city":
 			// Decode nested city structure
-			for cityKey, cityErr := range d.DecodeMap() {
+			for cityKey, cityErr := range d.ReadMap() {
 				if cityErr != nil {
 					return cityErr
 				}
@@ -165,11 +165,11 @@ func (c *CustomCity) UnmarshalMaxMindDB(d *maxminddb.Decoder) error {
 				case "names":
 					// Decode nested map[string]string for localized names
 					names := make(map[string]string)
-					for nameKey, nameErr := range d.DecodeMap() {
+					for nameKey, nameErr := range d.ReadMap() {
 						if nameErr != nil {
 							return nameErr
 						}
-						value, valueErr := d.DecodeString()
+						value, valueErr := d.ReadString()
 						if valueErr != nil {
 							return valueErr
 						}
@@ -177,7 +177,7 @@ func (c *CustomCity) UnmarshalMaxMindDB(d *maxminddb.Decoder) error {
 					}
 					c.Names = names
 				case "geoname_id":
-					geoID, err := d.DecodeUInt32()
+					geoID, err := d.ReadUInt32()
 					if err != nil {
 						return err
 					}

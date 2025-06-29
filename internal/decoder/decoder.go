@@ -23,10 +23,10 @@ func NewDecoder(d DataDecoder, offset uint) *Decoder {
 	return &Decoder{d: d, offset: offset}
 }
 
-// DecodeBool decodes the value pointed by the decoder as a bool.
+// ReadBool reads the value pointed by the decoder as a bool.
 //
 // Returns an error if the database is malformed or if the pointed value is not a bool.
-func (d *Decoder) DecodeBool() (bool, error) {
+func (d *Decoder) ReadBool() (bool, error) {
 	size, offset, err := d.decodeCtrlDataAndFollow(KindBool)
 	if err != nil {
 		return false, err
@@ -45,28 +45,28 @@ func (d *Decoder) DecodeBool() (bool, error) {
 	return value, nil
 }
 
-// DecodeString decodes the value pointed by the decoder as a string.
+// ReadString reads the value pointed by the decoder as a string.
 //
 // Returns an error if the database is malformed or if the pointed value is not a string.
-func (d *Decoder) DecodeString() (string, error) {
-	val, err := d.decodeBytes(KindString)
+func (d *Decoder) ReadString() (string, error) {
+	val, err := d.readBytes(KindString)
 	if err != nil {
 		return "", err
 	}
 	return string(val), err
 }
 
-// DecodeBytes decodes the value pointed by the decoder as bytes.
+// ReadBytes reads the value pointed by the decoder as bytes.
 //
 // Returns an error if the database is malformed or if the pointed value is not bytes.
-func (d *Decoder) DecodeBytes() ([]byte, error) {
-	return d.decodeBytes(KindBytes)
+func (d *Decoder) ReadBytes() ([]byte, error) {
+	return d.readBytes(KindBytes)
 }
 
-// DecodeFloat32 decodes the value pointed by the decoder as a float32.
+// ReadFloat32 reads the value pointed by the decoder as a float32.
 //
 // Returns an error if the database is malformed or if the pointed value is not a float.
-func (d *Decoder) DecodeFloat32() (float32, error) {
+func (d *Decoder) ReadFloat32() (float32, error) {
 	size, offset, err := d.decodeCtrlDataAndFollow(KindFloat32)
 	if err != nil {
 		return 0, err
@@ -88,10 +88,10 @@ func (d *Decoder) DecodeFloat32() (float32, error) {
 	return value, nil
 }
 
-// DecodeFloat64 decodes the value pointed by the decoder as a float64.
+// ReadFloat64 reads the value pointed by the decoder as a float64.
 //
 // Returns an error if the database is malformed or if the pointed value is not a double.
-func (d *Decoder) DecodeFloat64() (float64, error) {
+func (d *Decoder) ReadFloat64() (float64, error) {
 	size, offset, err := d.decodeCtrlDataAndFollow(KindFloat64)
 	if err != nil {
 		return 0, err
@@ -113,10 +113,10 @@ func (d *Decoder) DecodeFloat64() (float64, error) {
 	return value, nil
 }
 
-// DecodeInt32 decodes the value pointed by the decoder as a int32.
+// ReadInt32 reads the value pointed by the decoder as a int32.
 //
 // Returns an error if the database is malformed or if the pointed value is not an int32.
-func (d *Decoder) DecodeInt32() (int32, error) {
+func (d *Decoder) ReadInt32() (int32, error) {
 	size, offset, err := d.decodeCtrlDataAndFollow(KindInt32)
 	if err != nil {
 		return 0, err
@@ -139,10 +139,10 @@ func (d *Decoder) DecodeInt32() (int32, error) {
 	return value, nil
 }
 
-// DecodeUInt16 decodes the value pointed by the decoder as a uint16.
+// ReadUInt16 reads the value pointed by the decoder as a uint16.
 //
 // Returns an error if the database is malformed or if the pointed value is not an uint16.
-func (d *Decoder) DecodeUInt16() (uint16, error) {
+func (d *Decoder) ReadUInt16() (uint16, error) {
 	size, offset, err := d.decodeCtrlDataAndFollow(KindUint16)
 	if err != nil {
 		return 0, err
@@ -164,10 +164,10 @@ func (d *Decoder) DecodeUInt16() (uint16, error) {
 	return value, nil
 }
 
-// DecodeUInt32 decodes the value pointed by the decoder as a uint32.
+// ReadUInt32 reads the value pointed by the decoder as a uint32.
 //
 // Returns an error if the database is malformed or if the pointed value is not an uint32.
-func (d *Decoder) DecodeUInt32() (uint32, error) {
+func (d *Decoder) ReadUInt32() (uint32, error) {
 	size, offset, err := d.decodeCtrlDataAndFollow(KindUint32)
 	if err != nil {
 		return 0, err
@@ -189,10 +189,10 @@ func (d *Decoder) DecodeUInt32() (uint32, error) {
 	return value, nil
 }
 
-// DecodeUInt64 decodes the value pointed by the decoder as a uint64.
+// ReadUInt64 reads the value pointed by the decoder as a uint64.
 //
 // Returns an error if the database is malformed or if the pointed value is not an uint64.
-func (d *Decoder) DecodeUInt64() (uint64, error) {
+func (d *Decoder) ReadUInt64() (uint64, error) {
 	size, offset, err := d.decodeCtrlDataAndFollow(KindUint64)
 	if err != nil {
 		return 0, err
@@ -214,10 +214,10 @@ func (d *Decoder) DecodeUInt64() (uint64, error) {
 	return value, nil
 }
 
-// DecodeUInt128 decodes the value pointed by the decoder as a uint128.
+// ReadUInt128 reads the value pointed by the decoder as a uint128.
 //
 // Returns an error if the database is malformed or if the pointed value is not an uint128.
-func (d *Decoder) DecodeUInt128() (hi, lo uint64, err error) {
+func (d *Decoder) ReadUInt128() (hi, lo uint64, err error) {
 	size, offset, err := d.decodeCtrlDataAndFollow(KindUint128)
 	if err != nil {
 		return 0, 0, err
@@ -253,13 +253,13 @@ func append64(val uint64, b byte) (uint64, byte) {
 	return (val << 8) | uint64(b), byte(val >> 56)
 }
 
-// DecodeMap returns an iterator to decode the map. The first value from the
+// ReadMap returns an iterator to read the map. The first value from the
 // iterator is the key. Please note that this byte slice is only valid during
 // the iteration. This is done to avoid an unnecessary allocation. You must
 // make a copy of it if you are storing it for later use. The second value is
 // an error indicating that the database is malformed or that the pointed
 // value is not a map.
-func (d *Decoder) DecodeMap() iter.Seq2[[]byte, error] {
+func (d *Decoder) ReadMap() iter.Seq2[[]byte, error] {
 	return func(yield func([]byte, error) bool) {
 		size, offset, err := d.decodeCtrlDataAndFollow(KindMap)
 		if err != nil {
@@ -298,10 +298,10 @@ func (d *Decoder) DecodeMap() iter.Seq2[[]byte, error] {
 	}
 }
 
-// DecodeSlice returns an iterator over the values of the slice. The iterator
+// ReadSlice returns an iterator over the values of the slice. The iterator
 // returns an error if the database is malformed or if the pointed value is
 // not a slice.
-func (d *Decoder) DecodeSlice() iter.Seq[error] {
+func (d *Decoder) ReadSlice() iter.Seq[error] {
 	return func(yield func(error) bool) {
 		size, offset, err := d.decodeCtrlDataAndFollow(KindSlice)
 		if err != nil {
@@ -439,7 +439,7 @@ func (d *Decoder) decodeCtrlDataAndFollow(expectedKind Kind) (uint, uint, error)
 	}
 }
 
-func (d *Decoder) decodeBytes(kind Kind) ([]byte, error) {
+func (d *Decoder) readBytes(kind Kind) ([]byte, error) {
 	size, offset, err := d.decodeCtrlDataAndFollow(kind)
 	if err != nil {
 		return nil, err

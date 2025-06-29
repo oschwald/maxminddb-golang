@@ -69,7 +69,7 @@
 //	}
 //
 //	func (c *FastCity) UnmarshalMaxMindDB(d *maxminddb.Decoder) error {
-//		// Custom decoding logic using d.DecodeMap(), d.DecodeString(), etc.
+//		// Custom decoding logic using d.ReadMap(), d.ReadString(), etc.
 //		// See ExampleUnmarshaler for a complete implementation
 //	}
 //

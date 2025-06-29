@@ -117,18 +117,18 @@ type FastCity struct {
 }
 
 func (c *FastCity) UnmarshalMaxMindDB(d *maxminddb.Decoder) error {
-	for key, err := range d.DecodeMap() {
+	for key, err := range d.ReadMap() {
 		if err != nil {
 			return err
 		}
 		switch string(key) {
 		case "country":
-			for countryKey, countryErr := range d.DecodeMap() {
+			for countryKey, countryErr := range d.ReadMap() {
 				if countryErr != nil {
 					return countryErr
 				}
 				if string(countryKey) == "iso_code" {
-					c.CountryISO, err = d.DecodeString()
+					c.CountryISO, err = d.ReadString()
 					if err != nil {
 						return err
 					}
