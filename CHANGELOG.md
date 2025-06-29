@@ -14,7 +14,8 @@
 - Added public `Decoder` type in `mmdbdata` package with methods for manual
   decoding including `ReadMap()`, `ReadSlice()`, `ReadString()`,
   `ReadUInt32()`, `PeekKind()`, etc. The main `maxminddb` package re-exports
-  these types for backward compatibility.
+  these types for backward compatibility. `NewDecoder()` supports an options
+  pattern for future extensibility.
 - Enhanced `UnmarshalMaxMindDB` to work with nested struct fields, slice
   elements, and map values. The custom unmarshaler is now called recursively
   for any type that implements the `Unmarshaler` interface, similar to

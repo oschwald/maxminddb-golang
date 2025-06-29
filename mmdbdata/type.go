@@ -9,6 +9,15 @@ type Kind = decoder.Kind
 // Decoder provides methods for decoding MMDB data.
 type Decoder = decoder.Decoder
 
+// DecoderOption configures a Decoder.
+type DecoderOption = decoder.DecoderOption
+
+// NewDecoder creates a new Decoder with the given buffer, offset, and options.
+func NewDecoder(buffer []byte, offset uint, options ...DecoderOption) *Decoder {
+	d := decoder.NewDataDecoder(buffer)
+	return decoder.NewDecoder(d, offset, options...)
+}
+
 // Kind constants for MMDB data.
 const (
 	KindExtended  = decoder.KindExtended

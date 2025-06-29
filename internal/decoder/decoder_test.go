@@ -16,8 +16,8 @@ func newDecoderFromHex(t *testing.T, hexStr string) *Decoder {
 	t.Helper()
 	inputBytes, err := hex.DecodeString(hexStr)
 	require.NoError(t, err, "Failed to decode hex string: %s", hexStr)
-	dd := NewDataDecoder(inputBytes)  // [cite: 11]
-	return &Decoder{d: dd, offset: 0} // [cite: 26]
+	dd := NewDataDecoder(inputBytes) // [cite: 11]
+	return NewDecoder(dd, 0)         // [cite: 26]
 }
 
 func TestDecodeBool(t *testing.T) {
@@ -347,7 +347,7 @@ func TestPointersInDecoder(t *testing.T) {
 
 	for startOffset, expectedValue := range expected {
 		t.Run(fmt.Sprintf("Offset_%d", startOffset), func(t *testing.T) {
-			decoder := &Decoder{d: dd, offset: startOffset} // Start at the specific offset
+			decoder := NewDecoder(dd, startOffset) // Start at the specific offset
 			actualValue := make(map[string]string)
 
 			// Expecting a map at the target offset (may be behind a pointer)
@@ -374,7 +374,7 @@ func TestBoundsChecking(t *testing.T) {
 	// if bounds checking is not working
 	smallBuffer := []byte{0x44, 0x41} // Type string (0x4), size 4, but only 2 bytes total
 	dd := NewDataDecoder(smallBuffer)
-	decoder := &Decoder{d: dd, offset: 0}
+	decoder := NewDecoder(dd, 0)
 
 	// This should fail gracefully with an error instead of panicking
 	_, err := decoder.ReadString()
@@ -387,7 +387,7 @@ func TestBoundsChecking(t *testing.T) {
 		0x41,
 	} // Type bytes (4 << 5 = 0x80), size 4 (0x04), but only 2 bytes total
 	dd3 := NewDataDecoder(bytesBuffer)
-	decoder3 := &Decoder{d: dd3, offset: 0}
+	decoder3 := NewDecoder(dd3, 0)
 
 	_, err = decoder3.ReadBytes()
 	require.Error(t, err)
@@ -399,7 +399,7 @@ func TestBoundsChecking(t *testing.T) {
 		0x03,
 	} // Extended type (0x0), size 11, TypeUint128-7=3, but only 2 bytes total
 	dd2 := NewDataDecoder(uint128Buffer)
-	decoder2 := &Decoder{d: dd2, offset: 0}
+	decoder2 := NewDecoder(dd2, 0)
 
 	_, _, err = decoder2.ReadUInt128()
 	require.Error(t, err)
@@ -442,7 +442,7 @@ func TestPeekKind(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			decoder := &Decoder{d: NewDataDecoder(tt.buffer), offset: 0}
+			decoder := NewDecoder(NewDataDecoder(tt.buffer), 0)
 
 			actualType, err := decoder.PeekKind()
 			require.NoError(t, err, "PeekKind failed")
@@ -484,7 +484,7 @@ func TestPeekKindWithPointer(t *testing.T) {
 		0x44, 't', 'e', 's', 't', // String "test"
 	}
 
-	decoder := &Decoder{d: NewDataDecoder(buffer), offset: 0}
+	decoder := NewDecoder(NewDataDecoder(buffer), 0)
 
 	// PeekKind should follow the pointer and return KindString
 	actualType, err := decoder.PeekKind()
@@ -513,7 +513,7 @@ func ExampleDecoder_PeekKind() {
 	typeNames := []string{"String", "Map", "Slice", "Bool"}
 
 	for i, buffer := range testCases {
-		decoder := &Decoder{d: NewDataDecoder(buffer), offset: 0}
+		decoder := NewDecoder(NewDataDecoder(buffer), 0)
 
 		// Peek at the kind without consuming it
 		typ, err := decoder.PeekKind()
@@ -539,4 +539,17 @@ func ExampleDecoder_PeekKind() {
 	// Type 2: Map (value: 7)
 	// Type 3: Slice (value: 11)
 	// Type 4: Bool (value: 14)
+}
+
+func TestDecoderOptions(t *testing.T) {
+	buffer := []byte{0x44, 't', 'e', 's', 't'} // String "test"
+	dd := NewDataDecoder(buffer)
+
+	// Test that options infrastructure works (even with no current options)
+	decoder1 := NewDecoder(dd, 0)
+	require.NotNil(t, decoder1)
+
+	// Test that passing empty options slice works
+	decoder2 := NewDecoder(dd, 0)
+	require.NotNil(t, decoder2)
 }

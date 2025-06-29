@@ -11,16 +11,29 @@ import (
 // Decoder allows decoding of a single value stored at a specific offset
 // in the database.
 type Decoder struct {
-	d      DataDecoder
-	offset uint
-
-	hasNextOffset bool
+	d             DataDecoder
+	offset        uint
 	nextOffset    uint
+	opts          decoderOptions
+	hasNextOffset bool
 }
 
-// NewDecoder creates a new Decoder with the given DataDecoder and offset.
-func NewDecoder(d DataDecoder, offset uint) *Decoder {
-	return &Decoder{d: d, offset: offset}
+type decoderOptions struct {
+	// Reserved for future options
+}
+
+// DecoderOption configures a Decoder.
+//
+//nolint:revive // name follows existing library pattern (ReaderOption, NetworksOption)
+type DecoderOption func(*decoderOptions)
+
+// NewDecoder creates a new Decoder with the given DataDecoder, offset, and options.
+func NewDecoder(d DataDecoder, offset uint, options ...DecoderOption) *Decoder {
+	opts := decoderOptions{}
+	for _, option := range options {
+		option(&opts)
+	}
+	return &Decoder{d: d, offset: offset, opts: opts}
 }
 
 // ReadBool reads the value pointed by the decoder as a bool.
@@ -444,6 +457,7 @@ func (d *Decoder) readBytes(kind Kind) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if offset+size > uint(len(d.d.Buffer())) {
 		return nil, mmdberrors.NewInvalidDatabaseError(
 			"the MaxMind DB file's data section contains bad data (offset+size %d exceeds buffer length %d)",
