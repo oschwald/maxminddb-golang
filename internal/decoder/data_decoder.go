@@ -108,7 +108,8 @@ func (k Kind) IsScalar() bool {
 // DataDecoder is a decoder for the MMDB data section.
 // This is exported so mmdbdata package can use it, but still internal.
 type DataDecoder struct {
-	buffer []byte
+	stringCache *StringCache
+	buffer      []byte
 }
 
 const (
@@ -118,7 +119,10 @@ const (
 
 // NewDataDecoder creates a [DataDecoder].
 func NewDataDecoder(buffer []byte) DataDecoder {
-	return DataDecoder{buffer: buffer}
+	return DataDecoder{
+		buffer:      buffer,
+		stringCache: NewStringCache(),
+	}
 }
 
 // Buffer returns the underlying buffer for direct access.
@@ -239,7 +243,8 @@ func (d *DataDecoder) DecodeString(size, offset uint) (string, uint, error) {
 	}
 
 	newOffset := offset + size
-	return string(d.buffer[offset:newOffset]), newOffset, nil
+	value := d.stringCache.InternAt(offset, size, d.buffer)
+	return value, newOffset, nil
 }
 
 // DecodeUint16 decodes a 16-bit unsigned integer from the given offset.

@@ -27,6 +27,10 @@
   Pointer format. For example, errors may now show "at offset 1234, path
   /city/names/en" or "at offset 1234, path /list/0/name" instead of just the
   underlying error message.
+- **PERFORMANCE**: Added bounded string interning optimization that provides
+  ~15% performance improvement for City lookups while maintaining thread safety
+  for concurrent reader usage. Uses a fixed 512-entry cache with offset-based
+  indexing to prevent unbounded memory growth.
 
 ## 2.0.0-beta.3 - 2025-02-16
 

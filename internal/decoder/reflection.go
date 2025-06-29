@@ -679,9 +679,9 @@ func (d *ReflectionDecoder) decodeMap(
 	elemType := mapType.Elem()
 	var elemValue reflect.Value
 	for range size {
-		var key []byte
 		var err error
-		key, offset, err = d.DecodeKey(offset)
+
+		offset, err = d.decode(offset, keyValue, depth)
 		if err != nil {
 			return 0, err
 		}
@@ -694,10 +694,9 @@ func (d *ReflectionDecoder) decodeMap(
 
 		offset, err = d.decode(offset, elemValue, depth)
 		if err != nil {
-			return 0, d.wrapErrorWithMapKey(err, string(key))
+			return 0, d.wrapErrorWithMapKey(err, keyValue.String())
 		}
 
-		keyValue.SetString(string(key)) // This uses the compiler optimization
 		result.SetMapIndex(keyValue, elemValue)
 	}
 	return offset, nil
