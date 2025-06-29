@@ -6,6 +6,7 @@ import (
 	"net/netip"
 
 	"github.com/oschwald/maxminddb-golang/v2"
+	"github.com/oschwald/maxminddb-golang/v2/mmdbdata"
 )
 
 // This example shows how to decode to a struct.
@@ -139,16 +140,16 @@ func ExampleReader_NetworksWithin() {
 }
 
 // CustomCity represents a simplified city record with custom unmarshaling.
-// This demonstrates the Unmarshaler interface for high-performance decoding.
+// This demonstrates the Unmarshaler interface for custom decoding.
 type CustomCity struct {
 	Names     map[string]string
 	GeoNameID uint
 }
 
-// UnmarshalMaxMindDB implements the maxminddb.Unmarshaler interface.
-// This provides significant performance improvements over reflection-based decoding
-// by allowing custom, optimized decoding logic for performance-critical applications.
-func (c *CustomCity) UnmarshalMaxMindDB(d *maxminddb.Decoder) error {
+// UnmarshalMaxMindDB implements the mmdbdata.Unmarshaler interface.
+// This provides custom decoding logic, similar to how json.Unmarshaler works
+// with encoding/json, allowing fine-grained control over data processing.
+func (c *CustomCity) UnmarshalMaxMindDB(d *mmdbdata.Decoder) error {
 	for key, err := range d.ReadMap() {
 		if err != nil {
 			return err
@@ -198,9 +199,9 @@ func (c *CustomCity) UnmarshalMaxMindDB(d *maxminddb.Decoder) error {
 	return nil
 }
 
-// This example demonstrates how to use the Unmarshaler interface for high-performance
-// custom decoding. Types implementing Unmarshaler automatically use custom decoding
-// logic instead of reflection, providing better performance for critical applications.
+// This example demonstrates how to use the Unmarshaler interface for custom decoding.
+// Types implementing Unmarshaler automatically use custom decoding logic instead of
+// reflection, similar to how json.Unmarshaler works with encoding/json.
 func ExampleUnmarshaler() {
 	db, err := maxminddb.Open("test-data/test-data/GeoIP2-City-Test.mmdb")
 	if err != nil {

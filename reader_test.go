@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/oschwald/maxminddb-golang/v2/internal/mmdberrors"
+	"github.com/oschwald/maxminddb-golang/v2/mmdbdata"
 )
 
 func TestReader(t *testing.T) {
@@ -1061,7 +1062,7 @@ type TestCity struct {
 
 // UnmarshalMaxMindDB implements the Unmarshaler interface for TestCity.
 // This demonstrates custom decoding that avoids reflection for better performance.
-func (c *TestCity) UnmarshalMaxMindDB(d *Decoder) error {
+func (c *TestCity) UnmarshalMaxMindDB(d *mmdbdata.Decoder) error {
 	for key, err := range d.ReadMap() {
 		if err != nil {
 			return err
@@ -1105,7 +1106,7 @@ type TestASN struct {
 }
 
 // UnmarshalMaxMindDB implements the Unmarshaler interface for TestASN.
-func (a *TestASN) UnmarshalMaxMindDB(d *Decoder) error {
+func (a *TestASN) UnmarshalMaxMindDB(d *mmdbdata.Decoder) error {
 	for key, err := range d.ReadMap() {
 		if err != nil {
 			return err

@@ -55,22 +55,24 @@
 // For maximum performance in high-throughput applications, consider:
 //
 //  1. Using custom struct types that only include the fields you need
-//  2. Implementing the Unmarshaler interface for zero-allocation decoding
+//  2. Implementing the Unmarshaler interface for custom decoding
 //  3. Reusing the Reader instance across multiple goroutines (it's thread-safe)
 //
 // # Custom Unmarshaling
 //
-// For performance-critical applications, you can implement the Unmarshaler
-// interface to avoid reflection overhead:
+// For custom decoding logic, you can implement the mmdbdata.Unmarshaler interface,
+// similar to how encoding/json's json.Unmarshaler works. Types implementing this
+// interface will automatically use custom decoding logic when used with Reader.Lookup:
 //
 //	type FastCity struct {
 //		CountryISO string
 //		CityName   string
 //	}
 //
-//	func (c *FastCity) UnmarshalMaxMindDB(d *maxminddb.Decoder) error {
+//	func (c *FastCity) UnmarshalMaxMindDB(d *mmdbdata.Decoder) error {
 //		// Custom decoding logic using d.ReadMap(), d.ReadString(), etc.
-//		// See ExampleUnmarshaler for a complete implementation
+//		// Allows fine-grained control over how MaxMind DB data is decoded
+//		// See mmdbdata package documentation and ExampleUnmarshaler for complete examples
 //	}
 //
 // # Network Iteration
