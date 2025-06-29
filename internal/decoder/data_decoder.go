@@ -3,6 +3,7 @@ package decoder
 
 import (
 	"encoding/binary"
+	"fmt"
 	"math"
 	"math/big"
 
@@ -47,6 +48,62 @@ const (
 	// KindFloat32 is a 32-bit floating point number.
 	KindFloat32
 )
+
+// String returns a human-readable name for the Kind.
+func (k Kind) String() string {
+	switch k {
+	case KindExtended:
+		return "Extended"
+	case KindPointer:
+		return "Pointer"
+	case KindString:
+		return "String"
+	case KindFloat64:
+		return "Float64"
+	case KindBytes:
+		return "Bytes"
+	case KindUint16:
+		return "Uint16"
+	case KindUint32:
+		return "Uint32"
+	case KindMap:
+		return "Map"
+	case KindInt32:
+		return "Int32"
+	case KindUint64:
+		return "Uint64"
+	case KindUint128:
+		return "Uint128"
+	case KindSlice:
+		return "Slice"
+	case KindContainer:
+		return "Container"
+	case KindEndMarker:
+		return "EndMarker"
+	case KindBool:
+		return "Bool"
+	case KindFloat32:
+		return "Float32"
+	default:
+		return fmt.Sprintf("Unknown(%d)", int(k))
+	}
+}
+
+// IsContainer returns true if the Kind represents a container type (Map or Slice).
+func (k Kind) IsContainer() bool {
+	return k == KindMap || k == KindSlice
+}
+
+// IsScalar returns true if the Kind represents a scalar value type.
+func (k Kind) IsScalar() bool {
+	switch k {
+	case KindString, KindFloat64, KindBytes, KindUint16, KindUint32,
+		KindInt32, KindUint64, KindUint128, KindBool, KindFloat32:
+		return true
+	default:
+		return false
+	}
+}
 
 // DataDecoder is a decoder for the MMDB data section.
 // This is exported so mmdbdata package can use it, but still internal.
