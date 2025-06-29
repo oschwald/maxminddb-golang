@@ -379,7 +379,7 @@ func TestBoundsChecking(t *testing.T) {
 	// This should fail gracefully with an error instead of panicking
 	_, err := decoder.ReadString()
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "exceeds buffer length")
+	require.Contains(t, err.Error(), "unexpected end of database")
 
 	// Test DecodeBytes bounds checking with a separate buffer
 	bytesBuffer := []byte{
@@ -403,7 +403,7 @@ func TestBoundsChecking(t *testing.T) {
 
 	_, _, err = decoder2.ReadUInt128()
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "exceeds buffer length")
+	require.Contains(t, err.Error(), "unexpected end of database")
 }
 
 func TestPeekKind(t *testing.T) {

@@ -166,6 +166,12 @@ func (d *DataDecoder) DecodeBytes(size, offset uint) ([]byte, uint, error) {
 
 // DecodeFloat64 decodes a 64-bit float from the given offset.
 func (d *DataDecoder) DecodeFloat64(size, offset uint) (float64, uint, error) {
+	if size != 8 {
+		return 0, 0, mmdberrors.NewInvalidDatabaseError(
+			"the MaxMind DB file's data section contains bad data (float 64 size of %v)",
+			size,
+		)
+	}
 	if offset+size > uint(len(d.buffer)) {
 		return 0, 0, mmdberrors.NewOffsetError()
 	}
@@ -177,6 +183,12 @@ func (d *DataDecoder) DecodeFloat64(size, offset uint) (float64, uint, error) {
 
 // DecodeFloat32 decodes a 32-bit float from the given offset.
 func (d *DataDecoder) DecodeFloat32(size, offset uint) (float32, uint, error) {
+	if size != 4 {
+		return 0, 0, mmdberrors.NewInvalidDatabaseError(
+			"the MaxMind DB file's data section contains bad data (float32 size of %v)",
+			size,
+		)
+	}
 	if offset+size > uint(len(d.buffer)) {
 		return 0, 0, mmdberrors.NewOffsetError()
 	}
@@ -188,6 +200,12 @@ func (d *DataDecoder) DecodeFloat32(size, offset uint) (float32, uint, error) {
 
 // DecodeInt32 decodes a 32-bit signed integer from the given offset.
 func (d *DataDecoder) DecodeInt32(size, offset uint) (int32, uint, error) {
+	if size > 4 {
+		return 0, 0, mmdberrors.NewInvalidDatabaseError(
+			"the MaxMind DB file's data section contains bad data (int32 size of %v)",
+			size,
+		)
+	}
 	if offset+size > uint(len(d.buffer)) {
 		return 0, 0, mmdberrors.NewOffsetError()
 	}
@@ -236,6 +254,18 @@ func (d *DataDecoder) DecodePointer(
 	return pointer, newOffset, nil
 }
 
+// DecodeBool decodes a boolean from the given offset.
+func (*DataDecoder) DecodeBool(size, offset uint) (bool, uint, error) {
+	if size > 1 {
+		return false, 0, mmdberrors.NewInvalidDatabaseError(
+			"the MaxMind DB file's data section contains bad data (bool size of %v)",
+			size,
+		)
+	}
+	value, newOffset := decodeBool(size, offset)
+	return value, newOffset, nil
+}
+
 // DecodeString decodes a string from the given offset.
 func (d *DataDecoder) DecodeString(size, offset uint) (string, uint, error) {
 	if offset+size > uint(len(d.buffer)) {
@@ -249,6 +279,12 @@ func (d *DataDecoder) DecodeString(size, offset uint) (string, uint, error) {
 
 // DecodeUint16 decodes a 16-bit unsigned integer from the given offset.
 func (d *DataDecoder) DecodeUint16(size, offset uint) (uint16, uint, error) {
+	if size > 2 {
+		return 0, 0, mmdberrors.NewInvalidDatabaseError(
+			"the MaxMind DB file's data section contains bad data (uint16 size of %v)",
+			size,
+		)
+	}
 	if offset+size > uint(len(d.buffer)) {
 		return 0, 0, mmdberrors.NewOffsetError()
 	}
@@ -265,6 +301,12 @@ func (d *DataDecoder) DecodeUint16(size, offset uint) (uint16, uint, error) {
 
 // DecodeUint32 decodes a 32-bit unsigned integer from the given offset.
 func (d *DataDecoder) DecodeUint32(size, offset uint) (uint32, uint, error) {
+	if size > 4 {
+		return 0, 0, mmdberrors.NewInvalidDatabaseError(
+			"the MaxMind DB file's data section contains bad data (uint32 size of %v)",
+			size,
+		)
+	}
 	if offset+size > uint(len(d.buffer)) {
 		return 0, 0, mmdberrors.NewOffsetError()
 	}
@@ -281,6 +323,12 @@ func (d *DataDecoder) DecodeUint32(size, offset uint) (uint32, uint, error) {
 
 // DecodeUint64 decodes a 64-bit unsigned integer from the given offset.
 func (d *DataDecoder) DecodeUint64(size, offset uint) (uint64, uint, error) {
+	if size > 8 {
+		return 0, 0, mmdberrors.NewInvalidDatabaseError(
+			"the MaxMind DB file's data section contains bad data (uint64 size of %v)",
+			size,
+		)
+	}
 	if offset+size > uint(len(d.buffer)) {
 		return 0, 0, mmdberrors.NewOffsetError()
 	}
@@ -296,16 +344,32 @@ func (d *DataDecoder) DecodeUint64(size, offset uint) (uint64, uint, error) {
 }
 
 // DecodeUint128 decodes a 128-bit unsigned integer from the given offset.
-func (d *DataDecoder) DecodeUint128(size, offset uint) (*big.Int, uint, error) {
+// Returns the value as high and low 64-bit unsigned integers.
+func (d *DataDecoder) DecodeUint128(size, offset uint) (hi, lo uint64, newOffset uint, err error) {
+	if size > 16 {
+		return 0, 0, 0, mmdberrors.NewInvalidDatabaseError(
+			"the MaxMind DB file's data section contains bad data (uint128 size of %v)",
+			size,
+		)
+	}
 	if offset+size > uint(len(d.buffer)) {
-		return nil, 0, mmdberrors.NewOffsetError()
+		return 0, 0, 0, mmdberrors.NewOffsetError()
 	}
 
-	newOffset := offset + size
-	val := new(big.Int)
-	val.SetBytes(d.buffer[offset:newOffset])
+	newOffset = offset + size
 
-	return val, newOffset, nil
+	// Process bytes from most significant to least significant
+	for _, b := range d.buffer[offset:newOffset] {
+		var carry byte
+		lo, carry = append64(lo, b)
+		hi, _ = append64(hi, carry)
+	}
+
+	return hi, lo, newOffset, nil
+}
+
+func append64(val uint64, b byte) (uint64, byte) {
+	return (val << 8) | uint64(b), byte(val >> 56)
 }
 
 // DecodeKey decodes a map key into []byte slice. We use a []byte so that we
@@ -509,12 +573,22 @@ func (d *DataDecoder) decodeFromTypeToDeserializer(
 
 		return offset, dser.Uint64(v)
 	case KindUint128:
-		v, offset, err := d.DecodeUint128(size, offset)
+		hi, lo, offset, err := d.DecodeUint128(size, offset)
 		if err != nil {
 			return 0, err
 		}
 
-		return offset, dser.Uint128(v)
+		// Convert hi/lo representation to big.Int for deserializer
+		value := new(big.Int)
+		if hi == 0 {
+			value.SetUint64(lo)
+		} else {
+			value.SetUint64(hi)
+			value.Lsh(value, 64)                        // Shift high part left by 64 bits
+			value.Or(value, new(big.Int).SetUint64(lo)) // OR with low part
+		}
+
+		return offset, dser.Uint128(value)
 	default:
 		return 0, mmdberrors.NewInvalidDatabaseError("unknown type: %d", dtype)
 	}

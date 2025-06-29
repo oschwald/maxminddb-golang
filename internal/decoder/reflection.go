@@ -309,7 +309,7 @@ func (d *ReflectionDecoder) decodeFromType(
 	// For these types, size has a special meaning
 	switch dtype {
 	case KindBool:
-		return unmarshalBool(size, offset, result)
+		return d.unmarshalBool(size, offset, result)
 	case KindMap:
 		return d.unmarshalMap(size, offset, result, depth)
 	case KindPointer:
@@ -339,14 +339,11 @@ func (d *ReflectionDecoder) decodeFromType(
 	}
 }
 
-func unmarshalBool(size, offset uint, result reflect.Value) (uint, error) {
-	if size > 1 {
-		return 0, mmdberrors.NewInvalidDatabaseError(
-			"the MaxMind DB file's data section contains bad data (bool size of %v)",
-			size,
-		)
+func (d *ReflectionDecoder) unmarshalBool(size, offset uint, result reflect.Value) (uint, error) {
+	value, newOffset, err := d.DecodeBool(size, offset)
+	if err != nil {
+		return 0, err
 	}
-	value, newOffset := decodeBool(size, offset)
 
 	switch result.Kind() {
 	case reflect.Bool:
@@ -416,12 +413,6 @@ func (d *ReflectionDecoder) unmarshalBytes(size, offset uint, result reflect.Val
 func (d *ReflectionDecoder) unmarshalFloat32(
 	size, offset uint, result reflect.Value,
 ) (uint, error) {
-	if size != 4 {
-		return 0, mmdberrors.NewInvalidDatabaseError(
-			"the MaxMind DB file's data section contains bad data (float32 size of %v)",
-			size,
-		)
-	}
 	value, newOffset, err := d.DecodeFloat32(size, offset)
 	if err != nil {
 		return 0, err
@@ -443,12 +434,6 @@ func (d *ReflectionDecoder) unmarshalFloat32(
 func (d *ReflectionDecoder) unmarshalFloat64(
 	size, offset uint, result reflect.Value,
 ) (uint, error) {
-	if size != 8 {
-		return 0, mmdberrors.NewInvalidDatabaseError(
-			"the MaxMind DB file's data section contains bad data (float 64 size of %v)",
-			size,
-		)
-	}
 	value, newOffset, err := d.DecodeFloat64(size, offset)
 	if err != nil {
 		return 0, err
@@ -471,13 +456,6 @@ func (d *ReflectionDecoder) unmarshalFloat64(
 }
 
 func (d *ReflectionDecoder) unmarshalInt32(size, offset uint, result reflect.Value) (uint, error) {
-	if size > 4 {
-		return 0, mmdberrors.NewInvalidDatabaseError(
-			"the MaxMind DB file's data section contains bad data (int32 size of %v)",
-			size,
-		)
-	}
-
 	value, newOffset, err := d.DecodeInt32(size, offset)
 	if err != nil {
 		return 0, err
@@ -593,15 +571,25 @@ func (d *ReflectionDecoder) unmarshalUint(
 	result reflect.Value,
 	uintType uint,
 ) (uint, error) {
-	if size > uintType/8 {
+	// Use the appropriate DataDecoder method based on uint type
+	var value uint64
+	var newOffset uint
+	var err error
+
+	switch uintType {
+	case 16:
+		v16, off, e := d.DecodeUint16(size, offset)
+		value, newOffset, err = uint64(v16), off, e
+	case 32:
+		v32, off, e := d.DecodeUint32(size, offset)
+		value, newOffset, err = uint64(v32), off, e
+	case 64:
+		value, newOffset, err = d.DecodeUint64(size, offset)
+	default:
 		return 0, mmdberrors.NewInvalidDatabaseError(
-			"the MaxMind DB file's data section contains bad data (uint%v size of %v)",
-			uintType,
-			size,
-		)
+			"unsupported uint type: %d", uintType)
 	}
 
-	value, newOffset, err := d.DecodeUint64(size, offset)
 	if err != nil {
 		return 0, err
 	}
@@ -637,16 +625,19 @@ var bigIntType = reflect.TypeOf(big.Int{})
 func (d *ReflectionDecoder) unmarshalUint128(
 	size, offset uint, result reflect.Value,
 ) (uint, error) {
-	if size > 16 {
-		return 0, mmdberrors.NewInvalidDatabaseError(
-			"the MaxMind DB file's data section contains bad data (uint128 size of %v)",
-			size,
-		)
-	}
-
-	value, newOffset, err := d.DecodeUint128(size, offset)
+	hi, lo, newOffset, err := d.DecodeUint128(size, offset)
 	if err != nil {
 		return 0, err
+	}
+
+	// Convert hi/lo representation to big.Int
+	value := new(big.Int)
+	if hi == 0 {
+		value.SetUint64(lo)
+	} else {
+		value.SetUint64(hi)
+		value.Lsh(value, 64)                        // Shift high part left by 64 bits
+		value.Or(value, new(big.Int).SetUint64(lo)) // OR with low part
 	}
 
 	switch result.Kind() {
