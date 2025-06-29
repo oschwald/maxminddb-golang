@@ -211,7 +211,7 @@ func TestDecodeByte(t *testing.T) {
 		// This mapping might need verification based on the actual type codes.
 		// Assuming TypeString=2 (010.....) -> TypeBytes=4 (100.....)
 		// Need to check the actual constants [cite: 4, 5]
-		newCtrlByte := (oldCtrl[0] & 0x1f) | (byte(TypeBytes) << 5)
+		newCtrlByte := (oldCtrl[0] & 0x1f) | (byte(KindBytes) << 5)
 		newCtrl := []byte{newCtrlByte}
 
 		newKey := hex.EncodeToString(newCtrl) + key[2:]
@@ -406,21 +406,21 @@ func TestBoundsChecking(t *testing.T) {
 	require.Contains(t, err.Error(), "exceeds buffer length")
 }
 
-func TestPeekType(t *testing.T) {
+func TestPeekKind(t *testing.T) {
 	tests := []struct {
 		name     string
 		buffer   []byte
-		expected Type
+		expected Kind
 	}{
 		{
 			name:     "string type",
 			buffer:   []byte{0x44, 't', 'e', 's', 't'}, // String "test" (TypeString=2, (2<<5)|4)
-			expected: TypeString,
+			expected: KindString,
 		},
 		{
 			name:     "map type",
 			buffer:   []byte{0xE0}, // Empty map (TypeMap=7, (7<<5)|0)
-			expected: TypeMap,
+			expected: KindMap,
 		},
 		{
 			name: "slice type",
@@ -428,7 +428,7 @@ func TestPeekType(t *testing.T) {
 				0x00,
 				0x04,
 			}, // Empty slice (TypeSlice=11, extended type: 0x00, TypeSlice-7=4)
-			expected: TypeSlice,
+			expected: KindSlice,
 		},
 		{
 			name: "bool type",
@@ -436,7 +436,7 @@ func TestPeekType(t *testing.T) {
 				0x01,
 				0x07,
 			}, // Bool true (TypeBool=14, extended type: size 1, TypeBool-7=7)
-			expected: TypeBool,
+			expected: KindBool,
 		},
 	}
 
@@ -444,8 +444,8 @@ func TestPeekType(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			decoder := &Decoder{d: NewDataDecoder(tt.buffer), offset: 0}
 
-			actualType, err := decoder.PeekType()
-			require.NoError(t, err, "PeekType failed")
+			actualType, err := decoder.PeekKind()
+			require.NoError(t, err, "PeekKind failed")
 
 			require.Equal(
 				t,
@@ -456,15 +456,15 @@ func TestPeekType(t *testing.T) {
 				actualType,
 			)
 
-			// Verify that PeekType doesn't consume the value
-			actualType2, err := decoder.PeekType()
-			require.NoError(t, err, "Second PeekType failed")
+			// Verify that PeekKind doesn't consume the value
+			actualType2, err := decoder.PeekKind()
+			require.NoError(t, err, "Second PeekKind failed")
 
 			require.Equal(
 				t,
 				tt.expected,
 				actualType2,
-				"Second PeekType gave different result: expected %d, got %d",
+				"Second PeekKind gave different result: expected %d, got %d",
 				tt.expected,
 				actualType2,
 			)
@@ -472,9 +472,9 @@ func TestPeekType(t *testing.T) {
 	}
 }
 
-// TestPeekTypeWithPointer tests that PeekType correctly follows pointers
-// to get the actual type of the pointed-to value.
-func TestPeekTypeWithPointer(t *testing.T) {
+// TestPeekKindWithPointer tests that PeekKind correctly follows pointers
+// to get the actual kind of the pointed-to value.
+func TestPeekKindWithPointer(t *testing.T) {
 	// Create a buffer with a pointer that points to a string
 	// This is a simplified test - in real MMDB files pointers are more complex
 	buffer := []byte{
@@ -486,22 +486,22 @@ func TestPeekTypeWithPointer(t *testing.T) {
 
 	decoder := &Decoder{d: NewDataDecoder(buffer), offset: 0}
 
-	// PeekType should follow the pointer and return TypeString
-	actualType, err := decoder.PeekType()
-	require.NoError(t, err, "PeekType with pointer failed")
+	// PeekKind should follow the pointer and return KindString
+	actualType, err := decoder.PeekKind()
+	require.NoError(t, err, "PeekKind with pointer failed")
 
 	// Note: This test may need adjustment based on actual pointer encoding
-	// The important thing is that PeekType follows pointers
-	if actualType != TypePointer {
-		// If the implementation follows pointers completely, it should return the target type
-		// If it just returns TypePointer, that's also acceptable behavior
-		t.Logf("PeekType returned %d (this may be expected behavior)", actualType)
+	// The important thing is that PeekKind follows pointers
+	if actualType != KindPointer {
+		// If the implementation follows pointers completely, it should return the target kind
+		// If it just returns KindPointer, that's also acceptable behavior
+		t.Logf("PeekKind returned %d (this may be expected behavior)", actualType)
 	}
 }
 
-// ExampleDecoder_PeekType demonstrates how to use PeekType for
+// ExampleDecoder_PeekKind demonstrates how to use PeekKind for
 // look-ahead parsing without consuming values.
-func ExampleDecoder_PeekType() {
+func ExampleDecoder_PeekKind() {
 	// Create test data with different types
 	testCases := [][]byte{
 		{0x44, 't', 'e', 's', 't'}, // String
@@ -515,22 +515,22 @@ func ExampleDecoder_PeekType() {
 	for i, buffer := range testCases {
 		decoder := &Decoder{d: NewDataDecoder(buffer), offset: 0}
 
-		// Peek at the type without consuming it
-		typ, err := decoder.PeekType()
+		// Peek at the kind without consuming it
+		typ, err := decoder.PeekKind()
 		if err != nil {
 			panic(err)
 		}
 
 		fmt.Printf("Type %d: %s (value: %d)\n", i+1, typeNames[i], typ)
 
-		// PeekType doesn't consume, so we can peek again
-		typ2, err := decoder.PeekType()
+		// PeekKind doesn't consume, so we can peek again
+		typ2, err := decoder.PeekKind()
 		if err != nil {
 			panic(err)
 		}
 
 		if typ != typ2 {
-			fmt.Printf("ERROR: PeekType consumed the value!\n")
+			fmt.Printf("ERROR: PeekKind consumed the value!\n")
 		}
 	}
 

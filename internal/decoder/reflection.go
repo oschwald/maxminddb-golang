@@ -71,7 +71,7 @@ func (d *ReflectionDecoder) DecodePath(
 PATH:
 	for i, v := range path {
 		var (
-			typeNum Type
+			typeNum Kind
 			size    uint
 			err     error
 		)
@@ -80,7 +80,7 @@ PATH:
 			return err
 		}
 
-		if typeNum == TypePointer {
+		if typeNum == KindPointer {
 			pointer, _, err := d.DecodePointer(size, offset)
 			if err != nil {
 				return err
@@ -95,7 +95,7 @@ PATH:
 		switch v := v.(type) {
 		case string:
 			// We are expecting a map
-			if typeNum != TypeMap {
+			if typeNum != KindMap {
 				// XXX - use type names in errors.
 				return fmt.Errorf("expected a map for %s but found %d", v, typeNum)
 			}
@@ -117,7 +117,7 @@ PATH:
 			return nil
 		case int:
 			// We are expecting an array
-			if typeNum != TypeSlice {
+			if typeNum != KindSlice {
 				// XXX - use type names in errors.
 				return fmt.Errorf("expected a slice for %d but found %d", v, typeNum)
 			}
@@ -192,7 +192,7 @@ func (d *ReflectionDecoder) decode(offset uint, result reflect.Value, depth int)
 		return 0, err
 	}
 
-	if typeNum != TypePointer && result.Kind() == reflect.Uintptr {
+	if typeNum != KindPointer && result.Kind() == reflect.Uintptr {
 		result.Set(reflect.ValueOf(uintptr(offset)))
 		return d.NextValueOffset(offset, 1)
 	}
@@ -200,7 +200,7 @@ func (d *ReflectionDecoder) decode(offset uint, result reflect.Value, depth int)
 }
 
 func (d *ReflectionDecoder) decodeFromType(
-	dtype Type,
+	dtype Kind,
 	size uint,
 	offset uint,
 	result reflect.Value,
@@ -210,31 +210,31 @@ func (d *ReflectionDecoder) decodeFromType(
 
 	// For these types, size has a special meaning
 	switch dtype {
-	case TypeBool:
+	case KindBool:
 		return unmarshalBool(size, offset, result)
-	case TypeMap:
+	case KindMap:
 		return d.unmarshalMap(size, offset, result, depth)
-	case TypePointer:
+	case KindPointer:
 		return d.unmarshalPointer(size, offset, result, depth)
-	case TypeSlice:
+	case KindSlice:
 		return d.unmarshalSlice(size, offset, result, depth)
-	case TypeBytes:
+	case KindBytes:
 		return d.unmarshalBytes(size, offset, result)
-	case TypeFloat32:
+	case KindFloat32:
 		return d.unmarshalFloat32(size, offset, result)
-	case TypeFloat64:
+	case KindFloat64:
 		return d.unmarshalFloat64(size, offset, result)
-	case TypeInt32:
+	case KindInt32:
 		return d.unmarshalInt32(size, offset, result)
-	case TypeUint16:
+	case KindUint16:
 		return d.unmarshalUint(size, offset, result, 16)
-	case TypeUint32:
+	case KindUint32:
 		return d.unmarshalUint(size, offset, result, 32)
-	case TypeUint64:
+	case KindUint64:
 		return d.unmarshalUint(size, offset, result, 64)
-	case TypeString:
+	case KindString:
 		return d.unmarshalString(size, offset, result)
-	case TypeUint128:
+	case KindUint128:
 		return d.unmarshalUint128(size, offset, result)
 	default:
 		return 0, mmdberrors.NewInvalidDatabaseError("unknown type: %d", dtype)

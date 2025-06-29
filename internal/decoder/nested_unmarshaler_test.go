@@ -141,19 +141,19 @@ func TestNestedUnmarshalerInSlice(t *testing.T) {
 
 	// Test data: a map with "Items" -> [1, 2, 3]
 	data := []byte{
-		// Map with 1 item (TypeMap=7 << 5 | size=1)
+		// Map with 1 item (KindMap=7 << 5 | size=1)
 		0xe1,
-		// Key "Items" (TypeString=2 << 5 | size=5)
+		// Key "Items" (KindString=2 << 5 | size=5)
 		0x45, 'I', 't', 'e', 'm', 's',
-		// Slice with 3 items - TypeSlice=11, which is > 7, so we need extended type
-		// Extended type: ctrl_byte = (TypeExtended << 5) | size = (0 << 5) | 3 = 0x03
-		// Next byte: TypeSlice - 7 = 11 - 7 = 4
+		// Slice with 3 items - KindSlice=11, which is > 7, so we need extended type
+		// Extended type: ctrl_byte = (KindExtended << 5) | size = (0 << 5) | 3 = 0x03
+		// Next byte: KindSlice - 7 = 11 - 7 = 4
 		0x03, 0x04,
-		// Value 1 (TypeUint32=6 << 5 | size=1)
+		// Value 1 (KindUint32=6 << 5 | size=1)
 		0xc1, 0x01,
-		// Value 2 (TypeUint32=6 << 5 | size=1)
+		// Value 2 (KindUint32=6 << 5 | size=1)
 		0xc1, 0x02,
-		// Value 3 (TypeUint32=6 << 5 | size=1)
+		// Value 3 (KindUint32=6 << 5 | size=1)
 		0xc1, 0x03,
 	}
 

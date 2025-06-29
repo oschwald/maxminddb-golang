@@ -27,7 +27,7 @@ func NewDecoder(d DataDecoder, offset uint) *Decoder {
 //
 // Returns an error if the database is malformed or if the pointed value is not a bool.
 func (d *Decoder) DecodeBool() (bool, error) {
-	size, offset, err := d.decodeCtrlDataAndFollow(TypeBool)
+	size, offset, err := d.decodeCtrlDataAndFollow(KindBool)
 	if err != nil {
 		return false, err
 	}
@@ -49,7 +49,7 @@ func (d *Decoder) DecodeBool() (bool, error) {
 //
 // Returns an error if the database is malformed or if the pointed value is not a string.
 func (d *Decoder) DecodeString() (string, error) {
-	val, err := d.decodeBytes(TypeString)
+	val, err := d.decodeBytes(KindString)
 	if err != nil {
 		return "", err
 	}
@@ -60,14 +60,14 @@ func (d *Decoder) DecodeString() (string, error) {
 //
 // Returns an error if the database is malformed or if the pointed value is not bytes.
 func (d *Decoder) DecodeBytes() ([]byte, error) {
-	return d.decodeBytes(TypeBytes)
+	return d.decodeBytes(KindBytes)
 }
 
 // DecodeFloat32 decodes the value pointed by the decoder as a float32.
 //
 // Returns an error if the database is malformed or if the pointed value is not a float.
 func (d *Decoder) DecodeFloat32() (float32, error) {
-	size, offset, err := d.decodeCtrlDataAndFollow(TypeFloat32)
+	size, offset, err := d.decodeCtrlDataAndFollow(KindFloat32)
 	if err != nil {
 		return 0, err
 	}
@@ -92,7 +92,7 @@ func (d *Decoder) DecodeFloat32() (float32, error) {
 //
 // Returns an error if the database is malformed or if the pointed value is not a double.
 func (d *Decoder) DecodeFloat64() (float64, error) {
-	size, offset, err := d.decodeCtrlDataAndFollow(TypeFloat64)
+	size, offset, err := d.decodeCtrlDataAndFollow(KindFloat64)
 	if err != nil {
 		return 0, err
 	}
@@ -117,7 +117,7 @@ func (d *Decoder) DecodeFloat64() (float64, error) {
 //
 // Returns an error if the database is malformed or if the pointed value is not an int32.
 func (d *Decoder) DecodeInt32() (int32, error) {
-	size, offset, err := d.decodeCtrlDataAndFollow(TypeInt32)
+	size, offset, err := d.decodeCtrlDataAndFollow(KindInt32)
 	if err != nil {
 		return 0, err
 	}
@@ -143,7 +143,7 @@ func (d *Decoder) DecodeInt32() (int32, error) {
 //
 // Returns an error if the database is malformed or if the pointed value is not an uint16.
 func (d *Decoder) DecodeUInt16() (uint16, error) {
-	size, offset, err := d.decodeCtrlDataAndFollow(TypeUint16)
+	size, offset, err := d.decodeCtrlDataAndFollow(KindUint16)
 	if err != nil {
 		return 0, err
 	}
@@ -168,7 +168,7 @@ func (d *Decoder) DecodeUInt16() (uint16, error) {
 //
 // Returns an error if the database is malformed or if the pointed value is not an uint32.
 func (d *Decoder) DecodeUInt32() (uint32, error) {
-	size, offset, err := d.decodeCtrlDataAndFollow(TypeUint32)
+	size, offset, err := d.decodeCtrlDataAndFollow(KindUint32)
 	if err != nil {
 		return 0, err
 	}
@@ -193,7 +193,7 @@ func (d *Decoder) DecodeUInt32() (uint32, error) {
 //
 // Returns an error if the database is malformed or if the pointed value is not an uint64.
 func (d *Decoder) DecodeUInt64() (uint64, error) {
-	size, offset, err := d.decodeCtrlDataAndFollow(TypeUint64)
+	size, offset, err := d.decodeCtrlDataAndFollow(KindUint64)
 	if err != nil {
 		return 0, err
 	}
@@ -218,7 +218,7 @@ func (d *Decoder) DecodeUInt64() (uint64, error) {
 //
 // Returns an error if the database is malformed or if the pointed value is not an uint128.
 func (d *Decoder) DecodeUInt128() (hi, lo uint64, err error) {
-	size, offset, err := d.decodeCtrlDataAndFollow(TypeUint128)
+	size, offset, err := d.decodeCtrlDataAndFollow(KindUint128)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -261,7 +261,7 @@ func append64(val uint64, b byte) (uint64, byte) {
 // value is not a map.
 func (d *Decoder) DecodeMap() iter.Seq2[[]byte, error] {
 	return func(yield func([]byte, error) bool) {
-		size, offset, err := d.decodeCtrlDataAndFollow(TypeMap)
+		size, offset, err := d.decodeCtrlDataAndFollow(KindMap)
 		if err != nil {
 			yield(nil, err)
 			return
@@ -303,7 +303,7 @@ func (d *Decoder) DecodeMap() iter.Seq2[[]byte, error] {
 // not a slice.
 func (d *Decoder) DecodeSlice() iter.Seq[error] {
 	return func(yield func(error) bool) {
-		size, offset, err := d.decodeCtrlDataAndFollow(TypeSlice)
+		size, offset, err := d.decodeCtrlDataAndFollow(KindSlice)
 		if err != nil {
 			yield(err)
 			return
@@ -355,25 +355,25 @@ func (d *Decoder) SkipValue() error {
 	return nil
 }
 
-// PeekType returns the type of the current value without consuming it.
+// PeekKind returns the kind of the current value without consuming it.
 // This allows for look-ahead parsing similar to jsontext.Decoder.PeekKind().
-func (d *Decoder) PeekType() (Type, error) {
-	typeNum, _, _, err := d.d.DecodeCtrlData(d.offset)
+func (d *Decoder) PeekKind() (Kind, error) {
+	kindNum, _, _, err := d.d.DecodeCtrlData(d.offset)
 	if err != nil {
 		return 0, err
 	}
 
-	// Follow pointers to get the actual type
-	if typeNum == TypePointer {
-		// We need to follow the pointer to get the real type
+	// Follow pointers to get the actual kind
+	if kindNum == KindPointer {
+		// We need to follow the pointer to get the real kind
 		dataOffset := d.offset
 		for {
 			var size uint
-			typeNum, size, dataOffset, err = d.d.DecodeCtrlData(dataOffset)
+			kindNum, size, dataOffset, err = d.d.DecodeCtrlData(dataOffset)
 			if err != nil {
 				return 0, err
 			}
-			if typeNum != TypePointer {
+			if kindNum != KindPointer {
 				break
 			}
 			dataOffset, _, err = d.d.DecodePointer(size, dataOffset)
@@ -383,7 +383,7 @@ func (d *Decoder) PeekType() (Type, error) {
 		}
 	}
 
-	return typeNum, nil
+	return kindNum, nil
 }
 
 func (d *Decoder) reset(offset uint) {
@@ -406,22 +406,22 @@ func (d *Decoder) getNextOffset() (uint, error) {
 	return d.nextOffset, nil
 }
 
-func unexpectedTypeErr(expectedType, actualType Type) error {
-	return fmt.Errorf("unexpected type %d, expected %d", actualType, expectedType)
+func unexpectedKindErr(expectedKind, actualKind Kind) error {
+	return fmt.Errorf("unexpected kind %d, expected %d", actualKind, expectedKind)
 }
 
-func (d *Decoder) decodeCtrlDataAndFollow(expectedType Type) (uint, uint, error) {
+func (d *Decoder) decodeCtrlDataAndFollow(expectedKind Kind) (uint, uint, error) {
 	dataOffset := d.offset
 	for {
-		var typeNum Type
+		var kindNum Kind
 		var size uint
 		var err error
-		typeNum, size, dataOffset, err = d.d.DecodeCtrlData(dataOffset)
+		kindNum, size, dataOffset, err = d.d.DecodeCtrlData(dataOffset)
 		if err != nil {
 			return 0, 0, err
 		}
 
-		if typeNum == TypePointer {
+		if kindNum == KindPointer {
 			var nextOffset uint
 			dataOffset, nextOffset, err = d.d.DecodePointer(size, dataOffset)
 			if err != nil {
@@ -431,16 +431,16 @@ func (d *Decoder) decodeCtrlDataAndFollow(expectedType Type) (uint, uint, error)
 			continue
 		}
 
-		if typeNum != expectedType {
-			return 0, 0, unexpectedTypeErr(expectedType, typeNum)
+		if kindNum != expectedKind {
+			return 0, 0, unexpectedKindErr(expectedKind, kindNum)
 		}
 
 		return size, dataOffset, nil
 	}
 }
 
-func (d *Decoder) decodeBytes(typ Type) ([]byte, error) {
-	size, offset, err := d.decodeCtrlDataAndFollow(typ)
+func (d *Decoder) decodeBytes(kind Kind) ([]byte, error) {
+	size, offset, err := d.decodeCtrlDataAndFollow(kind)
 	if err != nil {
 		return nil, err
 	}

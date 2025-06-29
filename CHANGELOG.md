@@ -13,7 +13,7 @@
   `json.Unmarshaler`.
 - Added public `Decoder` type in `mmdbdata` package with methods for manual
   decoding including `DecodeMap()`, `DecodeSlice()`, `DecodeString()`,
-  `DecodeUInt32()`, `PeekType()`, etc. The main `maxminddb` package re-exports
+  `DecodeUInt32()`, `PeekKind()`, etc. The main `maxminddb` package re-exports
   these types for backward compatibility.
 - Enhanced `UnmarshalMaxMindDB` to work with nested struct fields, slice
   elements, and map values. The custom unmarshaler is now called recursively

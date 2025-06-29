@@ -9,43 +9,43 @@ import (
 	"github.com/oschwald/maxminddb-golang/v2/internal/mmdberrors"
 )
 
-// Type constants for the different MMDB data types.
-type Type int
+// Kind constants for the different MMDB data kinds.
+type Kind int
 
-// MMDB data type constants.
+// MMDB data kind constants.
 const (
-	// TypeExtended indicates an extended type.
-	TypeExtended Type = iota
-	// TypePointer is a pointer to another location in the data section.
-	TypePointer
-	// TypeString is a UTF-8 string.
-	TypeString
-	// TypeFloat64 is a 64-bit floating point number.
-	TypeFloat64
-	// TypeBytes is a byte slice.
-	TypeBytes
-	// TypeUint16 is a 16-bit unsigned integer.
-	TypeUint16
-	// TypeUint32 is a 32-bit unsigned integer.
-	TypeUint32
-	// TypeMap is a map from strings to other data types.
-	TypeMap
-	// TypeInt32 is a 32-bit signed integer.
-	TypeInt32
-	// TypeUint64 is a 64-bit unsigned integer.
-	TypeUint64
-	// TypeUint128 is a 128-bit unsigned integer.
-	TypeUint128
-	// TypeSlice is an array of values.
-	TypeSlice
-	// TypeContainer is a data cache container.
-	TypeContainer
-	// TypeEndMarker marks the end of the data section.
-	TypeEndMarker
-	// TypeBool is a boolean value.
-	TypeBool
-	// TypeFloat32 is a 32-bit floating point number.
-	TypeFloat32
+	// KindExtended indicates an extended kind.
+	KindExtended Kind = iota
+	// KindPointer is a pointer to another location in the data section.
+	KindPointer
+	// KindString is a UTF-8 string.
+	KindString
+	// KindFloat64 is a 64-bit floating point number.
+	KindFloat64
+	// KindBytes is a byte slice.
+	KindBytes
+	// KindUint16 is a 16-bit unsigned integer.
+	KindUint16
+	// KindUint32 is a 32-bit unsigned integer.
+	KindUint32
+	// KindMap is a map from strings to other data types.
+	KindMap
+	// KindInt32 is a 32-bit signed integer.
+	KindInt32
+	// KindUint64 is a 64-bit unsigned integer.
+	KindUint64
+	// KindUint128 is a 128-bit unsigned integer.
+	KindUint128
+	// KindSlice is an array of values.
+	KindSlice
+	// KindContainer is a data cache container.
+	KindContainer
+	// KindEndMarker marks the end of the data section.
+	KindEndMarker
+	// KindBool is a boolean value.
+	KindBool
+	// KindFloat32 is a 32-bit floating point number.
+	KindFloat32
 )
 
 // DataDecoder is a decoder for the MMDB data section.
@@ -70,25 +70,25 @@ func (d *DataDecoder) Buffer() []byte {
 }
 
 // DecodeCtrlData decodes the control byte and data info at the given offset.
-func (d *DataDecoder) DecodeCtrlData(offset uint) (Type, uint, uint, error) {
+func (d *DataDecoder) DecodeCtrlData(offset uint) (Kind, uint, uint, error) {
 	newOffset := offset + 1
 	if offset >= uint(len(d.buffer)) {
 		return 0, 0, 0, mmdberrors.NewOffsetError()
 	}
 	ctrlByte := d.buffer[offset]
 
-	typeNum := Type(ctrlByte >> 5)
-	if typeNum == TypeExtended {
+	kindNum := Kind(ctrlByte >> 5)
+	if kindNum == KindExtended {
 		if newOffset >= uint(len(d.buffer)) {
 			return 0, 0, 0, mmdberrors.NewOffsetError()
 		}
-		typeNum = Type(d.buffer[newOffset] + 7)
+		kindNum = Kind(d.buffer[newOffset] + 7)
 		newOffset++
 	}
 
 	var size uint
-	size, newOffset, err := d.sizeFromCtrlByte(ctrlByte, newOffset, typeNum)
-	return typeNum, size, newOffset, err
+	size, newOffset, err := d.sizeFromCtrlByte(ctrlByte, newOffset, kindNum)
+	return kindNum, size, newOffset, err
 }
 
 // DecodeBytes decodes a byte slice from the given offset with the given size.
@@ -251,11 +251,11 @@ func (d *DataDecoder) DecodeUint128(size, offset uint) (*big.Int, uint, error) {
 // copying the bytes when decoding a struct. Previously, we achieved this by
 // using unsafe.
 func (d *DataDecoder) DecodeKey(offset uint) ([]byte, uint, error) {
-	typeNum, size, dataOffset, err := d.DecodeCtrlData(offset)
+	kindNum, size, dataOffset, err := d.DecodeCtrlData(offset)
 	if err != nil {
 		return nil, 0, err
 	}
-	if typeNum == TypePointer {
+	if kindNum == KindPointer {
 		pointer, ptrOffset, err := d.DecodePointer(size, dataOffset)
 		if err != nil {
 			return nil, 0, err
@@ -263,10 +263,10 @@ func (d *DataDecoder) DecodeKey(offset uint) ([]byte, uint, error) {
 		key, _, err := d.DecodeKey(pointer)
 		return key, ptrOffset, err
 	}
-	if typeNum != TypeString {
+	if kindNum != KindString {
 		return nil, 0, mmdberrors.NewInvalidDatabaseError(
 			"unexpected type when decoding string: %v",
-			typeNum,
+			kindNum,
 		)
 	}
 	newOffset := dataOffset + size
@@ -283,21 +283,21 @@ func (d *DataDecoder) NextValueOffset(offset, numberToSkip uint) (uint, error) {
 	if numberToSkip == 0 {
 		return offset, nil
 	}
-	typeNum, size, offset, err := d.DecodeCtrlData(offset)
+	kindNum, size, offset, err := d.DecodeCtrlData(offset)
 	if err != nil {
 		return 0, err
 	}
-	switch typeNum {
-	case TypePointer:
+	switch kindNum {
+	case KindPointer:
 		_, offset, err = d.DecodePointer(size, offset)
 		if err != nil {
 			return 0, err
 		}
-	case TypeMap:
+	case KindMap:
 		numberToSkip += 2 * size
-	case TypeSlice:
+	case KindSlice:
 		numberToSkip += size
-	case TypeBool:
+	case KindBool:
 	default:
 		offset += size
 	}
@@ -326,21 +326,21 @@ func (d *DataDecoder) decodeToDeserializer(
 		return 0, nil
 	}
 
-	typeNum, size, newOffset, err := d.DecodeCtrlData(offset)
+	kindNum, size, newOffset, err := d.DecodeCtrlData(offset)
 	if err != nil {
 		return 0, err
 	}
 
-	return d.decodeFromTypeToDeserializer(typeNum, size, newOffset, dser, depth+1)
+	return d.decodeFromTypeToDeserializer(kindNum, size, newOffset, dser, depth+1)
 }
 
 func (d *DataDecoder) sizeFromCtrlByte(
 	ctrlByte byte,
 	offset uint,
-	typeNum Type,
+	kindNum Kind,
 ) (uint, uint, error) {
 	size := uint(ctrlByte & 0x1f)
-	if typeNum == TypeExtended {
+	if kindNum == KindExtended {
 		return size, offset, nil
 	}
 
@@ -370,7 +370,7 @@ func (d *DataDecoder) sizeFromCtrlByte(
 }
 
 func (d *DataDecoder) decodeFromTypeToDeserializer(
-	dtype Type,
+	dtype Kind,
 	size uint,
 	offset uint,
 	dser deserializer,
@@ -378,75 +378,75 @@ func (d *DataDecoder) decodeFromTypeToDeserializer(
 ) (uint, error) {
 	// For these types, size has a special meaning
 	switch dtype {
-	case TypeBool:
+	case KindBool:
 		v, offset := decodeBool(size, offset)
 		return offset, dser.Bool(v)
-	case TypeMap:
+	case KindMap:
 		return d.decodeMapToDeserializer(size, offset, dser, depth)
-	case TypePointer:
+	case KindPointer:
 		pointer, newOffset, err := d.DecodePointer(size, offset)
 		if err != nil {
 			return 0, err
 		}
 		_, err = d.decodeToDeserializer(pointer, dser, depth, false)
 		return newOffset, err
-	case TypeSlice:
+	case KindSlice:
 		return d.decodeSliceToDeserializer(size, offset, dser, depth)
-	case TypeBytes:
+	case KindBytes:
 		v, offset, err := d.DecodeBytes(size, offset)
 		if err != nil {
 			return 0, err
 		}
 		return offset, dser.Bytes(v)
-	case TypeFloat32:
+	case KindFloat32:
 		v, offset, err := d.DecodeFloat32(size, offset)
 		if err != nil {
 			return 0, err
 		}
 		return offset, dser.Float32(v)
-	case TypeFloat64:
+	case KindFloat64:
 		v, offset, err := d.DecodeFloat64(size, offset)
 		if err != nil {
 			return 0, err
 		}
 
 		return offset, dser.Float64(v)
-	case TypeInt32:
+	case KindInt32:
 		v, offset, err := d.DecodeInt32(size, offset)
 		if err != nil {
 			return 0, err
 		}
 
 		return offset, dser.Int32(v)
-	case TypeString:
+	case KindString:
 		v, offset, err := d.DecodeString(size, offset)
 		if err != nil {
 			return 0, err
 		}
 
 		return offset, dser.String(v)
-	case TypeUint16:
+	case KindUint16:
 		v, offset, err := d.DecodeUint16(size, offset)
 		if err != nil {
 			return 0, err
 		}
 
 		return offset, dser.Uint16(v)
-	case TypeUint32:
+	case KindUint32:
 		v, offset, err := d.DecodeUint32(size, offset)
 		if err != nil {
 			return 0, err
 		}
 
 		return offset, dser.Uint32(v)
-	case TypeUint64:
+	case KindUint64:
 		v, offset, err := d.DecodeUint64(size, offset)
 		if err != nil {
 			return 0, err
 		}
 
 		return offset, dser.Uint64(v)
-	case TypeUint128:
+	case KindUint128:
 		v, offset, err := d.DecodeUint128(size, offset)
 		if err != nil {
 			return 0, err
