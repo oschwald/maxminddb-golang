@@ -20,6 +20,14 @@ func newDecoderFromHex(t *testing.T, hexStr string) *Decoder {
 	return NewDecoder(dd, 0)         // [cite: 26]
 }
 
+// Helper function to create reasonable test names from potentially long hex strings.
+func makeTestName(hexStr string) string {
+	if len(hexStr) <= 20 {
+		return hexStr
+	}
+	return hexStr[:16] + "..." + hexStr[len(hexStr)-4:]
+}
+
 func TestDecodeBool(t *testing.T) {
 	tests := map[string]bool{
 		"0007": false, // [cite: 29]
@@ -192,7 +200,7 @@ func TestDecodeSlice(t *testing.T) {
 
 func TestDecodeString(t *testing.T) {
 	for hexStr, expected := range testStrings {
-		t.Run(hexStr, func(t *testing.T) {
+		t.Run(makeTestName(hexStr), func(t *testing.T) {
 			decoder := newDecoderFromHex(t, hexStr)
 			result, err := decoder.ReadString() // [cite: 32]
 			require.NoError(t, err)
@@ -219,7 +227,7 @@ func TestDecodeByte(t *testing.T) {
 	}
 
 	for hexStr, expected := range byteTests {
-		t.Run(hexStr, func(t *testing.T) {
+		t.Run(makeTestName(hexStr), func(t *testing.T) {
 			decoder := newDecoderFromHex(t, hexStr)
 			result, err := decoder.ReadBytes() // [cite: 34]
 			require.NoError(t, err)
