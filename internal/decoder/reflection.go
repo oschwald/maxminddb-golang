@@ -107,8 +107,7 @@ PATH:
 		case string:
 			// We are expecting a map
 			if typeNum != KindMap {
-				// XXX - use type names in errors.
-				return fmt.Errorf("expected a map for %s but found %d", v, typeNum)
+				return fmt.Errorf("expected a map for %s but found %s", v, typeNum.String())
 			}
 			for range size {
 				var key []byte
@@ -129,8 +128,7 @@ PATH:
 		case int:
 			// We are expecting an array
 			if typeNum != KindSlice {
-				// XXX - use type names in errors.
-				return fmt.Errorf("expected a slice for %d but found %d", v, typeNum)
+				return fmt.Errorf("expected a slice for %d but found %s", v, typeNum.String())
 			}
 			var i uint
 			if v < 0 {
