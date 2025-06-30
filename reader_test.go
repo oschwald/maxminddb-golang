@@ -712,7 +712,7 @@ func TestUsingClosedDatabase(t *testing.T) {
 	assert.Equal(t, "cannot call Lookup on a closed database", err.Error())
 
 	err = reader.LookupOffset(0).Decode(recordInterface)
-	assert.Equal(t, "cannot call Decode on a closed database", err.Error())
+	assert.Equal(t, "cannot call LookupOffset on a closed database", err.Error())
 }
 
 func checkMetadata(t *testing.T, reader *Reader, ipVersion, recordSize uint) {

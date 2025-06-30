@@ -66,14 +66,14 @@ func ExampleReader_Networks() {
 
 	for result := range db.Networks() {
 		record := struct {
-			Domain string `maxminddb:"connection_type"`
+			ConnectionType string `maxminddb:"connection_type"`
 		}{}
 
 		err := result.Decode(&record)
 		if err != nil {
 			log.Panic(err)
 		}
-		fmt.Printf("%s: %s\n", result.Prefix(), record.Domain)
+		fmt.Printf("%s: %s\n", result.Prefix(), record.ConnectionType)
 	}
 	// Output:
 	// 1.0.0.0/24: Cable/DSL
@@ -151,13 +151,13 @@ func ExampleReader_NetworksWithin() {
 
 	for result := range db.NetworksWithin(prefix) {
 		record := struct {
-			Domain string `maxminddb:"connection_type"`
+			ConnectionType string `maxminddb:"connection_type"`
 		}{}
 		err := result.Decode(&record)
 		if err != nil {
 			log.Panic(err)
 		}
-		fmt.Printf("%s: %s\n", result.Prefix(), record.Domain)
+		fmt.Printf("%s: %s\n", result.Prefix(), record.ConnectionType)
 	}
 
 	// Output:

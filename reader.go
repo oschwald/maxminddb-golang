@@ -342,8 +342,8 @@ func FromBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
 	return reader, err
 }
 
-// Lookup retrieves the database record for ip and returns Result, which can
-// be used to decode the data..
+// Lookup retrieves the database record for ip and returns a Result, which can
+// be used to decode the data.
 func (r *Reader) Lookup(ip netip.Addr) Result {
 	if r.buffer == nil {
 		return Result{err: errors.New("cannot call Lookup on a closed database")}
@@ -377,7 +377,7 @@ func (r *Reader) Lookup(ip netip.Addr) Result {
 // netip.Prefix returned by Networks will be invalid when using LookupOffset.
 func (r *Reader) LookupOffset(offset uintptr) Result {
 	if r.buffer == nil {
-		return Result{err: errors.New("cannot call Decode on a closed database")}
+		return Result{err: errors.New("cannot call LookupOffset on a closed database")}
 	}
 
 	return Result{decoder: r.decoder, offset: uint(offset)}
