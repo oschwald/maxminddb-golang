@@ -2,6 +2,10 @@
 
 ## 2.0.0-beta.4
 
+- **BREAKING CHANGE**: Removed experimental `deserializer` interface and
+  supporting code. Applications using this interface should migrate to the
+  `Unmarshaler` interface by implementing `UnmarshalMaxMindDB(d *Decoder) error`
+  instead.
 - `Open` and `FromBytes` now accept options.
 - `IncludeNetworksWithoutData` and `IncludeAliasedNetworks` now return a
   `NetworksOption` rather than being one themselves. This was done to improve

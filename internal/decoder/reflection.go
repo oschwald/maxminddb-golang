@@ -47,11 +47,6 @@ func (d *ReflectionDecoder) Decode(offset uint, v any) error {
 		return unmarshaler.UnmarshalMaxMindDB(decoder)
 	}
 
-	if dser, ok := v.(deserializer); ok {
-		_, err := d.decodeToDeserializer(offset, dser, 0, false)
-		return d.wrapError(err, offset)
-	}
-
 	_, err := d.decode(offset, rv, 0)
 	if err == nil {
 		return nil

@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
-	"math/big"
 
 	"github.com/oschwald/maxminddb-golang/v2/internal/mmdberrors"
 )
@@ -430,36 +429,6 @@ func (d *DataDecoder) NextValueOffset(offset, numberToSkip uint) (uint, error) {
 	return d.NextValueOffset(offset, numberToSkip-1)
 }
 
-func (d *DataDecoder) decodeToDeserializer(
-	offset uint,
-	dser deserializer,
-	depth int,
-	getNext bool,
-) (uint, error) {
-	if depth > maximumDataStructureDepth {
-		return 0, mmdberrors.NewInvalidDatabaseError(
-			"exceeded maximum data structure depth; database is likely corrupt",
-		)
-	}
-	skip, err := dser.ShouldSkip(uintptr(offset))
-	if err != nil {
-		return 0, err
-	}
-	if skip {
-		if getNext {
-			return d.NextValueOffset(offset, 1)
-		}
-		return 0, nil
-	}
-
-	kindNum, size, newOffset, err := d.DecodeCtrlData(offset)
-	if err != nil {
-		return 0, err
-	}
-
-	return d.decodeFromTypeToDeserializer(kindNum, size, newOffset, dser, depth+1)
-}
-
 func (d *DataDecoder) sizeFromCtrlByte(
 	ctrlByte byte,
 	offset uint,
@@ -493,157 +462,6 @@ func (d *DataDecoder) sizeFromCtrlByte(
 		size = uintFromBytes(0, sizeBytes) + 65821
 	}
 	return size, newOffset, nil
-}
-
-func (d *DataDecoder) decodeFromTypeToDeserializer(
-	dtype Kind,
-	size uint,
-	offset uint,
-	dser deserializer,
-	depth int,
-) (uint, error) {
-	// For these types, size has a special meaning
-	switch dtype {
-	case KindBool:
-		v, offset := decodeBool(size, offset)
-		return offset, dser.Bool(v)
-	case KindMap:
-		return d.decodeMapToDeserializer(size, offset, dser, depth)
-	case KindPointer:
-		pointer, newOffset, err := d.DecodePointer(size, offset)
-		if err != nil {
-			return 0, err
-		}
-		_, err = d.decodeToDeserializer(pointer, dser, depth, false)
-		return newOffset, err
-	case KindSlice:
-		return d.decodeSliceToDeserializer(size, offset, dser, depth)
-	case KindBytes:
-		v, offset, err := d.DecodeBytes(size, offset)
-		if err != nil {
-			return 0, err
-		}
-		return offset, dser.Bytes(v)
-	case KindFloat32:
-		v, offset, err := d.DecodeFloat32(size, offset)
-		if err != nil {
-			return 0, err
-		}
-		return offset, dser.Float32(v)
-	case KindFloat64:
-		v, offset, err := d.DecodeFloat64(size, offset)
-		if err != nil {
-			return 0, err
-		}
-
-		return offset, dser.Float64(v)
-	case KindInt32:
-		v, offset, err := d.DecodeInt32(size, offset)
-		if err != nil {
-			return 0, err
-		}
-
-		return offset, dser.Int32(v)
-	case KindString:
-		v, offset, err := d.DecodeString(size, offset)
-		if err != nil {
-			return 0, err
-		}
-
-		return offset, dser.String(v)
-	case KindUint16:
-		v, offset, err := d.DecodeUint16(size, offset)
-		if err != nil {
-			return 0, err
-		}
-
-		return offset, dser.Uint16(v)
-	case KindUint32:
-		v, offset, err := d.DecodeUint32(size, offset)
-		if err != nil {
-			return 0, err
-		}
-
-		return offset, dser.Uint32(v)
-	case KindUint64:
-		v, offset, err := d.DecodeUint64(size, offset)
-		if err != nil {
-			return 0, err
-		}
-
-		return offset, dser.Uint64(v)
-	case KindUint128:
-		hi, lo, offset, err := d.DecodeUint128(size, offset)
-		if err != nil {
-			return 0, err
-		}
-
-		// Convert hi/lo representation to big.Int for deserializer
-		value := new(big.Int)
-		if hi == 0 {
-			value.SetUint64(lo)
-		} else {
-			value.SetUint64(hi)
-			value.Lsh(value, 64)                        // Shift high part left by 64 bits
-			value.Or(value, new(big.Int).SetUint64(lo)) // OR with low part
-		}
-
-		return offset, dser.Uint128(value)
-	default:
-		return 0, mmdberrors.NewInvalidDatabaseError("unknown type: %d", dtype)
-	}
-}
-
-func (d *DataDecoder) decodeMapToDeserializer(
-	size uint,
-	offset uint,
-	dser deserializer,
-	depth int,
-) (uint, error) {
-	err := dser.StartMap(size)
-	if err != nil {
-		return 0, err
-	}
-	for range size {
-		// TODO - implement key/value skipping?
-		offset, err = d.decodeToDeserializer(offset, dser, depth, true)
-		if err != nil {
-			return 0, err
-		}
-
-		offset, err = d.decodeToDeserializer(offset, dser, depth, true)
-		if err != nil {
-			return 0, err
-		}
-	}
-	err = dser.End()
-	if err != nil {
-		return 0, err
-	}
-	return offset, nil
-}
-
-func (d *DataDecoder) decodeSliceToDeserializer(
-	size uint,
-	offset uint,
-	dser deserializer,
-	depth int,
-) (uint, error) {
-	err := dser.StartSlice(size)
-	if err != nil {
-		return 0, err
-	}
-	for range size {
-		offset, err = d.decodeToDeserializer(offset, dser, depth, true)
-		if err != nil {
-			return 0, err
-		}
-	}
-	err = dser.End()
-	if err != nil {
-		return 0, err
-	}
-	return offset, nil
 }
 
 func decodeBool(size, offset uint) (bool, uint) {
