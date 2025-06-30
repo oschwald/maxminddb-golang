@@ -107,7 +107,7 @@ func (k Kind) IsScalar() bool {
 // DataDecoder is a decoder for the MMDB data section.
 // This is exported so mmdbdata package can use it, but still internal.
 type DataDecoder struct {
-	stringCache *StringCache
+	stringCache *stringCache
 	buffer      []byte
 }
 
@@ -120,17 +120,17 @@ const (
 func NewDataDecoder(buffer []byte) DataDecoder {
 	return DataDecoder{
 		buffer:      buffer,
-		stringCache: NewStringCache(),
+		stringCache: newStringCache(),
 	}
 }
 
-// Buffer returns the underlying buffer for direct access.
-func (d *DataDecoder) Buffer() []byte {
+// getBuffer returns the underlying buffer for direct access.
+func (d *DataDecoder) getBuffer() []byte {
 	return d.buffer
 }
 
-// DecodeCtrlData decodes the control byte and data info at the given offset.
-func (d *DataDecoder) DecodeCtrlData(offset uint) (Kind, uint, uint, error) {
+// decodeCtrlData decodes the control byte and data info at the given offset.
+func (d *DataDecoder) decodeCtrlData(offset uint) (Kind, uint, uint, error) {
 	newOffset := offset + 1
 	if offset >= uint(len(d.buffer)) {
 		return 0, 0, 0, mmdberrors.NewOffsetError()
@@ -151,8 +151,8 @@ func (d *DataDecoder) DecodeCtrlData(offset uint) (Kind, uint, uint, error) {
 	return kindNum, size, newOffset, err
 }
 
-// DecodeBytes decodes a byte slice from the given offset with the given size.
-func (d *DataDecoder) DecodeBytes(size, offset uint) ([]byte, uint, error) {
+// decodeBytes decodes a byte slice from the given offset with the given size.
+func (d *DataDecoder) decodeBytes(size, offset uint) ([]byte, uint, error) {
 	if offset+size > uint(len(d.buffer)) {
 		return nil, 0, mmdberrors.NewOffsetError()
 	}
@@ -164,7 +164,7 @@ func (d *DataDecoder) DecodeBytes(size, offset uint) ([]byte, uint, error) {
 }
 
 // DecodeFloat64 decodes a 64-bit float from the given offset.
-func (d *DataDecoder) DecodeFloat64(size, offset uint) (float64, uint, error) {
+func (d *DataDecoder) decodeFloat64(size, offset uint) (float64, uint, error) {
 	if size != 8 {
 		return 0, 0, mmdberrors.NewInvalidDatabaseError(
 			"the MaxMind DB file's data section contains bad data (float 64 size of %v)",
@@ -181,7 +181,7 @@ func (d *DataDecoder) DecodeFloat64(size, offset uint) (float64, uint, error) {
 }
 
 // DecodeFloat32 decodes a 32-bit float from the given offset.
-func (d *DataDecoder) DecodeFloat32(size, offset uint) (float32, uint, error) {
+func (d *DataDecoder) decodeFloat32(size, offset uint) (float32, uint, error) {
 	if size != 4 {
 		return 0, 0, mmdberrors.NewInvalidDatabaseError(
 			"the MaxMind DB file's data section contains bad data (float32 size of %v)",
@@ -198,7 +198,7 @@ func (d *DataDecoder) DecodeFloat32(size, offset uint) (float32, uint, error) {
 }
 
 // DecodeInt32 decodes a 32-bit signed integer from the given offset.
-func (d *DataDecoder) DecodeInt32(size, offset uint) (int32, uint, error) {
+func (d *DataDecoder) decodeInt32(size, offset uint) (int32, uint, error) {
 	if size > 4 {
 		return 0, 0, mmdberrors.NewInvalidDatabaseError(
 			"the MaxMind DB file's data section contains bad data (int32 size of %v)",
@@ -218,7 +218,7 @@ func (d *DataDecoder) DecodeInt32(size, offset uint) (int32, uint, error) {
 }
 
 // DecodePointer decodes a pointer from the given offset.
-func (d *DataDecoder) DecodePointer(
+func (d *DataDecoder) decodePointer(
 	size uint,
 	offset uint,
 ) (uint, uint, error) {
@@ -254,7 +254,7 @@ func (d *DataDecoder) DecodePointer(
 }
 
 // DecodeBool decodes a boolean from the given offset.
-func (*DataDecoder) DecodeBool(size, offset uint) (bool, uint, error) {
+func (*DataDecoder) decodeBool(size, offset uint) (bool, uint, error) {
 	if size > 1 {
 		return false, 0, mmdberrors.NewInvalidDatabaseError(
 			"the MaxMind DB file's data section contains bad data (bool size of %v)",
@@ -266,18 +266,18 @@ func (*DataDecoder) DecodeBool(size, offset uint) (bool, uint, error) {
 }
 
 // DecodeString decodes a string from the given offset.
-func (d *DataDecoder) DecodeString(size, offset uint) (string, uint, error) {
+func (d *DataDecoder) decodeString(size, offset uint) (string, uint, error) {
 	if offset+size > uint(len(d.buffer)) {
 		return "", 0, mmdberrors.NewOffsetError()
 	}
 
 	newOffset := offset + size
-	value := d.stringCache.InternAt(offset, size, d.buffer)
+	value := d.stringCache.internAt(offset, size, d.buffer)
 	return value, newOffset, nil
 }
 
 // DecodeUint16 decodes a 16-bit unsigned integer from the given offset.
-func (d *DataDecoder) DecodeUint16(size, offset uint) (uint16, uint, error) {
+func (d *DataDecoder) decodeUint16(size, offset uint) (uint16, uint, error) {
 	if size > 2 {
 		return 0, 0, mmdberrors.NewInvalidDatabaseError(
 			"the MaxMind DB file's data section contains bad data (uint16 size of %v)",
@@ -299,7 +299,7 @@ func (d *DataDecoder) DecodeUint16(size, offset uint) (uint16, uint, error) {
 }
 
 // DecodeUint32 decodes a 32-bit unsigned integer from the given offset.
-func (d *DataDecoder) DecodeUint32(size, offset uint) (uint32, uint, error) {
+func (d *DataDecoder) decodeUint32(size, offset uint) (uint32, uint, error) {
 	if size > 4 {
 		return 0, 0, mmdberrors.NewInvalidDatabaseError(
 			"the MaxMind DB file's data section contains bad data (uint32 size of %v)",
@@ -321,7 +321,7 @@ func (d *DataDecoder) DecodeUint32(size, offset uint) (uint32, uint, error) {
 }
 
 // DecodeUint64 decodes a 64-bit unsigned integer from the given offset.
-func (d *DataDecoder) DecodeUint64(size, offset uint) (uint64, uint, error) {
+func (d *DataDecoder) decodeUint64(size, offset uint) (uint64, uint, error) {
 	if size > 8 {
 		return 0, 0, mmdberrors.NewInvalidDatabaseError(
 			"the MaxMind DB file's data section contains bad data (uint64 size of %v)",
@@ -344,7 +344,7 @@ func (d *DataDecoder) DecodeUint64(size, offset uint) (uint64, uint, error) {
 
 // DecodeUint128 decodes a 128-bit unsigned integer from the given offset.
 // Returns the value as high and low 64-bit unsigned integers.
-func (d *DataDecoder) DecodeUint128(size, offset uint) (hi, lo uint64, newOffset uint, err error) {
+func (d *DataDecoder) decodeUint128(size, offset uint) (hi, lo uint64, newOffset uint, err error) {
 	if size > 16 {
 		return 0, 0, 0, mmdberrors.NewInvalidDatabaseError(
 			"the MaxMind DB file's data section contains bad data (uint128 size of %v)",
@@ -375,17 +375,17 @@ func append64(val uint64, b byte) (uint64, byte) {
 // can take advantage of https://github.com/golang/go/issues/3512 to avoid
 // copying the bytes when decoding a struct. Previously, we achieved this by
 // using unsafe.
-func (d *DataDecoder) DecodeKey(offset uint) ([]byte, uint, error) {
-	kindNum, size, dataOffset, err := d.DecodeCtrlData(offset)
+func (d *DataDecoder) decodeKey(offset uint) ([]byte, uint, error) {
+	kindNum, size, dataOffset, err := d.decodeCtrlData(offset)
 	if err != nil {
 		return nil, 0, err
 	}
 	if kindNum == KindPointer {
-		pointer, ptrOffset, err := d.DecodePointer(size, dataOffset)
+		pointer, ptrOffset, err := d.decodePointer(size, dataOffset)
 		if err != nil {
 			return nil, 0, err
 		}
-		key, _, err := d.DecodeKey(pointer)
+		key, _, err := d.decodeKey(pointer)
 		return key, ptrOffset, err
 	}
 	if kindNum != KindString {
@@ -404,17 +404,17 @@ func (d *DataDecoder) DecodeKey(offset uint) ([]byte, uint, error) {
 // NextValueOffset skips ahead to the next value without decoding
 // the one at the offset passed in. The size bits have different meanings for
 // different data types.
-func (d *DataDecoder) NextValueOffset(offset, numberToSkip uint) (uint, error) {
+func (d *DataDecoder) nextValueOffset(offset, numberToSkip uint) (uint, error) {
 	if numberToSkip == 0 {
 		return offset, nil
 	}
-	kindNum, size, offset, err := d.DecodeCtrlData(offset)
+	kindNum, size, offset, err := d.decodeCtrlData(offset)
 	if err != nil {
 		return 0, err
 	}
 	switch kindNum {
 	case KindPointer:
-		_, offset, err = d.DecodePointer(size, offset)
+		_, offset, err = d.decodePointer(size, offset)
 		if err != nil {
 			return 0, err
 		}
@@ -426,7 +426,7 @@ func (d *DataDecoder) NextValueOffset(offset, numberToSkip uint) (uint, error) {
 	default:
 		offset += size
 	}
-	return d.NextValueOffset(offset, numberToSkip-1)
+	return d.nextValueOffset(offset, numberToSkip-1)
 }
 
 func (d *DataDecoder) sizeFromCtrlByte(

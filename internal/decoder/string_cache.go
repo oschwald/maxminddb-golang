@@ -2,10 +2,10 @@ package decoder
 
 import "sync"
 
-// StringCache provides bounded string interning using offset-based indexing.
+// stringCache provides bounded string interning using offset-based indexing.
 // Similar to encoding/json/v2's intern.go but uses offsets instead of hashing.
 // Thread-safe for concurrent use.
-type StringCache struct {
+type stringCache struct {
 	// Fixed-size cache to prevent unbounded memory growth
 	// Using 512 entries for 8KiB total memory footprint (512 * 16 bytes per string)
 	cache [512]cacheEntry
@@ -18,15 +18,15 @@ type cacheEntry struct {
 	offset uint
 }
 
-// NewStringCache creates a new bounded string cache.
-func NewStringCache() *StringCache {
-	return &StringCache{}
+// newStringCache creates a new bounded string cache.
+func newStringCache() *stringCache {
+	return &stringCache{}
 }
 
-// InternAt returns a canonical string for the data at the given offset and size.
+// internAt returns a canonical string for the data at the given offset and size.
 // Uses the offset modulo cache size as the index, similar to json/v2's approach.
 // Thread-safe for concurrent use.
-func (sc *StringCache) InternAt(offset, size uint, data []byte) string {
+func (sc *stringCache) internAt(offset, size uint, data []byte) string {
 	const (
 		minCachedLen = 2   // single byte strings not worth caching
 		maxCachedLen = 100 // reasonable upper bound for geographic strings

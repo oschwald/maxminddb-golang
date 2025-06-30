@@ -52,7 +52,7 @@ func (d *Decoder) ReadBool() (bool, error) {
 		return false, d.wrapError(err)
 	}
 
-	value, newOffset, err := d.d.DecodeBool(size, offset)
+	value, newOffset, err := d.d.decodeBool(size, offset)
 	if err != nil {
 		return false, d.wrapError(err)
 	}
@@ -69,7 +69,7 @@ func (d *Decoder) ReadString() (string, error) {
 		return "", d.wrapError(err)
 	}
 
-	value, newOffset, err := d.d.DecodeString(size, offset)
+	value, newOffset, err := d.d.decodeString(size, offset)
 	if err != nil {
 		return "", d.wrapError(err)
 	}
@@ -97,7 +97,7 @@ func (d *Decoder) ReadFloat32() (float32, error) {
 		return 0, d.wrapError(err)
 	}
 
-	value, nextOffset, err := d.d.DecodeFloat32(size, offset)
+	value, nextOffset, err := d.d.decodeFloat32(size, offset)
 	if err != nil {
 		return 0, d.wrapError(err)
 	}
@@ -115,7 +115,7 @@ func (d *Decoder) ReadFloat64() (float64, error) {
 		return 0, d.wrapError(err)
 	}
 
-	value, nextOffset, err := d.d.DecodeFloat64(size, offset)
+	value, nextOffset, err := d.d.decodeFloat64(size, offset)
 	if err != nil {
 		return 0, d.wrapError(err)
 	}
@@ -133,7 +133,7 @@ func (d *Decoder) ReadInt32() (int32, error) {
 		return 0, d.wrapError(err)
 	}
 
-	value, nextOffset, err := d.d.DecodeInt32(size, offset)
+	value, nextOffset, err := d.d.decodeInt32(size, offset)
 	if err != nil {
 		return 0, d.wrapError(err)
 	}
@@ -151,7 +151,7 @@ func (d *Decoder) ReadUInt16() (uint16, error) {
 		return 0, d.wrapError(err)
 	}
 
-	value, nextOffset, err := d.d.DecodeUint16(size, offset)
+	value, nextOffset, err := d.d.decodeUint16(size, offset)
 	if err != nil {
 		return 0, d.wrapError(err)
 	}
@@ -169,7 +169,7 @@ func (d *Decoder) ReadUInt32() (uint32, error) {
 		return 0, d.wrapError(err)
 	}
 
-	value, nextOffset, err := d.d.DecodeUint32(size, offset)
+	value, nextOffset, err := d.d.decodeUint32(size, offset)
 	if err != nil {
 		return 0, d.wrapError(err)
 	}
@@ -187,7 +187,7 @@ func (d *Decoder) ReadUInt64() (uint64, error) {
 		return 0, d.wrapError(err)
 	}
 
-	value, nextOffset, err := d.d.DecodeUint64(size, offset)
+	value, nextOffset, err := d.d.decodeUint64(size, offset)
 	if err != nil {
 		return 0, d.wrapError(err)
 	}
@@ -205,7 +205,7 @@ func (d *Decoder) ReadUInt128() (hi, lo uint64, err error) {
 		return 0, 0, d.wrapError(err)
 	}
 
-	hi, lo, nextOffset, err := d.d.DecodeUint128(size, offset)
+	hi, lo, nextOffset, err := d.d.decodeUint128(size, offset)
 	if err != nil {
 		return 0, 0, d.wrapError(err)
 	}
@@ -231,7 +231,7 @@ func (d *Decoder) ReadMap() iter.Seq2[[]byte, error] {
 		currentOffset := offset
 
 		for range size {
-			key, keyEndOffset, err := d.d.DecodeKey(currentOffset)
+			key, keyEndOffset, err := d.d.decodeKey(currentOffset)
 			if err != nil {
 				yield(nil, d.wrapErrorAtOffset(err, currentOffset))
 				return
@@ -246,7 +246,7 @@ func (d *Decoder) ReadMap() iter.Seq2[[]byte, error] {
 			}
 
 			// Skip the value to get to next key-value pair
-			valueEndOffset, err := d.d.NextValueOffset(keyEndOffset, 1)
+			valueEndOffset, err := d.d.nextValueOffset(keyEndOffset, 1)
 			if err != nil {
 				yield(nil, d.wrapError(err))
 				return
@@ -281,7 +281,7 @@ func (d *Decoder) ReadSlice() iter.Seq[error] {
 				// Skip the unvisited elements
 				remaining := size - i - 1
 				if remaining > 0 {
-					endOffset, err := d.d.NextValueOffset(currentOffset, remaining)
+					endOffset, err := d.d.nextValueOffset(currentOffset, remaining)
 					if err == nil {
 						d.reset(endOffset)
 					}
@@ -290,7 +290,7 @@ func (d *Decoder) ReadSlice() iter.Seq[error] {
 			}
 
 			// Advance to next element
-			nextOffset, err := d.d.NextValueOffset(currentOffset, 1)
+			nextOffset, err := d.d.nextValueOffset(currentOffset, 1)
 			if err != nil {
 				yield(d.wrapError(err))
 				return
@@ -308,7 +308,7 @@ func (d *Decoder) ReadSlice() iter.Seq[error] {
 // The decoder will be positioned after the skipped value.
 func (d *Decoder) SkipValue() error {
 	// We can reuse the existing nextValueOffset logic by jumping to the next value
-	nextOffset, err := d.d.NextValueOffset(d.offset, 1)
+	nextOffset, err := d.d.nextValueOffset(d.offset, 1)
 	if err != nil {
 		return d.wrapError(err)
 	}
@@ -319,7 +319,7 @@ func (d *Decoder) SkipValue() error {
 // PeekKind returns the kind of the current value without consuming it.
 // This allows for look-ahead parsing similar to jsontext.Decoder.PeekKind().
 func (d *Decoder) PeekKind() (Kind, error) {
-	kindNum, _, _, err := d.d.DecodeCtrlData(d.offset)
+	kindNum, _, _, err := d.d.decodeCtrlData(d.offset)
 	if err != nil {
 		return 0, d.wrapError(err)
 	}
@@ -330,14 +330,14 @@ func (d *Decoder) PeekKind() (Kind, error) {
 		dataOffset := d.offset
 		for {
 			var size uint
-			kindNum, size, dataOffset, err = d.d.DecodeCtrlData(dataOffset)
+			kindNum, size, dataOffset, err = d.d.decodeCtrlData(dataOffset)
 			if err != nil {
 				return 0, d.wrapError(err)
 			}
 			if kindNum != KindPointer {
 				break
 			}
-			dataOffset, _, err = d.d.DecodePointer(size, dataOffset)
+			dataOffset, _, err = d.d.decodePointer(size, dataOffset)
 			if err != nil {
 				return 0, d.wrapError(err)
 			}
@@ -377,14 +377,14 @@ func (d *Decoder) decodeCtrlDataAndFollow(expectedKind Kind) (uint, uint, error)
 		var kindNum Kind
 		var size uint
 		var err error
-		kindNum, size, dataOffset, err = d.d.DecodeCtrlData(dataOffset)
+		kindNum, size, dataOffset, err = d.d.decodeCtrlData(dataOffset)
 		if err != nil {
 			return 0, 0, err // Don't wrap here, let caller wrap
 		}
 
 		if kindNum == KindPointer {
 			var nextOffset uint
-			dataOffset, nextOffset, err = d.d.DecodePointer(size, dataOffset)
+			dataOffset, nextOffset, err = d.d.decodePointer(size, dataOffset)
 			if err != nil {
 				return 0, 0, err // Don't wrap here, let caller wrap
 			}
@@ -406,13 +406,13 @@ func (d *Decoder) readBytes(kind Kind) ([]byte, error) {
 		return nil, err // Return unwrapped - caller will wrap
 	}
 
-	if offset+size > uint(len(d.d.Buffer())) {
+	if offset+size > uint(len(d.d.getBuffer())) {
 		return nil, mmdberrors.NewInvalidDatabaseError(
 			"the MaxMind DB file's data section contains bad data (offset+size %d exceeds buffer length %d)",
 			offset+size,
-			len(d.d.Buffer()),
+			len(d.d.getBuffer()),
 		)
 	}
 	d.setNextOffset(offset + size)
-	return d.d.Buffer()[offset : offset+size], nil
+	return d.d.getBuffer()[offset : offset+size], nil
 }

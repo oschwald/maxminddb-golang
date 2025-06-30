@@ -86,18 +86,18 @@ PATH:
 			size    uint
 			err     error
 		)
-		typeNum, size, offset, err = d.DecodeCtrlData(offset)
+		typeNum, size, offset, err = d.decodeCtrlData(offset)
 		if err != nil {
 			return err
 		}
 
 		if typeNum == KindPointer {
-			pointer, _, err := d.DecodePointer(size, offset)
+			pointer, _, err := d.decodePointer(size, offset)
 			if err != nil {
 				return err
 			}
 
-			typeNum, size, offset, err = d.DecodeCtrlData(pointer)
+			typeNum, size, offset, err = d.decodeCtrlData(pointer)
 			if err != nil {
 				return err
 			}
@@ -111,14 +111,14 @@ PATH:
 			}
 			for range size {
 				var key []byte
-				key, offset, err = d.DecodeKey(offset)
+				key, offset, err = d.decodeKey(offset)
 				if err != nil {
 					return err
 				}
 				if string(key) == v {
 					continue PATH
 				}
-				offset, err = d.NextValueOffset(offset, 1)
+				offset, err = d.nextValueOffset(offset, 1)
 				if err != nil {
 					return err
 				}
@@ -144,7 +144,7 @@ PATH:
 				}
 				i = uint(v)
 			}
-			offset, err = d.NextValueOffset(offset, i)
+			offset, err = d.nextValueOffset(offset, i)
 			if err != nil {
 				return err
 			}
@@ -278,14 +278,14 @@ func (d *ReflectionDecoder) decode(offset uint, result reflect.Value, depth int)
 		}
 	}
 
-	typeNum, size, newOffset, err := d.DecodeCtrlData(offset)
+	typeNum, size, newOffset, err := d.decodeCtrlData(offset)
 	if err != nil {
 		return 0, err
 	}
 
 	if typeNum != KindPointer && result.Kind() == reflect.Uintptr {
 		result.Set(reflect.ValueOf(uintptr(offset)))
-		return d.NextValueOffset(offset, 1)
+		return d.nextValueOffset(offset, 1)
 	}
 	return d.decodeFromType(typeNum, size, newOffset, result, depth+1)
 }
@@ -333,7 +333,7 @@ func (d *ReflectionDecoder) decodeFromType(
 }
 
 func (d *ReflectionDecoder) unmarshalBool(size, offset uint, result reflect.Value) (uint, error) {
-	value, newOffset, err := d.DecodeBool(size, offset)
+	value, newOffset, err := d.decodeBool(size, offset)
 	if err != nil {
 		return 0, err
 	}
@@ -383,7 +383,7 @@ func indirect(result reflect.Value) reflect.Value {
 var sliceType = reflect.TypeOf([]byte{})
 
 func (d *ReflectionDecoder) unmarshalBytes(size, offset uint, result reflect.Value) (uint, error) {
-	value, newOffset, err := d.DecodeBytes(size, offset)
+	value, newOffset, err := d.decodeBytes(size, offset)
 	if err != nil {
 		return 0, err
 	}
@@ -406,7 +406,7 @@ func (d *ReflectionDecoder) unmarshalBytes(size, offset uint, result reflect.Val
 func (d *ReflectionDecoder) unmarshalFloat32(
 	size, offset uint, result reflect.Value,
 ) (uint, error) {
-	value, newOffset, err := d.DecodeFloat32(size, offset)
+	value, newOffset, err := d.decodeFloat32(size, offset)
 	if err != nil {
 		return 0, err
 	}
@@ -427,7 +427,7 @@ func (d *ReflectionDecoder) unmarshalFloat32(
 func (d *ReflectionDecoder) unmarshalFloat64(
 	size, offset uint, result reflect.Value,
 ) (uint, error) {
-	value, newOffset, err := d.DecodeFloat64(size, offset)
+	value, newOffset, err := d.decodeFloat64(size, offset)
 	if err != nil {
 		return 0, err
 	}
@@ -449,7 +449,7 @@ func (d *ReflectionDecoder) unmarshalFloat64(
 }
 
 func (d *ReflectionDecoder) unmarshalInt32(size, offset uint, result reflect.Value) (uint, error) {
-	value, newOffset, err := d.DecodeInt32(size, offset)
+	value, newOffset, err := d.decodeInt32(size, offset)
 	if err != nil {
 		return 0, err
 	}
@@ -511,7 +511,7 @@ func (d *ReflectionDecoder) unmarshalPointer(
 	result reflect.Value,
 	depth int,
 ) (uint, error) {
-	pointer, newOffset, err := d.DecodePointer(size, offset)
+	pointer, newOffset, err := d.decodePointer(size, offset)
 	if err != nil {
 		return 0, err
 	}
@@ -541,7 +541,7 @@ func (d *ReflectionDecoder) unmarshalSlice(
 }
 
 func (d *ReflectionDecoder) unmarshalString(size, offset uint, result reflect.Value) (uint, error) {
-	value, newOffset, err := d.DecodeString(size, offset)
+	value, newOffset, err := d.decodeString(size, offset)
 	if err != nil {
 		return 0, err
 	}
@@ -571,13 +571,13 @@ func (d *ReflectionDecoder) unmarshalUint(
 
 	switch uintType {
 	case 16:
-		v16, off, e := d.DecodeUint16(size, offset)
+		v16, off, e := d.decodeUint16(size, offset)
 		value, newOffset, err = uint64(v16), off, e
 	case 32:
-		v32, off, e := d.DecodeUint32(size, offset)
+		v32, off, e := d.decodeUint32(size, offset)
 		value, newOffset, err = uint64(v32), off, e
 	case 64:
-		value, newOffset, err = d.DecodeUint64(size, offset)
+		value, newOffset, err = d.decodeUint64(size, offset)
 	default:
 		return 0, mmdberrors.NewInvalidDatabaseError(
 			"unsupported uint type: %d", uintType)
@@ -618,7 +618,7 @@ var bigIntType = reflect.TypeOf(big.Int{})
 func (d *ReflectionDecoder) unmarshalUint128(
 	size, offset uint, result reflect.Value,
 ) (uint, error) {
-	hi, lo, newOffset, err := d.DecodeUint128(size, offset)
+	hi, lo, newOffset, err := d.decodeUint128(size, offset)
 	if err != nil {
 		return 0, err
 	}
@@ -725,7 +725,7 @@ func (d *ReflectionDecoder) decodeStruct(
 			err error
 			key []byte
 		)
-		key, offset, err = d.DecodeKey(offset)
+		key, offset, err = d.decodeKey(offset)
 		if err != nil {
 			return 0, err
 		}
@@ -733,7 +733,7 @@ func (d *ReflectionDecoder) decodeStruct(
 		// optimization: https://github.com/golang/go/issues/3512
 		j, ok := fields.namedFields[string(key)]
 		if !ok {
-			offset, err = d.NextValueOffset(offset, 1)
+			offset, err = d.nextValueOffset(offset, 1)
 			if err != nil {
 				return 0, err
 			}
