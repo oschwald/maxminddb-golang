@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -1005,6 +1006,61 @@ func BenchmarkDecodePathCountryCode(b *testing.B) {
 		}
 	}
 	require.NoError(b, db.Close(), "error on close")
+}
+
+// BenchmarkCityLookupConcurrent tests concurrent city lookups to demonstrate
+// string cache performance under concurrent load.
+func BenchmarkCityLookupConcurrent(b *testing.B) {
+	db, err := Open("GeoLite2-City.mmdb")
+	require.NoError(b, err)
+	defer func() {
+		require.NoError(b, db.Close(), "error on close")
+	}()
+
+	// Test with different numbers of concurrent goroutines
+	goroutineCounts := []int{1, 4, 16, 64}
+
+	for _, numGoroutines := range goroutineCounts {
+		b.Run(fmt.Sprintf("goroutines_%d", numGoroutines), func(b *testing.B) {
+			// Each goroutine performs 100 lookups
+			const lookupsPerGoroutine = 100
+			b.ResetTimer()
+
+			for range b.N {
+				var wg sync.WaitGroup
+				wg.Add(numGoroutines)
+
+				for range numGoroutines {
+					go func() {
+						defer wg.Done()
+
+						//nolint:gosec // this is a test
+						r := rand.New(rand.NewSource(time.Now().UnixNano()))
+						s := make(net.IP, 4)
+						var result fullCity
+
+						for range lookupsPerGoroutine {
+							ip := randomIPv4Address(r, s)
+							err := db.Lookup(ip).Decode(&result)
+							if err != nil {
+								b.Error(err)
+								return
+							}
+							// Access string fields to exercise the cache
+							_ = result.City.Names
+							_ = result.Country.Names
+						}
+					}()
+				}
+
+				wg.Wait()
+			}
+
+			// Report operations per second
+			totalOps := int64(b.N) * int64(numGoroutines) * int64(lookupsPerGoroutine)
+			b.ReportMetric(float64(totalOps)/b.Elapsed().Seconds(), "lookups/sec")
+		})
+	}
 }
 
 func randomIPv4Address(r *rand.Rand, ip []byte) netip.Addr {
