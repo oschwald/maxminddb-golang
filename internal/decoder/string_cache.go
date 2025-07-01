@@ -1,31 +1,30 @@
+// Package decoder decodes values in the data section.
 package decoder
 
-import "sync"
+import (
+	"sync"
+)
 
-// stringCache provides bounded string interning using offset-based indexing.
-// Similar to encoding/json/v2's intern.go but uses offsets instead of hashing.
-// Thread-safe for concurrent use.
-type stringCache struct {
-	// Fixed-size cache to prevent unbounded memory growth
-	// Using 512 entries for 8KiB total memory footprint (512 * 16 bytes per string)
-	cache [512]cacheEntry
-	// RWMutex for thread safety - allows concurrent reads, exclusive writes
-	mu sync.RWMutex
-}
-
+// cacheEntry represents a cached string with its offset and dedicated mutex.
 type cacheEntry struct {
 	str    string
 	offset uint
+	mu     sync.RWMutex
 }
 
-// newStringCache creates a new bounded string cache.
+// stringCache provides bounded string interning with per-entry mutexes for minimal contention.
+// This achieves thread safety while avoiding the global lock bottleneck.
+type stringCache struct {
+	entries [512]cacheEntry
+}
+
+// newStringCache creates a new per-entry mutex-based string cache.
 func newStringCache() *stringCache {
 	return &stringCache{}
 }
 
 // internAt returns a canonical string for the data at the given offset and size.
-// Uses the offset modulo cache size as the index, similar to json/v2's approach.
-// Thread-safe for concurrent use.
+// Uses per-entry RWMutex for fine-grained thread safety with minimal contention.
 func (sc *stringCache) internAt(offset, size uint, data []byte) string {
 	const (
 		minCachedLen = 2   // single byte strings not worth caching
@@ -37,30 +36,27 @@ func (sc *stringCache) internAt(offset, size uint, data []byte) string {
 		return string(data[offset : offset+size])
 	}
 
-	// Use offset as cache index (modulo cache size)
-	i := offset % uint(len(sc.cache))
+	// Use same cache index calculation as original: offset % cacheSize
+	i := offset % uint(len(sc.entries))
+	entry := &sc.entries[i]
 
-	// Fast path: check for cache hit with read lock
-	sc.mu.RLock()
-	entry := sc.cache[i]
-	if entry.offset == offset && len(entry.str) == int(size) {
+	// Fast path: read lock and check
+	entry.mu.RLock()
+	if entry.offset == offset && entry.str != "" {
 		str := entry.str
-		sc.mu.RUnlock()
+		entry.mu.RUnlock()
 		return str
 	}
-	sc.mu.RUnlock()
+	entry.mu.RUnlock()
 
-	// Cache miss - create new string and store with write lock
+	// Cache miss - create new string
 	str := string(data[offset : offset+size])
 
-	sc.mu.Lock()
-	// Double-check in case another goroutine added it while we were waiting
-	if sc.cache[i].offset == offset && len(sc.cache[i].str) == int(size) {
-		str = sc.cache[i].str
-	} else {
-		sc.cache[i] = cacheEntry{offset: offset, str: str}
-	}
-	sc.mu.Unlock()
+	// Store with write lock on this specific entry
+	entry.mu.Lock()
+	entry.offset = offset
+	entry.str = str
+	entry.mu.Unlock()
 
 	return str
 }
