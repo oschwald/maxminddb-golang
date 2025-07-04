@@ -7,9 +7,11 @@
   `Unmarshaler` interface by implementing `UnmarshalMaxMindDB(d *Decoder) error`
   instead.
 - `Open` and `FromBytes` now accept options.
-- `IncludeNetworksWithoutData` and `IncludeAliasedNetworks` now return a
-  `NetworksOption` rather than being one themselves. This was done to improve
-  the documentation organization.
+- **BREAKING CHANGE**: `IncludeNetworksWithoutData` and `IncludeAliasedNetworks`
+  now return a `NetworksOption` rather than being one themselves. These must now
+  be called as functions: `Networks(IncludeAliasedNetworks())` instead of
+  `Networks(IncludeAliasedNetworks)`. This was done to improve the documentation
+  organization.
 - Added `Unmarshaler` interface to allow custom decoding implementations for
   performance-critical applications. Types implementing
   `UnmarshalMaxMindDB(d *Decoder) error` will automatically use custom decoding
@@ -32,17 +34,16 @@
   /city/names/en" or "at offset 1234, path /list/0/name" instead of just the
   underlying error message.
 - **PERFORMANCE**: Added string interning optimization that reduces allocations
-  while maintaining thread safety. Provides ~15% improvement for single-threaded
-  City lookups and reduces allocation count from 33 to 10 per operation in
-  downstream libraries. Uses a fixed 512-entry cache with per-entry mutexes
-  for bounded memory usage (~8KB) while minimizing lock contention.
+  while maintaining thread safety. Reduces allocation count from 33 to 10 per
+  operation in downstream libraries. Uses a fixed 512-entry cache with per-entry
+  mutexes for bounded memory usage (~8KB) while minimizing lock contention.
 
 ## 2.0.0-beta.3 - 2025-02-16
 
 - `Open` will now fall back to loading the database in memory if the
   file-system does not support `mmap`. Pull request by database64128. GitHub
   #163.
-- Made significant improvements to the Windows memory-map handling. . GitHub
+- Made significant improvements to the Windows memory-map handling. GitHub
   #162.
 - Fix an integer overflow on large databases when using a 32-bit architecture.
   See ipinfo/mmdbctl#33.
