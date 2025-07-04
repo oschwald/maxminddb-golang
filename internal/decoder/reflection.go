@@ -35,16 +35,15 @@ func New(buffer []byte) ReflectionDecoder {
 // Decode decodes the data value at offset and stores it in the value
 // pointed at by v.
 func (d *ReflectionDecoder) Decode(offset uint, v any) error {
+	// Check if the type implements Unmarshaler interface without reflection
+	if unmarshaler, ok := v.(Unmarshaler); ok {
+		decoder := NewDecoder(d.DataDecoder, offset)
+		return unmarshaler.UnmarshalMaxMindDB(decoder)
+	}
+
 	rv := reflect.ValueOf(v)
 	if rv.Kind() != reflect.Ptr || rv.IsNil() {
 		return errors.New("result param must be a pointer")
-	}
-
-	// Check if the type implements Unmarshaler interface using cached type check
-	if rv.Type().Implements(unmarshalerType) {
-		unmarshaler := v.(Unmarshaler) // Safe, we know it implements
-		decoder := NewDecoder(d.DataDecoder, offset)
-		return unmarshaler.UnmarshalMaxMindDB(decoder)
 	}
 
 	_, err := d.decode(offset, rv, 0)
