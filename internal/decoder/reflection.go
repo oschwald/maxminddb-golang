@@ -17,9 +17,6 @@ type Unmarshaler interface {
 	UnmarshalMaxMindDB(d *Decoder) error
 }
 
-// unmarshalerType is cached for efficient interface checking.
-var unmarshalerType = reflect.TypeFor[Unmarshaler]()
-
 // ReflectionDecoder is a decoder for the MMDB data section.
 type ReflectionDecoder struct {
 	DataDecoder
@@ -245,30 +242,17 @@ func (d *ReflectionDecoder) decode(offset uint, result reflect.Value, depth int)
 	}
 
 	// First handle pointers by creating the value if needed, similar to indirect()
-	// but we don't want to fully indirect yet as we need to check for Unmarshaler
 	if result.Kind() == reflect.Ptr {
 		if result.IsNil() {
 			result.Set(reflect.New(result.Type().Elem()))
 		}
-		// Now check if the pointed-to type implements Unmarshaler using cached type check
-		if result.Type().Implements(unmarshalerType) {
-			unmarshaler := result.Interface().(Unmarshaler) // Safe, we know it implements
-			decoder := NewDecoder(d.DataDecoder, offset)
-			if err := unmarshaler.UnmarshalMaxMindDB(decoder); err != nil {
-				return 0, err
-			}
-			return decoder.getNextOffset()
-		}
-		// Continue with the pointed-to value
+		// Continue with the pointed-to value - interface check will happen in recursive call
 		return d.decode(offset, result.Elem(), depth)
 	}
 
-	// Check if the value implements Unmarshaler interface
-	// We need to check if result can be addressed and if the pointer type implements Unmarshaler
+	// Check if the value implements Unmarshaler interface using type assertion
 	if result.CanAddr() {
-		ptrType := result.Addr().Type()
-		if ptrType.Implements(unmarshalerType) {
-			unmarshaler := result.Addr().Interface().(Unmarshaler) // Safe, we know it implements
+		if unmarshaler, ok := result.Addr().Interface().(Unmarshaler); ok {
 			decoder := NewDecoder(d.DataDecoder, offset)
 			if err := unmarshaler.UnmarshalMaxMindDB(decoder); err != nil {
 				return 0, err
