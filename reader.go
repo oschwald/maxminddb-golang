@@ -128,7 +128,6 @@ var metadataStartMarker = []byte("\xAB\xCD\xEFMaxMind.com")
 // All of the methods on Reader are thread-safe. The struct may be safely
 // shared across goroutines.
 type Reader struct {
-	nodeReader        nodeReader
 	buffer            []byte
 	decoder           decoder.ReflectionDecoder
 	Metadata          Metadata
@@ -312,25 +311,8 @@ func FromBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
 		buffer[searchTreeSize+dataSectionSeparatorSize : metadataStart-len(metadataStartMarker)],
 	)
 
-	nodeBuffer := buffer[:searchTreeSize]
-	var nodeReader nodeReader
-	switch metadata.RecordSize {
-	case 24:
-		nodeReader = nodeReader24{buffer: nodeBuffer}
-	case 28:
-		nodeReader = nodeReader28{buffer: nodeBuffer}
-	case 32:
-		nodeReader = nodeReader32{buffer: nodeBuffer}
-	default:
-		return nil, mmdberrors.NewInvalidDatabaseError(
-			"unknown record size: %d",
-			metadata.RecordSize,
-		)
-	}
-
 	reader := &Reader{
 		buffer:         buffer,
-		nodeReader:     nodeReader,
 		decoder:        d,
 		Metadata:       metadata,
 		ipv4Start:      0,
@@ -394,7 +376,7 @@ func (r *Reader) setIPv4Start() {
 	node := uint(0)
 	i := 0
 	for ; i < 96 && node < nodeCount; i++ {
-		node = r.nodeReader.readLeft(node * r.nodeOffsetMult)
+		node = readNodeBySize(r.buffer, node*r.nodeOffsetMult, 0, r.Metadata.RecordSize)
 	}
 	r.ipv4Start = node
 	r.ipv4StartBitDepth = i
@@ -410,7 +392,10 @@ func (r *Reader) lookupPointer(ip netip.Addr) (uint, int, error) {
 		)
 	}
 
-	node, prefixLength := r.traverseTree(ip, 0, 128)
+	node, prefixLength, err := r.traverseTree(ip, 0, 128)
+	if err != nil {
+		return 0, 0, err
+	}
 
 	nodeCount := r.Metadata.NodeCount
 	if node == nodeCount {
@@ -423,25 +408,134 @@ func (r *Reader) lookupPointer(ip netip.Addr) (uint, int, error) {
 	return 0, prefixLength, mmdberrors.NewInvalidDatabaseError("invalid node in search tree")
 }
 
-func (r *Reader) traverseTree(ip netip.Addr, node uint, stopBit int) (uint, int) {
+// readNodeBySize reads a node value from the buffer based on record size and bit.
+func readNodeBySize(buffer []byte, offset, bit, recordSize uint) uint {
+	switch recordSize {
+	case 24:
+		offset += bit * 3
+		return (uint(buffer[offset]) << 16) |
+			(uint(buffer[offset+1]) << 8) |
+			uint(buffer[offset+2])
+	case 28:
+		if bit == 0 {
+			return ((uint(buffer[offset+3]) & 0xF0) << 20) |
+				(uint(buffer[offset]) << 16) |
+				(uint(buffer[offset+1]) << 8) |
+				uint(buffer[offset+2])
+		}
+		return ((uint(buffer[offset+3]) & 0x0F) << 24) |
+			(uint(buffer[offset+4]) << 16) |
+			(uint(buffer[offset+5]) << 8) |
+			uint(buffer[offset+6])
+	case 32:
+		offset += bit * 4
+		return (uint(buffer[offset]) << 24) |
+			(uint(buffer[offset+1]) << 16) |
+			(uint(buffer[offset+2]) << 8) |
+			uint(buffer[offset+3])
+	default:
+		return 0
+	}
+}
+
+func (r *Reader) traverseTree(ip netip.Addr, node uint, stopBit int) (uint, int, error) {
+	switch r.Metadata.RecordSize {
+	case 24:
+		n, i := r.traverseTree24(ip, node, stopBit)
+		return n, i, nil
+	case 28:
+		n, i := r.traverseTree28(ip, node, stopBit)
+		return n, i, nil
+	case 32:
+		n, i := r.traverseTree32(ip, node, stopBit)
+		return n, i, nil
+	default:
+		return 0, 0, mmdberrors.NewInvalidDatabaseError(
+			"unsupported record size: %d",
+			r.Metadata.RecordSize,
+		)
+	}
+}
+
+func (r *Reader) traverseTree24(ip netip.Addr, node uint, stopBit int) (uint, int) {
 	i := 0
 	if ip.Is4() {
 		i = r.ipv4StartBitDepth
 		node = r.ipv4Start
 	}
 	nodeCount := r.Metadata.NodeCount
-
+	buffer := r.buffer
 	ip16 := ip.As16()
 
 	for ; i < stopBit && node < nodeCount; i++ {
-		bit := uint(1) & (uint(ip16[i>>3]) >> (7 - (i % 8)))
+		byteIdx := i >> 3
+		bitPos := 7 - (i & 7)
+		bit := (uint(ip16[byteIdx]) >> bitPos) & 1
 
-		offset := node * r.nodeOffsetMult
-		if bit == 0 {
-			node = r.nodeReader.readLeft(offset)
-		} else {
-			node = r.nodeReader.readRight(offset)
-		}
+		baseOffset := node * 6
+		offset := baseOffset + bit*3
+
+		node = (uint(buffer[offset]) << 16) |
+			(uint(buffer[offset+1]) << 8) |
+			uint(buffer[offset+2])
+	}
+
+	return node, i
+}
+
+func (r *Reader) traverseTree28(ip netip.Addr, node uint, stopBit int) (uint, int) {
+	i := 0
+	if ip.Is4() {
+		i = r.ipv4StartBitDepth
+		node = r.ipv4Start
+	}
+	nodeCount := r.Metadata.NodeCount
+	buffer := r.buffer
+	ip16 := ip.As16()
+
+	for ; i < stopBit && node < nodeCount; i++ {
+		byteIdx := i >> 3
+		bitPos := 7 - (i & 7)
+		bit := (uint(ip16[byteIdx]) >> bitPos) & 1
+
+		baseOffset := node * 7
+		sharedByte := uint(buffer[baseOffset+3])
+		mask := uint(0xF0 >> (bit * 4))
+		shift := 20 + bit*4
+		nibble := ((sharedByte & mask) << shift)
+		offset := baseOffset + bit*4
+
+		node = nibble |
+			(uint(buffer[offset]) << 16) |
+			(uint(buffer[offset+1]) << 8) |
+			uint(buffer[offset+2])
+	}
+
+	return node, i
+}
+
+func (r *Reader) traverseTree32(ip netip.Addr, node uint, stopBit int) (uint, int) {
+	i := 0
+	if ip.Is4() {
+		i = r.ipv4StartBitDepth
+		node = r.ipv4Start
+	}
+	nodeCount := r.Metadata.NodeCount
+	buffer := r.buffer
+	ip16 := ip.As16()
+
+	for ; i < stopBit && node < nodeCount; i++ {
+		byteIdx := i >> 3
+		bitPos := 7 - (i & 7)
+		bit := (uint(ip16[byteIdx]) >> bitPos) & 1
+
+		baseOffset := node * 8
+		offset := baseOffset + bit*4
+
+		node = (uint(buffer[offset]) << 24) |
+			(uint(buffer[offset+1]) << 16) |
+			(uint(buffer[offset+2]) << 8) |
+			uint(buffer[offset+3])
 	}
 
 	return node, i

@@ -101,7 +101,14 @@ func (r *Reader) NetworksWithin(prefix netip.Prefix, options ...NetworksOption) 
 			stopBit += 96
 		}
 
-		pointer, bit := r.traverseTree(ip, 0, stopBit)
+		pointer, bit, err := r.traverseTree(ip, 0, stopBit)
+		if err != nil {
+			yield(Result{
+				ip:  ip,
+				err: err,
+			})
+			return
+		}
 
 		prefix, err := netIP.Prefix(bit)
 		if err != nil {
@@ -182,7 +189,7 @@ func (r *Reader) NetworksWithin(prefix netip.Prefix, options ...NetworksOption) 
 				ipRight[node.bit>>3] |= 1 << (7 - (node.bit % 8))
 
 				offset := node.pointer * r.nodeOffsetMult
-				rightPointer := r.nodeReader.readRight(offset)
+				rightPointer := readNodeBySize(r.buffer, offset, 1, r.Metadata.RecordSize)
 
 				node.bit++
 				nodes = append(nodes, netNode{
@@ -191,7 +198,7 @@ func (r *Reader) NetworksWithin(prefix netip.Prefix, options ...NetworksOption) 
 					bit:     node.bit,
 				})
 
-				node.pointer = r.nodeReader.readLeft(offset)
+				node.pointer = readNodeBySize(r.buffer, offset, 0, r.Metadata.RecordSize)
 			}
 		}
 	}
