@@ -694,15 +694,7 @@ func (d *ReflectionDecoder) decodeStruct(
 ) (uint, error) {
 	fields := cachedFields(result)
 
-	// This fills in embedded structs
-	for _, i := range fields.anonymousFields {
-		_, err := d.unmarshalMap(size, offset, result.Field(i), depth)
-		if err != nil {
-			return 0, err
-		}
-	}
-
-	// This handles named fields
+	// Single-phase processing: decode only the dominant fields
 	for range size {
 		var (
 			err error
@@ -714,7 +706,7 @@ func (d *ReflectionDecoder) decodeStruct(
 		}
 		// The string() does not create a copy due to this compiler
 		// optimization: https://github.com/golang/go/issues/3512
-		j, ok := fields.namedFields[string(key)]
+		fieldInfo, ok := fields.namedFields[string(key)]
 		if !ok {
 			offset, err = d.nextValueOffset(offset, 1)
 			if err != nil {
@@ -723,7 +715,26 @@ func (d *ReflectionDecoder) decodeStruct(
 			continue
 		}
 
-		offset, err = d.decode(offset, result.Field(j), depth)
+		// Use FieldByIndex to access fields through their index path
+		// This handles embedded structs correctly, but we need to initialize
+		// any nil embedded pointers along the path
+		fieldValue := result
+		for i, idx := range fieldInfo.index {
+			fieldValue = fieldValue.Field(idx)
+			// If this is an embedded pointer field and it's nil, initialize it
+			if fieldValue.Kind() == reflect.Ptr && fieldValue.IsNil() {
+				// Only initialize if this isn't the final field in the path
+				if i < len(fieldInfo.index)-1 {
+					fieldValue.Set(reflect.New(fieldValue.Type().Elem()))
+				}
+			}
+			// If it's a pointer, dereference it to continue traversal
+			if fieldValue.Kind() == reflect.Ptr && !fieldValue.IsNil() &&
+				i < len(fieldInfo.index)-1 {
+				fieldValue = fieldValue.Elem()
+			}
+		}
+		offset, err = d.decode(offset, fieldValue, depth)
 		if err != nil {
 			return 0, d.wrapErrorWithMapKey(err, string(key))
 		}
@@ -731,9 +742,57 @@ func (d *ReflectionDecoder) decodeStruct(
 	return offset, nil
 }
 
+type fieldInfo struct {
+	name   string
+	index  []int
+	depth  int
+	hasTag bool
+}
+
 type fieldsType struct {
-	namedFields     map[string]int
-	anonymousFields []int
+	namedFields map[string]*fieldInfo // Map from field name to field info
+}
+
+type queueEntry struct {
+	typ   reflect.Type
+	index []int // Field index path
+	depth int   // Embedding depth
+}
+
+// getEmbeddedStructType returns the struct type for embedded fields.
+// Returns nil if the field is not an embeddable struct type.
+func getEmbeddedStructType(fieldType reflect.Type) reflect.Type {
+	if fieldType.Kind() == reflect.Struct {
+		return fieldType
+	}
+	if fieldType.Kind() == reflect.Ptr && fieldType.Elem().Kind() == reflect.Struct {
+		return fieldType.Elem()
+	}
+	return nil
+}
+
+// handleEmbeddedField processes an embedded struct field and returns true if the field should be skipped.
+func handleEmbeddedField(
+	field reflect.StructField,
+	hasTag bool,
+	queue *[]queueEntry,
+	seen *map[reflect.Type]bool,
+	fieldIndex []int,
+	depth int,
+) bool {
+	embeddedType := getEmbeddedStructType(field.Type)
+	if embeddedType == nil {
+		return false
+	}
+
+	// For embedded structs (and pointer to structs), add to queue for further traversal
+	if !(*seen)[embeddedType] {
+		*queue = append(*queue, queueEntry{embeddedType, fieldIndex, depth + 1})
+		(*seen)[embeddedType] = true
+	}
+
+	// If embedded struct has no explicit tag, don't add it as a named field
+	return !hasTag
 }
 
 var fieldsMap sync.Map
@@ -744,27 +803,119 @@ func cachedFields(result reflect.Value) *fieldsType {
 	if fields, ok := fieldsMap.Load(resultType); ok {
 		return fields.(*fieldsType)
 	}
-	numFields := resultType.NumField()
-	namedFields := make(map[string]int, numFields)
-	var anonymous []int
-	for i := range numFields {
-		field := resultType.Field(i)
 
-		fieldName := field.Name
-		if tag := field.Tag.Get("maxminddb"); tag != "" {
-			if tag == "-" {
-				continue
-			}
-			fieldName = tag
-		}
-		if field.Anonymous {
-			anonymous = append(anonymous, i)
-			continue
-		}
-		namedFields[fieldName] = i
-	}
-	fields := &fieldsType{namedFields, anonymous}
+	fields := makeStructFields(resultType)
 	fieldsMap.Store(resultType, fields)
 
 	return fields
+}
+
+// makeStructFields implements json/v2 style field precedence rules.
+func makeStructFields(rootType reflect.Type) *fieldsType {
+	// Breadth-first traversal to collect all fields with depth information
+
+	queue := []queueEntry{{rootType, nil, 0}}
+	var allFields []fieldInfo
+	seen := make(map[reflect.Type]bool)
+	seen[rootType] = true
+
+	// Collect all reachable fields using breadth-first search
+	for len(queue) > 0 {
+		entry := queue[0]
+		queue = queue[1:]
+
+		for i := range entry.typ.NumField() {
+			field := entry.typ.Field(i)
+
+			// Skip unexported fields (except embedded structs)
+			if !field.IsExported() && (!field.Anonymous || field.Type.Kind() != reflect.Struct) {
+				continue
+			}
+
+			// Build field index path
+			fieldIndex := make([]int, len(entry.index)+1)
+			copy(fieldIndex, entry.index)
+			fieldIndex[len(entry.index)] = i
+
+			// Parse maxminddb tag
+			fieldName := field.Name
+			hasTag := false
+			if tag := field.Tag.Get("maxminddb"); tag != "" {
+				if tag == "-" {
+					continue // Skip ignored fields
+				}
+				fieldName = tag
+				hasTag = true
+			}
+
+			// Handle embedded structs and embedded pointers to structs
+			if field.Anonymous && handleEmbeddedField(
+				field, hasTag, &queue, &seen, fieldIndex, entry.depth,
+			) {
+				continue
+			}
+
+			// Add field to collection
+			allFields = append(allFields, fieldInfo{
+				index:  fieldIndex,
+				name:   fieldName,
+				hasTag: hasTag,
+				depth:  entry.depth,
+			})
+		}
+	}
+
+	// Apply precedence rules to resolve field conflicts
+	namedFields := make(map[string]*fieldInfo)
+	fieldsByName := make(map[string][]fieldInfo)
+
+	// Group fields by name
+	for _, field := range allFields {
+		fieldsByName[field.name] = append(fieldsByName[field.name], field)
+	}
+
+	// Apply precedence rules for each field name
+	for name, fields := range fieldsByName {
+		if len(fields) == 1 {
+			// No conflict, use the field
+			namedFields[name] = &fields[0]
+			continue
+		}
+
+		// Find the dominant field using json/v2 precedence rules:
+		// 1. Shallowest depth wins
+		// 2. Among same depth, explicitly tagged field wins
+		// 3. Among same depth with same tag status, first declared wins
+
+		dominant := fields[0]
+		for i := 1; i < len(fields); i++ {
+			candidate := fields[i]
+
+			// Shallowest depth wins
+			if candidate.depth < dominant.depth {
+				dominant = candidate
+				continue
+			}
+			if candidate.depth > dominant.depth {
+				continue
+			}
+
+			// Same depth: explicitly tagged field wins
+			if candidate.hasTag && !dominant.hasTag {
+				dominant = candidate
+				continue
+			}
+			if !candidate.hasTag && dominant.hasTag {
+				continue
+			}
+
+			// Same depth and tag status: first declared wins (keep current dominant)
+		}
+
+		namedFields[name] = &dominant
+	}
+
+	return &fieldsType{
+		namedFields: namedFields,
+	}
 }
