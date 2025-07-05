@@ -214,20 +214,20 @@ func (d *Decoder) ReadUInt128() (hi, lo uint64, err error) {
 	return hi, lo, nil
 }
 
-// ReadMap returns an iterator to read the map. The first value from the
-// iterator is the key. Please note that this byte slice is only valid during
-// the iteration. This is done to avoid an unnecessary allocation. You must
-// make a copy of it if you are storing it for later use. The second value is
-// an error indicating that the database is malformed or that the pointed
-// value is not a map.
-func (d *Decoder) ReadMap() iter.Seq2[[]byte, error] {
-	return func(yield func([]byte, error) bool) {
-		size, offset, err := d.decodeCtrlDataAndFollow(KindMap)
-		if err != nil {
-			yield(nil, d.wrapError(err))
-			return
-		}
+// ReadMap returns an iterator to read the map along with the map size. The
+// size can be used to pre-allocate a map with the correct capacity for better
+// performance. The first value from the iterator is the key. Please note that
+// this byte slice is only valid during the iteration. This is done to avoid
+// an unnecessary allocation. You must make a copy of it if you are storing it
+// for later use. The second value is an error indicating that the database is
+// malformed or that the pointed value is not a map.
+func (d *Decoder) ReadMap() (iter.Seq2[[]byte, error], uint, error) {
+	size, offset, err := d.decodeCtrlDataAndFollow(KindMap)
+	if err != nil {
+		return nil, 0, d.wrapError(err)
+	}
 
+	iterator := func(yield func([]byte, error) bool) {
 		currentOffset := offset
 
 		for range size {
@@ -257,19 +257,21 @@ func (d *Decoder) ReadMap() iter.Seq2[[]byte, error] {
 		// Set the final offset after map iteration
 		d.reset(currentOffset)
 	}
+
+	return iterator, size, nil
 }
 
-// ReadSlice returns an iterator over the values of the slice. The iterator
-// returns an error if the database is malformed or if the pointed value is
-// not a slice.
-func (d *Decoder) ReadSlice() iter.Seq[error] {
-	return func(yield func(error) bool) {
-		size, offset, err := d.decodeCtrlDataAndFollow(KindSlice)
-		if err != nil {
-			yield(d.wrapError(err))
-			return
-		}
+// ReadSlice returns an iterator over the values of the slice along with the
+// slice size. The size can be used to pre-allocate a slice with the correct
+// capacity for better performance. The iterator returns an error if the
+// database is malformed or if the pointed value is not a slice.
+func (d *Decoder) ReadSlice() (iter.Seq[error], uint, error) {
+	size, offset, err := d.decodeCtrlDataAndFollow(KindSlice)
+	if err != nil {
+		return nil, 0, d.wrapError(err)
+	}
 
+	iterator := func(yield func(error) bool) {
 		currentOffset := offset
 
 		for i := range size {
@@ -301,6 +303,8 @@ func (d *Decoder) ReadSlice() iter.Seq[error] {
 		// Set final offset after slice iteration
 		d.reset(currentOffset)
 	}
+
+	return iterator, size, nil
 }
 
 // SkipValue skips over the current value without decoding it.

@@ -1119,7 +1119,11 @@ type TestCity struct {
 // UnmarshalMaxMindDB implements the Unmarshaler interface for TestCity.
 // This demonstrates custom decoding that avoids reflection for better performance.
 func (c *TestCity) UnmarshalMaxMindDB(d *mmdbdata.Decoder) error {
-	for key, err := range d.ReadMap() {
+	mapIter, _, err := d.ReadMap()
+	if err != nil {
+		return err
+	}
+	for key, err := range mapIter {
 		if err != nil {
 			return err
 		}
@@ -1127,8 +1131,12 @@ func (c *TestCity) UnmarshalMaxMindDB(d *mmdbdata.Decoder) error {
 		switch string(key) {
 		case "names":
 			// Decode nested map[string]string for localized names
-			names := make(map[string]string)
-			for nameKey, nameErr := range d.ReadMap() {
+			nameMapIter, size, err := d.ReadMap()
+			if err != nil {
+				return err
+			}
+			names := make(map[string]string, size) // Pre-allocate with correct capacity
+			for nameKey, nameErr := range nameMapIter {
 				if nameErr != nil {
 					return nameErr
 				}
@@ -1163,7 +1171,11 @@ type TestASN struct {
 
 // UnmarshalMaxMindDB implements the Unmarshaler interface for TestASN.
 func (a *TestASN) UnmarshalMaxMindDB(d *mmdbdata.Decoder) error {
-	for key, err := range d.ReadMap() {
+	mapIter, _, err := d.ReadMap()
+	if err != nil {
+		return err
+	}
+	for key, err := range mapIter {
 		if err != nil {
 			return err
 		}

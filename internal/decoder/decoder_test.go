@@ -146,8 +146,9 @@ func TestDecodeMap(t *testing.T) {
 	for hexStr, expected := range tests {
 		t.Run(hexStr, func(t *testing.T) {
 			decoder := newDecoderFromHex(t, hexStr)
-			resultMap := make(map[string]any)
-			mapIter := decoder.ReadMap() // [cite: 53]
+			mapIter, size, err := decoder.ReadMap() // [cite: 53]
+			require.NoError(t, err, "ReadMap failed")
+			resultMap := make(map[string]any, size) // Pre-allocate with correct capacity
 
 			// Iterate through the map [cite: 54]
 			for keyBytes, err := range mapIter { // [cite: 50]
@@ -178,8 +179,9 @@ func TestDecodeSlice(t *testing.T) {
 	for hexStr, expected := range tests {
 		t.Run(hexStr, func(t *testing.T) {
 			decoder := newDecoderFromHex(t, hexStr)
-			results := make([]any, 0)
-			sliceIter := decoder.ReadSlice() // [cite: 56]
+			sliceIter, size, err := decoder.ReadSlice() // [cite: 56]
+			require.NoError(t, err, "ReadSlice failed")
+			results := make([]any, 0, size) // Pre-allocate with correct capacity
 
 			// Iterate through the slice [cite: 57]
 			for err := range sliceIter {
@@ -359,7 +361,9 @@ func TestPointersInDecoder(t *testing.T) {
 			actualValue := make(map[string]string)
 
 			// Expecting a map at the target offset (may be behind a pointer)
-			mapIter := decoder.ReadMap()
+			mapIter, size, err := decoder.ReadMap()
+			require.NoError(t, err, "ReadMap failed")
+			_ = size // Use size if needed for pre-allocation
 			for keyBytes, errIter := range mapIter {
 				require.NoError(t, errIter)
 				key := string(keyBytes)

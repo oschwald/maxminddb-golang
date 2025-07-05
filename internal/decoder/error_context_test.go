@@ -171,7 +171,8 @@ func TestContextualErrorIntegration(t *testing.T) {
 		// Test new Decoder API - no automatic path tracking
 		dd := NewDataDecoder(buffer)
 		decoder := NewDecoder(dd, 0)
-		mapIter := decoder.ReadMap()
+		mapIter, _, err := decoder.ReadMap()
+		require.NoError(t, err, "ReadMap failed")
 
 		var mapErr error
 		for _, iterErr := range mapIter {
@@ -230,7 +231,8 @@ func TestContextualErrorIntegration(t *testing.T) {
 		decoder := NewDecoder(dd, 0)
 
 		// Navigate through the nested structure manually
-		mapIter := decoder.ReadMap()
+		mapIter, _, err := decoder.ReadMap()
+		require.NoError(t, err, "ReadMap failed")
 		var mapErr error
 
 		for key, iterErr := range mapIter {
@@ -241,7 +243,8 @@ func TestContextualErrorIntegration(t *testing.T) {
 			require.Equal(t, "list", string(key))
 
 			// Read the array
-			sliceIter := decoder.ReadSlice()
+			sliceIter, _, err := decoder.ReadSlice()
+			require.NoError(t, err, "ReadSlice failed")
 			sliceIndex := 0
 			for sliceIterErr := range sliceIter {
 				if sliceIterErr != nil {
@@ -251,7 +254,8 @@ func TestContextualErrorIntegration(t *testing.T) {
 				require.Equal(t, 0, sliceIndex) // Should be first element
 
 				// Read the nested map (array element)
-				innerMapIter := decoder.ReadMap()
+				innerMapIter, _, err := decoder.ReadMap()
+				require.NoError(t, err, "ReadMap failed")
 				for innerKey, innerIterErr := range innerMapIter {
 					if innerIterErr != nil {
 						mapErr = innerIterErr

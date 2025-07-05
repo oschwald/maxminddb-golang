@@ -183,7 +183,11 @@ type CustomCity struct {
 // This provides custom decoding logic, similar to how json.Unmarshaler works
 // with encoding/json, allowing fine-grained control over data processing.
 func (c *CustomCity) UnmarshalMaxMindDB(d *mmdbdata.Decoder) error {
-	for key, err := range d.ReadMap() {
+	mapIter, _, err := d.ReadMap()
+	if err != nil {
+		return err
+	}
+	for key, err := range mapIter {
 		if err != nil {
 			return err
 		}
@@ -191,7 +195,11 @@ func (c *CustomCity) UnmarshalMaxMindDB(d *mmdbdata.Decoder) error {
 		switch string(key) {
 		case "city":
 			// Decode nested city structure
-			for cityKey, cityErr := range d.ReadMap() {
+			cityMapIter, _, err := d.ReadMap()
+			if err != nil {
+				return err
+			}
+			for cityKey, cityErr := range cityMapIter {
 				if cityErr != nil {
 					return cityErr
 				}
@@ -199,7 +207,11 @@ func (c *CustomCity) UnmarshalMaxMindDB(d *mmdbdata.Decoder) error {
 				case "names":
 					// Decode nested map[string]string for localized names
 					names := make(map[string]string)
-					for nameKey, nameErr := range d.ReadMap() {
+					nameMapIter, _, err := d.ReadMap()
+					if err != nil {
+						return err
+					}
+					for nameKey, nameErr := range nameMapIter {
 						if nameErr != nil {
 							return nameErr
 						}

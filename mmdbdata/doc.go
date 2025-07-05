@@ -14,12 +14,16 @@
 //	}
 //
 //	func (c *City) UnmarshalMaxMindDB(d *mmdbdata.Decoder) error {
-//		for key, err := range d.ReadMap() {
+//		mapIter, _, err := d.ReadMap()
+//		if err != nil { return err }
+//		for key, err := range mapIter {
 //			if err != nil { return err }
 //			switch string(key) {
 //			case "names":
-//				names := make(map[string]string)
-//				for nameKey, nameErr := range d.ReadMap() {
+//				nameIter, size, err := d.ReadMap()
+//				if err != nil { return err }
+//				names := make(map[string]string, size) // Pre-allocate with size
+//				for nameKey, nameErr := range nameIter {
 //					if nameErr != nil { return nameErr }
 //					value, valueErr := d.ReadString()
 //					if valueErr != nil { return valueErr }

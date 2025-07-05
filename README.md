@@ -26,7 +26,7 @@ Version 2.0 includes significant improvements:
 - **Network Iteration**: Iterate over all networks in a database with
   `Networks()` and `NetworksWithin()`
 - **Enhanced Performance**: Optimized data structures and decoding paths
-- **Go 1.24+ Support**: Takes advantage of modern Go features including
+- **Go 1.23+ Support**: Takes advantage of modern Go features including
   iterators
 - **Better Error Handling**: More detailed error types and improved debugging
 
@@ -117,13 +117,23 @@ type FastCity struct {
 }
 
 func (c *FastCity) UnmarshalMaxMindDB(d *maxminddb.Decoder) error {
-	for key, err := range d.ReadMap() {
+	mapIter, size, err := d.ReadMap()
+	if err != nil {
+		return err
+	}
+	// Pre-allocate with correct capacity for better performance
+	_ = size // Use for pre-allocation if storing map data
+	for key, err := range mapIter {
 		if err != nil {
 			return err
 		}
 		switch string(key) {
 		case "country":
-			for countryKey, countryErr := range d.ReadMap() {
+			countryIter, _, err := d.ReadMap()
+			if err != nil {
+				return err
+			}
+			for countryKey, countryErr := range countryIter {
 				if countryErr != nil {
 					return countryErr
 				}
