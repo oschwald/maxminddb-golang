@@ -716,26 +716,18 @@ func (d *ReflectionDecoder) decodeStruct(
 			continue
 		}
 
-		// Use FieldByIndex to access fields through their index path
-		// This handles embedded structs correctly, but we need to initialize
-		// any nil embedded pointers along the path
-		fieldValue := result
-		for i, idx := range fieldInfo.index {
-			fieldValue = fieldValue.Field(idx)
-			// If this is an embedded pointer field and it's nil, initialize it
-			if fieldValue.Kind() == reflect.Ptr && fieldValue.IsNil() {
-				// Only initialize if this isn't the final field in the path
-				if i < len(fieldInfo.index)-1 {
-					fieldValue.Set(reflect.New(fieldValue.Type().Elem()))
-				}
+		// Use optimized field access with addressable value wrapper
+		av := newAddressableValue(result)
+		fieldValue := av.fieldByIndex(fieldInfo.index0, fieldInfo.index, true)
+		if !fieldValue.IsValid() {
+			// Field access failed, skip this field
+			offset, err = d.nextValueOffset(offset, 1)
+			if err != nil {
+				return 0, err
 			}
-			// If it's a pointer, dereference it to continue traversal
-			if fieldValue.Kind() == reflect.Ptr && !fieldValue.IsNil() &&
-				i < len(fieldInfo.index)-1 {
-				fieldValue = fieldValue.Elem()
-			}
+			continue
 		}
-		offset, err = d.decode(offset, fieldValue, depth)
+		offset, err = d.decode(offset, fieldValue.Value, depth)
 		if err != nil {
 			return 0, d.wrapErrorWithMapKey(err, string(key))
 		}
@@ -745,7 +737,8 @@ func (d *ReflectionDecoder) decodeStruct(
 
 type fieldInfo struct {
 	name   string
-	index  []int
+	index  []int // Remaining indices (nil if single field)
+	index0 int   // First field index (avoids bounds check)
 	depth  int
 	hasTag bool
 }
@@ -880,7 +873,7 @@ func makeStructFields(rootType reflect.Type) *fieldsType {
 
 			// Add field to collection
 			allFields = append(allFields, fieldInfo{
-				index:  fieldIndex,
+				index:  fieldIndex, // Will be reindexed later for optimization
 				name:   fieldName,
 				hasTag: hasTag,
 				depth:  entry.depth,
@@ -889,8 +882,9 @@ func makeStructFields(rootType reflect.Type) *fieldsType {
 	}
 
 	// Apply precedence rules to resolve field conflicts
-	namedFields := make(map[string]*fieldInfo)
-	fieldsByName := make(map[string][]fieldInfo)
+	// Pre-size the map based on field count for better memory efficiency
+	namedFields := make(map[string]*fieldInfo, len(allFields))
+	fieldsByName := make(map[string][]fieldInfo, len(allFields))
 
 	// Group fields by name
 	for _, field := range allFields {
@@ -898,10 +892,14 @@ func makeStructFields(rootType reflect.Type) *fieldsType {
 	}
 
 	// Apply precedence rules for each field name
+	// Store results in a flattened slice to allow pointer references
+	flatFields := make([]fieldInfo, 0, len(fieldsByName))
+
 	for name, fields := range fieldsByName {
 		if len(fields) == 1 {
 			// No conflict, use the field
-			namedFields[name] = &fields[0]
+			flatFields = append(flatFields, fields[0])
+			namedFields[name] = &flatFields[len(flatFields)-1]
 			continue
 		}
 
@@ -935,10 +933,81 @@ func makeStructFields(rootType reflect.Type) *fieldsType {
 			// Same depth and tag status: first declared wins (keep current dominant)
 		}
 
-		namedFields[name] = &dominant
+		flatFields = append(flatFields, dominant)
+		namedFields[name] = &flatFields[len(flatFields)-1]
 	}
 
-	return &fieldsType{
+	fields := &fieldsType{
 		namedFields: namedFields,
 	}
+
+	// Reindex all fields for optimized access
+	fields.reindex()
+
+	return fields
+}
+
+// reindex optimizes field indices to avoid bounds checks during runtime.
+// This follows the json/v2 pattern of splitting the first index from the remainder.
+func (fs *fieldsType) reindex() {
+	for _, field := range fs.namedFields {
+		if len(field.index) > 0 {
+			field.index0 = field.index[0]
+			field.index = field.index[1:]
+			if len(field.index) == 0 {
+				field.index = nil // avoid pinning the backing slice
+			}
+		}
+	}
+}
+
+// addressableValue wraps a reflect.Value to optimize field access and
+// embedded pointer handling. Based on encoding/json/v2 patterns.
+type addressableValue struct {
+	reflect.Value
+
+	forcedAddr bool
+}
+
+// newAddressableValue creates an addressable value wrapper.
+func newAddressableValue(v reflect.Value) addressableValue {
+	return addressableValue{Value: v, forcedAddr: false}
+}
+
+// fieldByIndex efficiently accesses a field by its index path,
+// initializing embedded pointers as needed.
+func (av addressableValue) fieldByIndex(
+	index0 int,
+	remainingIndex []int,
+	mayAlloc bool,
+) addressableValue {
+	// First field access (optimized with no bounds check)
+	av = addressableValue{av.Field(index0), av.forcedAddr}
+
+	// Handle remaining indices if any
+	if len(remainingIndex) > 0 {
+		for _, i := range remainingIndex {
+			av = av.indirect(mayAlloc)
+			if !av.IsValid() {
+				return av
+			}
+			av = addressableValue{av.Field(i), av.forcedAddr}
+		}
+	}
+
+	return av
+}
+
+// indirect handles pointer dereferencing and initialization.
+func (av addressableValue) indirect(mayAlloc bool) addressableValue {
+	if av.Kind() == reflect.Ptr {
+		if av.IsNil() {
+			if !mayAlloc || !av.CanSet() {
+				return addressableValue{} // Return invalid value
+			}
+			av.Set(reflect.New(av.Type().Elem()))
+		}
+		av = addressableValue{av.Elem(), false}
+	}
+	return av
 }
