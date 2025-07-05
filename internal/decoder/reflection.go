@@ -236,19 +236,53 @@ func (*ReflectionDecoder) wrapErrorWithSliceIndex(err error, index int) error {
 }
 
 func (d *ReflectionDecoder) decode(offset uint, result reflect.Value, depth int) (uint, error) {
+	// Convert to addressableValue and delegate to internal method
+	// Use fast path for already addressable values to avoid allocation
+	if result.CanAddr() {
+		av := addressableValue{Value: result, forcedAddr: false}
+		return d.decodeValue(offset, av, depth)
+	}
+	av := makeAddressable(result)
+	return d.decodeValue(offset, av, depth)
+}
+
+// decodeValue is the internal decode method that works with addressableValue
+// for consistent optimization throughout the decoder.
+func (d *ReflectionDecoder) decodeValue(
+	offset uint,
+	result addressableValue,
+	depth int,
+) (uint, error) {
 	if depth > maximumDataStructureDepth {
 		return 0, mmdberrors.NewInvalidDatabaseError(
 			"exceeded maximum data structure depth; database is likely corrupt",
 		)
 	}
 
-	// First handle pointers by creating the value if needed, similar to indirect()
-	if result.Kind() == reflect.Ptr {
+	// Apply the original indirect logic to handle pointers and interfaces properly
+	for {
+		// Load value from interface, but only if the result will be
+		// usefully addressable.
+		if result.Kind() == reflect.Interface && !result.IsNil() {
+			e := result.Elem()
+			if e.Kind() == reflect.Ptr && !e.IsNil() {
+				result = addressableValue{e, result.forcedAddr}
+				continue
+			}
+		}
+
+		if result.Kind() != reflect.Ptr {
+			break
+		}
+
 		if result.IsNil() {
 			result.Set(reflect.New(result.Type().Elem()))
 		}
-		// Continue with the pointed-to value - interface check will happen in recursive call
-		return d.decode(offset, result.Elem(), depth)
+
+		result = addressableValue{
+			result.Elem(),
+			false,
+		} // dereferenced pointer is always addressable
 	}
 
 	// Check if the value implements Unmarshaler interface using type assertion
@@ -278,11 +312,9 @@ func (d *ReflectionDecoder) decodeFromType(
 	dtype Kind,
 	size uint,
 	offset uint,
-	result reflect.Value,
+	result addressableValue,
 	depth int,
 ) (uint, error) {
-	result = indirect(result)
-
 	// For these types, size has a special meaning
 	switch dtype {
 	case KindBool:
@@ -316,7 +348,10 @@ func (d *ReflectionDecoder) decodeFromType(
 	}
 }
 
-func (d *ReflectionDecoder) unmarshalBool(size, offset uint, result reflect.Value) (uint, error) {
+func (d *ReflectionDecoder) unmarshalBool(
+	size, offset uint,
+	result addressableValue,
+) (uint, error) {
 	value, newOffset, err := d.decodeBool(size, offset)
 	if err != nil {
 		return 0, err
@@ -335,38 +370,12 @@ func (d *ReflectionDecoder) unmarshalBool(size, offset uint, result reflect.Valu
 	return newOffset, mmdberrors.NewUnmarshalTypeError(value, result.Type())
 }
 
-// indirect follows pointers and create values as necessary. This is
-// heavily based on encoding/json as my original version had a subtle
-// bug. This method should be considered to be licensed under
-// https://golang.org/LICENSE
-func indirect(result reflect.Value) reflect.Value {
-	for {
-		// Load value from interface, but only if the result will be
-		// usefully addressable.
-		if result.Kind() == reflect.Interface && !result.IsNil() {
-			e := result.Elem()
-			if e.Kind() == reflect.Ptr && !e.IsNil() {
-				result = e
-				continue
-			}
-		}
-
-		if result.Kind() != reflect.Ptr {
-			break
-		}
-
-		if result.IsNil() {
-			result.Set(reflect.New(result.Type().Elem()))
-		}
-
-		result = result.Elem()
-	}
-	return result
-}
-
 var sliceType = reflect.TypeOf([]byte{})
 
-func (d *ReflectionDecoder) unmarshalBytes(size, offset uint, result reflect.Value) (uint, error) {
+func (d *ReflectionDecoder) unmarshalBytes(
+	size, offset uint,
+	result addressableValue,
+) (uint, error) {
 	value, newOffset, err := d.decodeBytes(size, offset)
 	if err != nil {
 		return 0, err
@@ -388,7 +397,7 @@ func (d *ReflectionDecoder) unmarshalBytes(size, offset uint, result reflect.Val
 }
 
 func (d *ReflectionDecoder) unmarshalFloat32(
-	size, offset uint, result reflect.Value,
+	size, offset uint, result addressableValue,
 ) (uint, error) {
 	value, newOffset, err := d.decodeFloat32(size, offset)
 	if err != nil {
@@ -409,7 +418,7 @@ func (d *ReflectionDecoder) unmarshalFloat32(
 }
 
 func (d *ReflectionDecoder) unmarshalFloat64(
-	size, offset uint, result reflect.Value,
+	size, offset uint, result addressableValue,
 ) (uint, error) {
 	value, newOffset, err := d.decodeFloat64(size, offset)
 	if err != nil {
@@ -432,7 +441,10 @@ func (d *ReflectionDecoder) unmarshalFloat64(
 	return newOffset, mmdberrors.NewUnmarshalTypeError(value, result.Type())
 }
 
-func (d *ReflectionDecoder) unmarshalInt32(size, offset uint, result reflect.Value) (uint, error) {
+func (d *ReflectionDecoder) unmarshalInt32(
+	size, offset uint,
+	result addressableValue,
+) (uint, error) {
 	value, newOffset, err := d.decodeInt32(size, offset)
 	if err != nil {
 		return 0, err
@@ -468,10 +480,9 @@ func (d *ReflectionDecoder) unmarshalInt32(size, offset uint, result reflect.Val
 func (d *ReflectionDecoder) unmarshalMap(
 	size uint,
 	offset uint,
-	result reflect.Value,
+	result addressableValue,
 	depth int,
 ) (uint, error) {
-	result = indirect(result)
 	switch result.Kind() {
 	default:
 		return 0, mmdberrors.NewUnmarshalTypeStrError("map", result.Type())
@@ -481,9 +492,11 @@ func (d *ReflectionDecoder) unmarshalMap(
 		return d.decodeMap(size, offset, result, depth)
 	case reflect.Interface:
 		if result.NumMethod() == 0 {
-			rv := reflect.ValueOf(make(map[string]any, size))
+			// Create map directly without makeAddressable wrapper
+			mapVal := reflect.ValueOf(make(map[string]any, size))
+			rv := addressableValue{Value: mapVal, forcedAddr: false}
 			newOffset, err := d.decodeMap(size, offset, rv, depth)
-			result.Set(rv)
+			result.Set(rv.Value)
 			return newOffset, err
 		}
 		return 0, mmdberrors.NewUnmarshalTypeStrError("map", result.Type())
@@ -492,21 +505,21 @@ func (d *ReflectionDecoder) unmarshalMap(
 
 func (d *ReflectionDecoder) unmarshalPointer(
 	size, offset uint,
-	result reflect.Value,
+	result addressableValue,
 	depth int,
 ) (uint, error) {
 	pointer, newOffset, err := d.decodePointer(size, offset)
 	if err != nil {
 		return 0, err
 	}
-	_, err = d.decode(pointer, result, depth)
+	_, err = d.decodeValue(pointer, result, depth)
 	return newOffset, err
 }
 
 func (d *ReflectionDecoder) unmarshalSlice(
 	size uint,
 	offset uint,
-	result reflect.Value,
+	result addressableValue,
 	depth int,
 ) (uint, error) {
 	switch result.Kind() {
@@ -515,16 +528,21 @@ func (d *ReflectionDecoder) unmarshalSlice(
 	case reflect.Interface:
 		if result.NumMethod() == 0 {
 			a := []any{}
-			rv := reflect.ValueOf(&a).Elem()
+			// Create slice directly without makeAddressable wrapper
+			sliceVal := reflect.ValueOf(&a).Elem()
+			rv := addressableValue{Value: sliceVal, forcedAddr: false}
 			newOffset, err := d.decodeSlice(size, offset, rv, depth)
-			result.Set(rv)
+			result.Set(rv.Value)
 			return newOffset, err
 		}
 	}
 	return 0, mmdberrors.NewUnmarshalTypeStrError("array", result.Type())
 }
 
-func (d *ReflectionDecoder) unmarshalString(size, offset uint, result reflect.Value) (uint, error) {
+func (d *ReflectionDecoder) unmarshalString(
+	size, offset uint,
+	result addressableValue,
+) (uint, error) {
 	value, newOffset, err := d.decodeString(size, offset)
 	if err != nil {
 		return 0, err
@@ -545,7 +563,7 @@ func (d *ReflectionDecoder) unmarshalString(size, offset uint, result reflect.Va
 
 func (d *ReflectionDecoder) unmarshalUint(
 	size, offset uint,
-	result reflect.Value,
+	result addressableValue,
 	uintType uint,
 ) (uint, error) {
 	// Use the appropriate DataDecoder method based on uint type
@@ -569,6 +587,30 @@ func (d *ReflectionDecoder) unmarshalUint(
 
 	if err != nil {
 		return 0, err
+	}
+
+	// Fast path for exact type matches (inspired by json/v2 fast paths)
+	switch result.Kind() {
+	case reflect.Uint32:
+		if uintType == 32 && value <= 0xFFFFFFFF {
+			result.SetUint(value)
+			return newOffset, nil
+		}
+	case reflect.Uint64:
+		if uintType == 64 {
+			result.SetUint(value)
+			return newOffset, nil
+		}
+	case reflect.Uint16:
+		if uintType == 16 && value <= 0xFFFF {
+			result.SetUint(value)
+			return newOffset, nil
+		}
+	case reflect.Uint8:
+		if uintType == 16 && value <= 0xFF { // uint8 often stored as uint16 in MMDB
+			result.SetUint(value)
+			return newOffset, nil
+		}
 	}
 
 	switch result.Kind() {
@@ -600,7 +642,7 @@ func (d *ReflectionDecoder) unmarshalUint(
 var bigIntType = reflect.TypeOf(big.Int{})
 
 func (d *ReflectionDecoder) unmarshalUint128(
-	size, offset uint, result reflect.Value,
+	size, offset uint, result addressableValue,
 ) (uint, error) {
 	hi, lo, newOffset, err := d.decodeUint128(size, offset)
 	if err != nil {
@@ -635,7 +677,7 @@ func (d *ReflectionDecoder) unmarshalUint128(
 func (d *ReflectionDecoder) decodeMap(
 	size uint,
 	offset uint,
-	result reflect.Value,
+	result addressableValue,
 	depth int,
 ) (uint, error) {
 	if result.IsNil() {
@@ -643,29 +685,34 @@ func (d *ReflectionDecoder) decodeMap(
 	}
 
 	mapType := result.Type()
-	keyValue := reflect.New(mapType.Key()).Elem()
+
+	// Pre-allocated values for efficient reuse
+	keyVal := reflect.New(mapType.Key()).Elem()
+	keyValue := addressableValue{Value: keyVal, forcedAddr: false}
 	elemType := mapType.Elem()
-	var elemValue reflect.Value
+	var elemValue addressableValue
+	// Pre-allocate element value to reduce allocations
+	elemVal := reflect.New(elemType).Elem()
+	elemValue = addressableValue{Value: elemVal, forcedAddr: false}
 	for range size {
 		var err error
 
-		offset, err = d.decode(offset, keyValue, depth)
+		// Reuse keyValue by zeroing it
+		keyValue.SetZero()
+		offset, err = d.decodeValue(offset, keyValue, depth)
 		if err != nil {
 			return 0, err
 		}
 
-		if elemValue.IsValid() {
-			elemValue.SetZero()
-		} else {
-			elemValue = reflect.New(elemType).Elem()
-		}
+		// Reuse elemValue by zeroing it
+		elemValue.SetZero()
 
-		offset, err = d.decode(offset, elemValue, depth)
+		offset, err = d.decodeValue(offset, elemValue, depth)
 		if err != nil {
 			return 0, d.wrapErrorWithMapKey(err, keyValue.String())
 		}
 
-		result.SetMapIndex(keyValue, elemValue)
+		result.SetMapIndex(keyValue.Value, elemValue.Value)
 	}
 	return offset, nil
 }
@@ -673,13 +720,16 @@ func (d *ReflectionDecoder) decodeMap(
 func (d *ReflectionDecoder) decodeSlice(
 	size uint,
 	offset uint,
-	result reflect.Value,
+	result addressableValue,
 	depth int,
 ) (uint, error) {
 	result.Set(reflect.MakeSlice(result.Type(), int(size), int(size)))
 	for i := range size {
 		var err error
-		offset, err = d.decode(offset, result.Index(int(i)), depth)
+		// Use slice element directly to avoid allocation
+		elemVal := result.Index(int(i))
+		elemValue := addressableValue{Value: elemVal, forcedAddr: false}
+		offset, err = d.decodeValue(offset, elemValue, depth)
 		if err != nil {
 			return 0, d.wrapErrorWithSliceIndex(err, int(i))
 		}
@@ -690,10 +740,10 @@ func (d *ReflectionDecoder) decodeSlice(
 func (d *ReflectionDecoder) decodeStruct(
 	size uint,
 	offset uint,
-	result reflect.Value,
+	result addressableValue,
 	depth int,
 ) (uint, error) {
-	fields := cachedFields(result)
+	fields := cachedFields(result.Value)
 
 	// Single-phase processing: decode only the dominant fields
 	for range size {
@@ -717,8 +767,7 @@ func (d *ReflectionDecoder) decodeStruct(
 		}
 
 		// Use optimized field access with addressable value wrapper
-		av := newAddressableValue(result)
-		fieldValue := av.fieldByIndex(fieldInfo.index0, fieldInfo.index, true)
+		fieldValue := result.fieldByIndex(fieldInfo.index0, fieldInfo.index, true)
 		if !fieldValue.IsValid() {
 			// Field access failed, skip this field
 			offset, err = d.nextValueOffset(offset, 1)
@@ -727,7 +776,17 @@ func (d *ReflectionDecoder) decodeStruct(
 			}
 			continue
 		}
-		offset, err = d.decode(offset, fieldValue.Value, depth)
+
+		// Fast path for common simple field types
+		if len(fieldInfo.index) == 0 && fieldInfo.isFastType {
+			// Try fast decode path for pre-identified simple types
+			if fastOffset, ok := d.tryFastDecodeTyped(offset, fieldValue, fieldInfo.fieldType); ok {
+				offset = fastOffset
+				continue
+			}
+		}
+
+		offset, err = d.decodeValue(offset, fieldValue, depth)
 		if err != nil {
 			return 0, d.wrapErrorWithMapKey(err, string(key))
 		}
@@ -736,11 +795,13 @@ func (d *ReflectionDecoder) decodeStruct(
 }
 
 type fieldInfo struct {
-	name   string
-	index  []int // Remaining indices (nil if single field)
-	index0 int   // First field index (avoids bounds check)
-	depth  int
-	hasTag bool
+	fieldType  reflect.Type
+	name       string
+	index      []int
+	index0     int
+	depth      int
+	hasTag     bool
+	isFastType bool
 }
 
 type fieldsType struct {
@@ -871,12 +932,16 @@ func makeStructFields(rootType reflect.Type) *fieldsType {
 				continue
 			}
 
-			// Add field to collection
+			// Add field to collection with optimization hints
+			fieldType := field.Type
+			isFast := isFastDecodeType(fieldType)
 			allFields = append(allFields, fieldInfo{
-				index:  fieldIndex, // Will be reindexed later for optimization
-				name:   fieldName,
-				hasTag: hasTag,
-				depth:  entry.depth,
+				index:      fieldIndex, // Will be reindexed later for optimization
+				name:       fieldName,
+				hasTag:     hasTag,
+				depth:      entry.depth,
+				fieldType:  fieldType,
+				isFastType: isFast,
 			})
 		}
 	}
@@ -970,8 +1035,43 @@ type addressableValue struct {
 }
 
 // newAddressableValue creates an addressable value wrapper.
+// If the value is not addressable, it wraps it to make it addressable.
 func newAddressableValue(v reflect.Value) addressableValue {
-	return addressableValue{Value: v, forcedAddr: false}
+	if v.CanAddr() {
+		return addressableValue{Value: v, forcedAddr: false}
+	}
+	// Make non-addressable values addressable by boxing them
+	addressable := reflect.New(v.Type()).Elem()
+	addressable.Set(v)
+	return addressableValue{Value: addressable, forcedAddr: true}
+}
+
+// makeAddressable efficiently converts a reflect.Value to addressableValue
+// with minimal allocations when possible.
+func makeAddressable(v reflect.Value) addressableValue {
+	// Fast path for already addressable values
+	if v.CanAddr() {
+		return addressableValue{Value: v, forcedAddr: false}
+	}
+	return newAddressableValue(v)
+}
+
+// isFastDecodeType determines if a field type can use optimized decode paths.
+func isFastDecodeType(t reflect.Type) bool {
+	switch t.Kind() {
+	case reflect.String,
+		reflect.Bool,
+		reflect.Uint16,
+		reflect.Uint32,
+		reflect.Uint64,
+		reflect.Float64:
+		return true
+	case reflect.Ptr:
+		// Pointer to fast types are also fast
+		return isFastDecodeType(t.Elem())
+	default:
+		return false
+	}
 }
 
 // fieldByIndex efficiently accesses a field by its index path,
@@ -1010,4 +1110,86 @@ func (av addressableValue) indirect(mayAlloc bool) addressableValue {
 		av = addressableValue{av.Elem(), false}
 	}
 	return av
+}
+
+// tryFastDecodeTyped attempts to decode using pre-computed type information.
+func (d *ReflectionDecoder) tryFastDecodeTyped(
+	offset uint,
+	result addressableValue,
+	expectedType reflect.Type,
+) (uint, bool) {
+	typeNum, size, newOffset, err := d.decodeCtrlData(offset)
+	if err != nil {
+		return 0, false
+	}
+
+	// Use pre-computed type information for faster matching
+	switch expectedType.Kind() {
+	case reflect.String:
+		if typeNum == KindString {
+			value, finalOffset, err := d.decodeString(size, newOffset)
+			if err != nil {
+				return 0, false
+			}
+			result.SetString(value)
+			return finalOffset, true
+		}
+	case reflect.Uint32:
+		if typeNum == KindUint32 {
+			value, finalOffset, err := d.decodeUint32(size, newOffset)
+			if err != nil {
+				return 0, false
+			}
+			result.SetUint(uint64(value))
+			return finalOffset, true
+		}
+	case reflect.Uint16:
+		if typeNum == KindUint16 {
+			value, finalOffset, err := d.decodeUint16(size, newOffset)
+			if err != nil {
+				return 0, false
+			}
+			result.SetUint(uint64(value))
+			return finalOffset, true
+		}
+	case reflect.Uint64:
+		if typeNum == KindUint64 {
+			value, finalOffset, err := d.decodeUint64(size, newOffset)
+			if err != nil {
+				return 0, false
+			}
+			result.SetUint(value)
+			return finalOffset, true
+		}
+	case reflect.Bool:
+		if typeNum == KindBool {
+			value, finalOffset, err := d.decodeBool(size, newOffset)
+			if err != nil {
+				return 0, false
+			}
+			result.SetBool(value)
+			return finalOffset, true
+		}
+	case reflect.Float64:
+		if typeNum == KindFloat64 {
+			value, finalOffset, err := d.decodeFloat64(size, newOffset)
+			if err != nil {
+				return 0, false
+			}
+			result.SetFloat(value)
+			return finalOffset, true
+		}
+	case reflect.Ptr:
+		// Handle pointer to fast types
+		if result.IsNil() {
+			result.Set(reflect.New(expectedType.Elem()))
+		}
+		return d.tryFastDecodeTyped(
+			offset,
+			addressableValue{result.Elem(), false},
+			expectedType.Elem(),
+		)
+	}
+
+	return 0, false
 }

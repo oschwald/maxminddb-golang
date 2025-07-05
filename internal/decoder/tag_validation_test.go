@@ -95,4 +95,3 @@ func TestTagValidationIntegration(t *testing.T) {
 	// The important thing is that it doesn't crash
 	assert.NotNil(t, fields.namedFields, "Fields map should be created")
 }
-
