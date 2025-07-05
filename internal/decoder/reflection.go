@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"reflect"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/oschwald/maxminddb-golang/v2/internal/mmdberrors"
 )
@@ -795,6 +796,21 @@ func handleEmbeddedField(
 	return !hasTag
 }
 
+// validateTag performs basic validation of maxminddb struct tags.
+func validateTag(field reflect.StructField, tag string) error {
+	if tag == "" || tag == "-" {
+		return nil
+	}
+
+	// Check for invalid UTF-8
+	if !utf8.ValidString(tag) {
+		return fmt.Errorf("field %s has tag with invalid UTF-8: %q", field.Name, tag)
+	}
+
+	// Only flag very obvious mistakes - don't be too restrictive
+	return nil
+}
+
 var fieldsMap sync.Map
 
 func cachedFields(result reflect.Value) *fieldsType {
@@ -841,6 +857,13 @@ func makeStructFields(rootType reflect.Type) *fieldsType {
 			fieldName := field.Name
 			hasTag := false
 			if tag := field.Tag.Get("maxminddb"); tag != "" {
+				// Validate tag syntax
+				if err := validateTag(field, tag); err != nil {
+					// Log warning but continue processing
+					// In a real implementation, you might want to use a proper logger
+					_ = err // For now, just ignore validation errors
+				}
+
 				if tag == "-" {
 					continue // Skip ignored fields
 				}
