@@ -1,6 +1,6 @@
 # Changes
 
-## 2.0.0-beta.5
+## 2.0.0-beta.5 - 2025-07-06
 
 - Added `Offset()` method to `Decoder` to get the current database offset. This
   enables custom unmarshalers to implement caching for improved performance when
