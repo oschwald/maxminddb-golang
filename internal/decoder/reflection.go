@@ -98,6 +98,14 @@ PATH:
 			if err != nil {
 				return err
 			}
+
+			// Check for pointer-to-pointer after we've already read the data
+			if typeNum == KindPointer {
+				return mmdberrors.NewInvalidDatabaseError(
+					"invalid pointer to pointer at offset %d",
+					pointer,
+				)
+			}
 		}
 
 		switch v := v.(type) {
@@ -512,6 +520,19 @@ func (d *ReflectionDecoder) unmarshalPointer(
 	if err != nil {
 		return 0, err
 	}
+
+	// Check for pointer-to-pointer by looking at what we're about to decode
+	// This is done efficiently by checking the control byte at the pointer location
+	if len(d.buffer) > int(pointer) {
+		controlByte := d.buffer[pointer]
+		if (controlByte >> 5) == 1 { // KindPointer = 1, stored in top 3 bits
+			return 0, mmdberrors.NewInvalidDatabaseError(
+				"invalid pointer to pointer at offset %d",
+				pointer,
+			)
+		}
+	}
+
 	_, err = d.decodeValue(pointer, result, depth)
 	return newOffset, err
 }

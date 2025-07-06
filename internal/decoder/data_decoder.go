@@ -380,14 +380,31 @@ func (d *DataDecoder) decodeKey(offset uint) ([]byte, uint, error) {
 	if err != nil {
 		return nil, 0, err
 	}
+
+	// Follow pointer if present (but only once, per spec)
+	nextOffset := dataOffset + size // default return offset
 	if kindNum == KindPointer {
-		pointer, ptrOffset, err := d.decodePointer(size, dataOffset)
+		pointer, newNextOffset, err := d.decodePointer(size, dataOffset)
 		if err != nil {
 			return nil, 0, err
 		}
-		key, _, err := d.decodeKey(pointer)
-		return key, ptrOffset, err
+		nextOffset = newNextOffset
+
+		// Decode the pointed-to data
+		kindNum, size, dataOffset, err = d.decodeCtrlData(pointer)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		// Check for pointer-to-pointer, which is invalid per spec
+		if kindNum == KindPointer {
+			return nil, 0, mmdberrors.NewInvalidDatabaseError(
+				"invalid pointer to pointer at offset %d",
+				pointer,
+			)
+		}
 	}
+
 	if kindNum != KindString {
 		return nil, 0, mmdberrors.NewInvalidDatabaseError(
 			"unexpected type when decoding string: %v",
@@ -398,7 +415,7 @@ func (d *DataDecoder) decodeKey(offset uint) ([]byte, uint, error) {
 	if newOffset > uint(len(d.buffer)) {
 		return nil, 0, mmdberrors.NewOffsetError()
 	}
-	return d.buffer[dataOffset:newOffset], newOffset, nil
+	return d.buffer[dataOffset:newOffset], nextOffset, nil
 }
 
 // NextValueOffset skips ahead to the next value without decoding
