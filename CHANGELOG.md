@@ -1,6 +1,6 @@
 # Changes
 
-## 2.0.0-beta.4
+## 2.0.0-beta.4 - 2025-07-05
 
 - **BREAKING CHANGE**: Removed experimental `deserializer` interface and
   supporting code. Applications using this interface should migrate to the
