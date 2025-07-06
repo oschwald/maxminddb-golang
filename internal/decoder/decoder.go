@@ -351,6 +351,12 @@ func (d *Decoder) PeekKind() (Kind, error) {
 	return kindNum, nil
 }
 
+// Offset returns the current offset position in the database.
+// This can be used by custom unmarshalers for caching purposes.
+func (d *Decoder) Offset() uint {
+	return d.offset
+}
+
 func (d *Decoder) reset(offset uint) {
 	d.offset = offset
 	d.hasNextOffset = false
