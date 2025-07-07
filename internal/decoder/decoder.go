@@ -142,10 +142,10 @@ func (d *Decoder) ReadInt32() (int32, error) {
 	return value, nil
 }
 
-// ReadUInt16 reads the value pointed by the decoder as a uint16.
+// ReadUint16 reads the value pointed by the decoder as a uint16.
 //
 // Returns an error if the database is malformed or if the pointed value is not an uint16.
-func (d *Decoder) ReadUInt16() (uint16, error) {
+func (d *Decoder) ReadUint16() (uint16, error) {
 	size, offset, err := d.decodeCtrlDataAndFollow(KindUint16)
 	if err != nil {
 		return 0, d.wrapError(err)
@@ -160,10 +160,10 @@ func (d *Decoder) ReadUInt16() (uint16, error) {
 	return value, nil
 }
 
-// ReadUInt32 reads the value pointed by the decoder as a uint32.
+// ReadUint32 reads the value pointed by the decoder as a uint32.
 //
 // Returns an error if the database is malformed or if the pointed value is not an uint32.
-func (d *Decoder) ReadUInt32() (uint32, error) {
+func (d *Decoder) ReadUint32() (uint32, error) {
 	size, offset, err := d.decodeCtrlDataAndFollow(KindUint32)
 	if err != nil {
 		return 0, d.wrapError(err)
@@ -178,10 +178,10 @@ func (d *Decoder) ReadUInt32() (uint32, error) {
 	return value, nil
 }
 
-// ReadUInt64 reads the value pointed by the decoder as a uint64.
+// ReadUint64 reads the value pointed by the decoder as a uint64.
 //
 // Returns an error if the database is malformed or if the pointed value is not an uint64.
-func (d *Decoder) ReadUInt64() (uint64, error) {
+func (d *Decoder) ReadUint64() (uint64, error) {
 	size, offset, err := d.decodeCtrlDataAndFollow(KindUint64)
 	if err != nil {
 		return 0, d.wrapError(err)
@@ -196,10 +196,10 @@ func (d *Decoder) ReadUInt64() (uint64, error) {
 	return value, nil
 }
 
-// ReadUInt128 reads the value pointed by the decoder as a uint128.
+// ReadUint128 reads the value pointed by the decoder as a uint128.
 //
 // Returns an error if the database is malformed or if the pointed value is not an uint128.
-func (d *Decoder) ReadUInt128() (hi, lo uint64, err error) {
+func (d *Decoder) ReadUint128() (hi, lo uint64, err error) {
 	size, offset, err := d.decodeCtrlDataAndFollow(KindUint128)
 	if err != nil {
 		return 0, 0, d.wrapError(err)

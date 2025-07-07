@@ -223,7 +223,7 @@ func (c *CustomCity) UnmarshalMaxMindDB(d *mmdbdata.Decoder) error {
 					}
 					c.Names = names
 				case "geoname_id":
-					geoID, err := d.ReadUInt32()
+					geoID, err := d.ReadUint32()
 					if err != nil {
 						return err
 					}

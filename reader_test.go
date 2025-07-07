@@ -1148,7 +1148,7 @@ func (c *TestCity) UnmarshalMaxMindDB(d *mmdbdata.Decoder) error {
 			}
 			c.Names = names
 		case "geoname_id":
-			geoID, err := d.ReadUInt32()
+			geoID, err := d.ReadUint32()
 			if err != nil {
 				return err
 			}
@@ -1188,7 +1188,7 @@ func (a *TestASN) UnmarshalMaxMindDB(d *mmdbdata.Decoder) error {
 			}
 			a.AutonomousSystemOrganization = org
 		case "autonomous_system_number":
-			asn, err := d.ReadUInt32()
+			asn, err := d.ReadUint32()
 			if err != nil {
 				return err
 			}

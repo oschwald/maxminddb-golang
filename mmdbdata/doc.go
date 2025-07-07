@@ -31,7 +31,7 @@
 //				}
 //				c.Names = names
 //			case "geoname_id":
-//				geoID, err := d.ReadUInt32()
+//				geoID, err := d.ReadUint32()
 //				if err != nil { return err }
 //				c.GeoNameID = uint(geoID)
 //			default:

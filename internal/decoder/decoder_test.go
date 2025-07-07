@@ -251,7 +251,7 @@ func TestDecodeUint16(t *testing.T) {
 	for hexStr, expected := range tests {
 		t.Run(hexStr, func(t *testing.T) {
 			decoder := newDecoderFromHex(t, hexStr)
-			result, err := decoder.ReadUInt16() // [cite: 42]
+			result, err := decoder.ReadUint16() // [cite: 42]
 			require.NoError(t, err)
 			require.Equal(t, expected, result)
 			require.True(t, decoder.hasNextOffset || decoder.offset > 0, "Offset was not advanced")
@@ -273,7 +273,7 @@ func TestDecodeUint32(t *testing.T) {
 	for hexStr, expected := range tests {
 		t.Run(hexStr, func(t *testing.T) {
 			decoder := newDecoderFromHex(t, hexStr)
-			result, err := decoder.ReadUInt32() // [cite: 44]
+			result, err := decoder.ReadUint32() // [cite: 44]
 			require.NoError(t, err)
 			require.Equal(t, expected, result)
 			require.True(t, decoder.hasNextOffset || decoder.offset > 0, "Offset was not advanced")
@@ -295,7 +295,7 @@ func TestDecodeUint64(t *testing.T) {
 	for hexStr, expected := range tests {
 		t.Run(hexStr, func(t *testing.T) {
 			decoder := newDecoderFromHex(t, hexStr)
-			result, err := decoder.ReadUInt64() // [cite: 46]
+			result, err := decoder.ReadUint64() // [cite: 46]
 			require.NoError(t, err)
 			require.Equal(t, expected, result)
 			require.True(t, decoder.hasNextOffset || decoder.offset > 0, "Offset was not advanced")
@@ -321,7 +321,7 @@ func TestDecodeUint128(t *testing.T) {
 	for hexStr, expected := range tests {
 		t.Run(hexStr, func(t *testing.T) {
 			decoder := newDecoderFromHex(t, hexStr)
-			hi, lo, err := decoder.ReadUInt128() // [cite: 48]
+			hi, lo, err := decoder.ReadUint128() // [cite: 48]
 			require.NoError(t, err)
 
 			// Reconstruct the big.Int from hi and lo parts for comparison
@@ -405,7 +405,7 @@ func TestBoundsChecking(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "exceeds buffer length")
 
-	// Test DecodeUInt128 bounds checking
+	// Test DecodeUint128 bounds checking
 	uint128Buffer := []byte{
 		0x0B,
 		0x03,
@@ -413,7 +413,7 @@ func TestBoundsChecking(t *testing.T) {
 	dd2 := NewDataDecoder(uint128Buffer)
 	decoder2 := NewDecoder(dd2, 0)
 
-	_, _, err = decoder2.ReadUInt128()
+	_, _, err = decoder2.ReadUint128()
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "unexpected end of database")
 }

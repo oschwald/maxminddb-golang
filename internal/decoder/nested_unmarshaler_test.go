@@ -125,7 +125,7 @@ type testItem struct {
 
 func (item *testItem) UnmarshalMaxMindDB(d *Decoder) error {
 	item.custom = true
-	id, err := d.ReadUInt32()
+	id, err := d.ReadUint32()
 	if err != nil {
 		return err
 	}
