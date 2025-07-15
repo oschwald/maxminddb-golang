@@ -64,7 +64,7 @@ func (d *ReflectionDecoder) Decode(offset uint, v any) error {
 	return mmdberrors.WrapWithContext(err, offset, nil)
 }
 
-// DecodePath decodes the data value at offset and stores the value assocated
+// DecodePath decodes the data value at offset and stores the value associated
 // with the path in the value pointed at by v.
 func (d *ReflectionDecoder) DecodePath(
 	offset uint,
@@ -300,7 +300,7 @@ func (d *ReflectionDecoder) decodeValue(
 			if err := unmarshaler.UnmarshalMaxMindDB(decoder); err != nil {
 				return 0, err
 			}
-			return decoder.getNextOffset()
+			return d.nextValueOffset(offset, 1)
 		}
 	}
 

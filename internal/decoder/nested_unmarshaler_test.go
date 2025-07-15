@@ -3,6 +3,7 @@ package decoder
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -219,4 +220,83 @@ func TestNestedUnmarshalerInMap(t *testing.T) {
 		require.Equal(t, "map:value1", result["key1"].Data)
 		require.Equal(t, "map:value2", result["key2"].Data)
 	})
+}
+
+// testMapIterator uses ReadMap() iterator to simulate mmdbtype.Map behavior.
+type testMapIterator struct {
+	Values map[string]string
+	custom bool
+}
+
+func (m *testMapIterator) UnmarshalMaxMindDB(d *Decoder) error {
+	m.custom = true
+	iter, size, err := d.ReadMap()
+	if err != nil {
+		return err
+	}
+
+	m.Values = make(map[string]string, size)
+	for key, iterErr := range iter {
+		if iterErr != nil {
+			return iterErr
+		}
+
+		// Read the value as a string
+		value, err := d.ReadString()
+		if err != nil {
+			return err
+		}
+
+		m.Values[string(key)] = value
+	}
+	return nil
+}
+
+// TestCustomUnmarshalerWithIterator tests that custom unmarshalers using iterators
+// work correctly in struct fields. This reproduces the original "no next offset available"
+// issue that occurred when mmdbtype.Map was used in structs.
+func TestCustomUnmarshalerWithIterator(t *testing.T) {
+	type Record struct {
+		Name     string
+		Location testMapIterator // This field uses ReadMap() iterator
+		Country  string
+	}
+
+	data := []byte{
+		// Map with 3 items
+		0xe3,
+		// Key "Name"
+		0x44, 'N', 'a', 'm', 'e',
+		// Value "Test" (string)
+		0x44, 'T', 'e', 's', 't',
+		// Key "Location"
+		0x48, 'L', 'o', 'c', 'a', 't', 'i', 'o', 'n',
+		// Value: Map with 2 items (latitude and longitude)
+		0xe2,
+		// Key "lat"
+		0x43, 'l', 'a', 't',
+		// Value "40.7"
+		0x44, '4', '0', '.', '7',
+		// Key "lng"
+		0x43, 'l', 'n', 'g',
+		// Value "-74.0"
+		0x45, '-', '7', '4', '.', '0',
+		// Key "Country"
+		0x47, 'C', 'o', 'u', 'n', 't', 'r', 'y',
+		// Value "US"
+		0x42, 'U', 'S',
+	}
+
+	d := New(data)
+	var result Record
+
+	err := d.Decode(0, &result)
+	require.NoError(t, err)
+
+	require.Equal(t, "Test", result.Name)
+	assert.True(t, result.Location.custom, "Custom unmarshaler should be called")
+	assert.Len(t, result.Location.Values, 2)
+	assert.Equal(t, "40.7", result.Location.Values["lat"])
+	assert.Equal(t, "-74.0", result.Location.Values["lng"])
+	assert.Equal(t, "US", result.Country)
 }

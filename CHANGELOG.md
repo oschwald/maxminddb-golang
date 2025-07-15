@@ -1,5 +1,12 @@
 # Changes
 
+## 2.0.0-beta.8 - 2025-07-15
+
+- Fixed "no next offset available" error that occurred when using custom
+  unmarshalers that decode container types (maps, slices) in struct fields.
+  The reflection decoder now correctly calculates field positions when
+  advancing to the next field after custom unmarshaling.
+
 ## 2.0.0-beta.7 - 2025-07-07
 
 * Update capitalization of "uint" in `ReadUInt*` to match `KindUint*` as well
