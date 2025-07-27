@@ -1,6 +1,7 @@
 package maxminddb
 
 import (
+	"errors"
 	"fmt"
 	// comment to prevent gofumpt from randomly moving iter.
 	"iter"
@@ -78,6 +79,12 @@ func (r *Reader) Networks(options ...NetworksOption) iter.Seq[Result] {
 // [IncludeNetworksWithoutData].
 func (r *Reader) NetworksWithin(prefix netip.Prefix, options ...NetworksOption) iter.Seq[Result] {
 	return func(yield func(Result) bool) {
+		if !prefix.IsValid() {
+			yield(Result{
+				err: errors.New("invalid prefix"),
+			})
+			return
+		}
 		if r.Metadata.IPVersion == 4 && prefix.Addr().Is6() {
 			yield(Result{
 				err: fmt.Errorf(
@@ -99,6 +106,13 @@ func (r *Reader) NetworksWithin(prefix netip.Prefix, options ...NetworksOption) 
 		if ip.Is4() {
 			netIP = v4ToV16(ip)
 			stopBit += 96
+		}
+
+		if stopBit > 128 {
+			yield(Result{
+				err: errors.New("invalid prefix: exceeds IPv6 maximum of 128 bits"),
+			})
+			return
 		}
 
 		pointer, bit, err := r.traverseTree(ip, 0, stopBit)
@@ -189,7 +203,15 @@ func (r *Reader) NetworksWithin(prefix netip.Prefix, options ...NetworksOption) 
 				ipRight[node.bit>>3] |= 1 << (7 - (node.bit % 8))
 
 				offset := node.pointer * r.nodeOffsetMult
-				rightPointer := readNodeBySize(r.buffer, offset, 1, r.Metadata.RecordSize)
+				rightPointer, err := readNodeBySize(r.buffer, offset, 1, r.Metadata.RecordSize)
+				if err != nil {
+					yield(Result{
+						ip:        mappedIP(node.ip),
+						prefixLen: uint8(node.bit),
+						err:       err,
+					})
+					return
+				}
 
 				node.bit++
 				nodes = append(nodes, netNode{
@@ -198,7 +220,16 @@ func (r *Reader) NetworksWithin(prefix netip.Prefix, options ...NetworksOption) 
 					bit:     node.bit,
 				})
 
-				node.pointer = readNodeBySize(r.buffer, offset, 0, r.Metadata.RecordSize)
+				leftPointer, err := readNodeBySize(r.buffer, offset, 0, r.Metadata.RecordSize)
+				if err != nil {
+					yield(Result{
+						ip:        mappedIP(node.ip),
+						prefixLen: uint8(node.bit),
+						err:       err,
+					})
+					return
+				}
+				node.pointer = leftPointer
 			}
 		}
 	}

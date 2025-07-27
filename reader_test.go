@@ -1321,3 +1321,26 @@ func TestIntegerOverflowProtection(t *testing.T) {
 		// This tests the condition: if recordSizeQuarter > 0
 	})
 }
+
+func TestNetworksWithinInvalidPrefix(t *testing.T) {
+	reader, err := Open(testFile("GeoIP2-Country-Test.mmdb"))
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, reader.Close())
+	}()
+
+	// Test what happens when user ignores ParsePrefix error and passes invalid prefix
+	var invalidPrefix netip.Prefix // Zero value - invalid prefix
+
+	foundError := false
+	for result := range reader.NetworksWithin(invalidPrefix) {
+		if result.Err() != nil {
+			foundError = true
+			// Check that we get an appropriate error message
+			assert.Contains(t, result.Err().Error(), "invalid prefix")
+			break
+		}
+	}
+
+	assert.True(t, foundError, "Expected error when using invalid prefix")
+}

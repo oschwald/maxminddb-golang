@@ -1,5 +1,16 @@
 # Changes
 
+## 2.0.0-beta.9
+
+- **SECURITY**: Fixed integer overflow vulnerability in search tree size
+  calculation that could potentially allow malformed databases to trigger
+  security issues.
+- **SECURITY**: Enhanced bounds checking in tree traversal functions to return
+  proper errors instead of silent failures when encountering malformed
+  databases.
+- Added validation for invalid prefixes in `NetworksWithin` to prevent
+  unexpected behavior with malformed input.
+
 ## 2.0.0-beta.8 - 2025-07-15
 
 - Fixed "no next offset available" error that occurred when using custom
