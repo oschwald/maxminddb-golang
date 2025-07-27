@@ -301,6 +301,17 @@ func FromBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
 		return nil, err
 	}
 
+	// Check for integer overflow in search tree size calculation
+	if metadata.NodeCount > 0 && metadata.RecordSize > 0 {
+		recordSizeQuarter := metadata.RecordSize / 4
+		if recordSizeQuarter > 0 {
+			maxNodes := ^uint(0) / recordSizeQuarter
+			if metadata.NodeCount > maxNodes {
+				return nil, mmdberrors.NewInvalidDatabaseError("database tree size would overflow")
+			}
+		}
+	}
+
 	searchTreeSize := metadata.NodeCount * (metadata.RecordSize / 4)
 	dataSectionStart := searchTreeSize + dataSectionSeparatorSize
 	dataSectionEnd := uint(metadataStart - len(metadataStartMarker))
@@ -319,9 +330,12 @@ func FromBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
 		nodeOffsetMult: metadata.RecordSize / 4,
 	}
 
-	reader.setIPv4Start()
+	err = reader.setIPv4Start()
+	if err != nil {
+		return nil, err
+	}
 
-	return reader, err
+	return reader, nil
 }
 
 // Lookup retrieves the database record for ip and returns a Result, which can
@@ -365,10 +379,10 @@ func (r *Reader) LookupOffset(offset uintptr) Result {
 	return Result{decoder: r.decoder, offset: uint(offset)}
 }
 
-func (r *Reader) setIPv4Start() {
+func (r *Reader) setIPv4Start() error {
 	if r.Metadata.IPVersion != 6 {
 		r.ipv4StartBitDepth = 96
-		return
+		return nil
 	}
 
 	nodeCount := r.Metadata.NodeCount
@@ -376,10 +390,16 @@ func (r *Reader) setIPv4Start() {
 	node := uint(0)
 	i := 0
 	for ; i < 96 && node < nodeCount; i++ {
-		node = readNodeBySize(r.buffer, node*r.nodeOffsetMult, 0, r.Metadata.RecordSize)
+		var err error
+		node, err = readNodeBySize(r.buffer, node*r.nodeOffsetMult, 0, r.Metadata.RecordSize)
+		if err != nil {
+			return err
+		}
 	}
 	r.ipv4Start = node
 	r.ipv4StartBitDepth = i
+
+	return nil
 }
 
 var zeroIP = netip.MustParseAddr("::")
@@ -409,46 +429,64 @@ func (r *Reader) lookupPointer(ip netip.Addr) (uint, int, error) {
 }
 
 // readNodeBySize reads a node value from the buffer based on record size and bit.
-func readNodeBySize(buffer []byte, offset, bit, recordSize uint) uint {
+func readNodeBySize(buffer []byte, offset, bit, recordSize uint) (uint, error) {
+	bufferLen := uint(len(buffer))
 	switch recordSize {
 	case 24:
 		offset += bit * 3
+		if offset > bufferLen-3 {
+			return 0, mmdberrors.NewInvalidDatabaseError(
+				"bounds check failed: insufficient buffer for 24-bit node read",
+			)
+		}
 		return (uint(buffer[offset]) << 16) |
 			(uint(buffer[offset+1]) << 8) |
-			uint(buffer[offset+2])
+			uint(buffer[offset+2]), nil
 	case 28:
 		if bit == 0 {
+			if offset > bufferLen-4 {
+				return 0, mmdberrors.NewInvalidDatabaseError(
+					"bounds check failed: insufficient buffer for 28-bit node read",
+				)
+			}
 			return ((uint(buffer[offset+3]) & 0xF0) << 20) |
 				(uint(buffer[offset]) << 16) |
 				(uint(buffer[offset+1]) << 8) |
-				uint(buffer[offset+2])
+				uint(buffer[offset+2]), nil
+		}
+		if offset > bufferLen-7 {
+			return 0, mmdberrors.NewInvalidDatabaseError(
+				"bounds check failed: insufficient buffer for 28-bit node read",
+			)
 		}
 		return ((uint(buffer[offset+3]) & 0x0F) << 24) |
 			(uint(buffer[offset+4]) << 16) |
 			(uint(buffer[offset+5]) << 8) |
-			uint(buffer[offset+6])
+			uint(buffer[offset+6]), nil
 	case 32:
 		offset += bit * 4
+		if offset > bufferLen-4 {
+			return 0, mmdberrors.NewInvalidDatabaseError(
+				"bounds check failed: insufficient buffer for 32-bit node read",
+			)
+		}
 		return (uint(buffer[offset]) << 24) |
 			(uint(buffer[offset+1]) << 16) |
 			(uint(buffer[offset+2]) << 8) |
-			uint(buffer[offset+3])
+			uint(buffer[offset+3]), nil
 	default:
-		return 0
+		return 0, mmdberrors.NewInvalidDatabaseError("unsupported record size")
 	}
 }
 
 func (r *Reader) traverseTree(ip netip.Addr, node uint, stopBit int) (uint, int, error) {
 	switch r.Metadata.RecordSize {
 	case 24:
-		n, i := r.traverseTree24(ip, node, stopBit)
-		return n, i, nil
+		return r.traverseTree24(ip, node, stopBit)
 	case 28:
-		n, i := r.traverseTree28(ip, node, stopBit)
-		return n, i, nil
+		return r.traverseTree28(ip, node, stopBit)
 	case 32:
-		n, i := r.traverseTree32(ip, node, stopBit)
-		return n, i, nil
+		return r.traverseTree32(ip, node, stopBit)
 	default:
 		return 0, 0, mmdberrors.NewInvalidDatabaseError(
 			"unsupported record size: %d",
@@ -457,7 +495,7 @@ func (r *Reader) traverseTree(ip netip.Addr, node uint, stopBit int) (uint, int,
 	}
 }
 
-func (r *Reader) traverseTree24(ip netip.Addr, node uint, stopBit int) (uint, int) {
+func (r *Reader) traverseTree24(ip netip.Addr, node uint, stopBit int) (uint, int, error) {
 	i := 0
 	if ip.Is4() {
 		i = r.ipv4StartBitDepth
@@ -465,6 +503,7 @@ func (r *Reader) traverseTree24(ip netip.Addr, node uint, stopBit int) (uint, in
 	}
 	nodeCount := r.Metadata.NodeCount
 	buffer := r.buffer
+	bufferLen := uint(len(buffer))
 	ip16 := ip.As16()
 
 	for ; i < stopBit && node < nodeCount; i++ {
@@ -475,15 +514,21 @@ func (r *Reader) traverseTree24(ip netip.Addr, node uint, stopBit int) (uint, in
 		baseOffset := node * 6
 		offset := baseOffset + bit*3
 
+		if offset > bufferLen-3 {
+			return 0, 0, mmdberrors.NewInvalidDatabaseError(
+				"bounds check failed during tree traversal",
+			)
+		}
+
 		node = (uint(buffer[offset]) << 16) |
 			(uint(buffer[offset+1]) << 8) |
 			uint(buffer[offset+2])
 	}
 
-	return node, i
+	return node, i, nil
 }
 
-func (r *Reader) traverseTree28(ip netip.Addr, node uint, stopBit int) (uint, int) {
+func (r *Reader) traverseTree28(ip netip.Addr, node uint, stopBit int) (uint, int, error) {
 	i := 0
 	if ip.Is4() {
 		i = r.ipv4StartBitDepth
@@ -491,6 +536,7 @@ func (r *Reader) traverseTree28(ip netip.Addr, node uint, stopBit int) (uint, in
 	}
 	nodeCount := r.Metadata.NodeCount
 	buffer := r.buffer
+	bufferLen := uint(len(buffer))
 	ip16 := ip.As16()
 
 	for ; i < stopBit && node < nodeCount; i++ {
@@ -499,11 +545,18 @@ func (r *Reader) traverseTree28(ip netip.Addr, node uint, stopBit int) (uint, in
 		bit := (uint(ip16[byteIdx]) >> bitPos) & 1
 
 		baseOffset := node * 7
+		offset := baseOffset + bit*4
+
+		if baseOffset > bufferLen-4 || offset > bufferLen-3 {
+			return 0, 0, mmdberrors.NewInvalidDatabaseError(
+				"bounds check failed during tree traversal",
+			)
+		}
+
 		sharedByte := uint(buffer[baseOffset+3])
 		mask := uint(0xF0 >> (bit * 4))
 		shift := 20 + bit*4
 		nibble := ((sharedByte & mask) << shift)
-		offset := baseOffset + bit*4
 
 		node = nibble |
 			(uint(buffer[offset]) << 16) |
@@ -511,10 +564,10 @@ func (r *Reader) traverseTree28(ip netip.Addr, node uint, stopBit int) (uint, in
 			uint(buffer[offset+2])
 	}
 
-	return node, i
+	return node, i, nil
 }
 
-func (r *Reader) traverseTree32(ip netip.Addr, node uint, stopBit int) (uint, int) {
+func (r *Reader) traverseTree32(ip netip.Addr, node uint, stopBit int) (uint, int, error) {
 	i := 0
 	if ip.Is4() {
 		i = r.ipv4StartBitDepth
@@ -522,6 +575,7 @@ func (r *Reader) traverseTree32(ip netip.Addr, node uint, stopBit int) (uint, in
 	}
 	nodeCount := r.Metadata.NodeCount
 	buffer := r.buffer
+	bufferLen := uint(len(buffer))
 	ip16 := ip.As16()
 
 	for ; i < stopBit && node < nodeCount; i++ {
@@ -532,20 +586,33 @@ func (r *Reader) traverseTree32(ip netip.Addr, node uint, stopBit int) (uint, in
 		baseOffset := node * 8
 		offset := baseOffset + bit*4
 
+		if offset > bufferLen-4 {
+			return 0, 0, mmdberrors.NewInvalidDatabaseError(
+				"bounds check failed during tree traversal",
+			)
+		}
+
 		node = (uint(buffer[offset]) << 24) |
 			(uint(buffer[offset+1]) << 16) |
 			(uint(buffer[offset+2]) << 8) |
 			uint(buffer[offset+3])
 	}
 
-	return node, i
+	return node, i, nil
 }
 
 func (r *Reader) resolveDataPointer(pointer uint) (uintptr, error) {
-	resolved := uintptr(pointer - r.Metadata.NodeCount - dataSectionSeparatorSize)
-
-	if resolved >= uintptr(len(r.buffer)) {
+	// Check for integer underflow: pointer must be greater than nodeCount + separator
+	minPointer := r.Metadata.NodeCount + dataSectionSeparatorSize
+	if pointer >= minPointer {
+		resolved := uintptr(pointer - minPointer)
+		bufferLen := uintptr(len(r.buffer))
+		if resolved < bufferLen {
+			return resolved, nil
+		}
+		// Error case - bounds exceeded
 		return 0, mmdberrors.NewInvalidDatabaseError("the MaxMind DB file's search tree is corrupt")
 	}
-	return resolved, nil
+	// Error case - underflow
+	return 0, mmdberrors.NewInvalidDatabaseError("the MaxMind DB file's search tree is corrupt")
 }
