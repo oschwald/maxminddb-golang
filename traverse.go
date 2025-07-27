@@ -3,7 +3,6 @@ package maxminddb
 import (
 	"errors"
 	"fmt"
-	// comment to prevent gofumpt from randomly moving iter.
 	"iter"
 	"net/netip"
 

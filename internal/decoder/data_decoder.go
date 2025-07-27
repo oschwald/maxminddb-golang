@@ -246,6 +246,8 @@ func (d *DataDecoder) decodePointer(
 		pointerValueOffset = 526336
 	case 4:
 		pointerValueOffset = 0
+	default:
+		return 0, 0, mmdberrors.NewInvalidDatabaseError("invalid pointer size: %d", pointerSize)
 	}
 
 	pointer := unpacked + pointerValueOffset
@@ -477,6 +479,8 @@ func (d *DataDecoder) sizeFromCtrlByte(
 		size = 285 + uintFromBytes(0, sizeBytes)
 	case size > 30:
 		size = uintFromBytes(0, sizeBytes) + 65821
+	default:
+		// size < 30, no modification needed
 	}
 	return size, newOffset, nil
 }

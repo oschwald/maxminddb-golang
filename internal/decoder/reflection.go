@@ -374,6 +374,8 @@ func (d *ReflectionDecoder) unmarshalBool(
 			result.Set(reflect.ValueOf(value))
 			return newOffset, nil
 		}
+	default:
+		// Fall through to error return
 	}
 	return newOffset, mmdberrors.NewUnmarshalTypeError(value, result.Type())
 }
@@ -400,6 +402,8 @@ func (d *ReflectionDecoder) unmarshalBytes(
 			result.Set(reflect.ValueOf(value))
 			return newOffset, nil
 		}
+	default:
+		// Fall through to error return
 	}
 	return newOffset, mmdberrors.NewUnmarshalTypeError(value, result.Type())
 }
@@ -421,6 +425,8 @@ func (d *ReflectionDecoder) unmarshalFloat32(
 			result.Set(reflect.ValueOf(value))
 			return newOffset, nil
 		}
+	default:
+		// Fall through to error return
 	}
 	return newOffset, mmdberrors.NewUnmarshalTypeError(value, result.Type())
 }
@@ -445,6 +451,8 @@ func (d *ReflectionDecoder) unmarshalFloat64(
 			result.Set(reflect.ValueOf(value))
 			return newOffset, nil
 		}
+	default:
+		// Fall through to error return
 	}
 	return newOffset, mmdberrors.NewUnmarshalTypeError(value, result.Type())
 }
@@ -481,6 +489,8 @@ func (d *ReflectionDecoder) unmarshalInt32(
 			result.Set(reflect.ValueOf(value))
 			return newOffset, nil
 		}
+	default:
+		// Fall through to error return
 	}
 	return newOffset, mmdberrors.NewUnmarshalTypeError(value, result.Type())
 }
@@ -492,8 +502,6 @@ func (d *ReflectionDecoder) unmarshalMap(
 	depth int,
 ) (uint, error) {
 	switch result.Kind() {
-	default:
-		return 0, mmdberrors.NewUnmarshalTypeStrError("map", result.Type())
 	case reflect.Struct:
 		return d.decodeStruct(size, offset, result, depth)
 	case reflect.Map:
@@ -507,6 +515,8 @@ func (d *ReflectionDecoder) unmarshalMap(
 			result.Set(rv.Value)
 			return newOffset, err
 		}
+		return 0, mmdberrors.NewUnmarshalTypeStrError("map", result.Type())
+	default:
 		return 0, mmdberrors.NewUnmarshalTypeStrError("map", result.Type())
 	}
 }
@@ -556,6 +566,8 @@ func (d *ReflectionDecoder) unmarshalSlice(
 			result.Set(rv.Value)
 			return newOffset, err
 		}
+	default:
+		// Fall through to error return
 	}
 	return 0, mmdberrors.NewUnmarshalTypeStrError("array", result.Type())
 }
@@ -578,6 +590,8 @@ func (d *ReflectionDecoder) unmarshalString(
 			result.Set(reflect.ValueOf(value))
 			return newOffset, nil
 		}
+	default:
+		// Fall through to error return
 	}
 	return newOffset, mmdberrors.NewUnmarshalTypeError(value, result.Type())
 }
@@ -632,6 +646,8 @@ func (d *ReflectionDecoder) unmarshalUint(
 			result.SetUint(value)
 			return newOffset, nil
 		}
+	default:
+		// Fall through to general unmarshaling logic
 	}
 
 	switch result.Kind() {
@@ -656,6 +672,8 @@ func (d *ReflectionDecoder) unmarshalUint(
 			result.Set(reflect.ValueOf(value))
 			return newOffset, nil
 		}
+	default:
+		// Fall through to error return
 	}
 	return newOffset, mmdberrors.NewUnmarshalTypeError(value, result.Type())
 }
@@ -691,6 +709,8 @@ func (d *ReflectionDecoder) unmarshalUint128(
 			result.Set(reflect.ValueOf(value))
 			return newOffset, nil
 		}
+	default:
+		// Fall through to error return
 	}
 	return newOffset, mmdberrors.NewUnmarshalTypeError(value, result.Type())
 }
@@ -1210,6 +1230,8 @@ func (d *ReflectionDecoder) tryFastDecodeTyped(
 			addressableValue{result.Elem(), false},
 			expectedType.Elem(),
 		)
+	default:
+		// Type not supported for fast path
 	}
 
 	return 0, false
