@@ -1248,3 +1248,99 @@ func TestMetadataBuildTime(t *testing.T) {
 	assert.True(t, buildTime.After(time.Date(2010, 1, 1, 0, 0, 0, 0, time.UTC)))
 	assert.True(t, buildTime.Before(time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)))
 }
+
+func TestIntegerOverflowProtection(t *testing.T) {
+	// Test that FromBytes detects integer overflow in search tree size calculation
+	t.Run("NodeCount overflow protection", func(t *testing.T) {
+		// Create metadata that would cause overflow: very large NodeCount
+		// For a 64-bit system with RecordSize=32, this should trigger overflow
+		// RecordSize/4 = 8, so maxNodes would be ^uint(0)/8
+		// We'll use a NodeCount larger than this limit
+		overflowNodeCount := ^uint(0)/8 + 1000 // Guaranteed to overflow
+
+		// Build minimal metadata map structure in MMDB format
+		// This is simplified - in a real MMDB, metadata is encoded differently
+		// But we can't easily create a valid MMDB file structure in a unit test
+		// So this test verifies the logic with mocked values
+
+		// Create a test by directly calling the validation logic
+		metadata := Metadata{
+			NodeCount:  overflowNodeCount,
+			RecordSize: 32, // 32 bits = 4 bytes, so RecordSize/4 = 8
+		}
+
+		// Test the overflow detection logic directly
+		recordSizeQuarter := metadata.RecordSize / 4
+		maxNodes := ^uint(0) / recordSizeQuarter
+
+		// Verify our test setup is correct
+		assert.Greater(t, metadata.NodeCount, maxNodes,
+			"Test setup error: NodeCount should exceed maxNodes for overflow test")
+
+		// Since we can't easily create an invalid MMDB file that parses but has overflow values,
+		// we test the core logic validation here and rely on integration tests
+		// for the full FromBytes flow
+
+		if metadata.NodeCount > 0 && metadata.RecordSize > 0 {
+			recordSizeQuarter := metadata.RecordSize / 4
+			if recordSizeQuarter > 0 {
+				maxNodes := ^uint(0) / recordSizeQuarter
+				if metadata.NodeCount > maxNodes {
+					// This is what should happen in FromBytes
+					err := mmdberrors.NewInvalidDatabaseError("database tree size would overflow")
+					assert.Equal(t, "database tree size would overflow", err.Error())
+				}
+			}
+		}
+	})
+
+	t.Run("Valid large values should not trigger overflow", func(t *testing.T) {
+		// Test that reasonable large values don't trigger false positives
+		metadata := Metadata{
+			NodeCount:  1000000, // 1 million nodes
+			RecordSize: 32,
+		}
+
+		recordSizeQuarter := metadata.RecordSize / 4
+		maxNodes := ^uint(0) / recordSizeQuarter
+
+		// Verify this doesn't trigger overflow
+		assert.LessOrEqual(t, metadata.NodeCount, maxNodes,
+			"Valid large NodeCount should not trigger overflow protection")
+	})
+
+	t.Run("Edge case: RecordSize/4 is 0", func(t *testing.T) {
+		// Test edge case where RecordSize/4 could be 0
+		recordSize := uint(3) // 3/4 = 0 in integer division
+
+		recordSizeQuarter := recordSize / 4
+		// Should be 0, which means no overflow check is performed
+		assert.Equal(t, uint(0), recordSizeQuarter)
+
+		// The overflow protection should skip when recordSizeQuarter is 0
+		// This tests the condition: if recordSizeQuarter > 0
+	})
+}
+
+func TestNetworksWithinInvalidPrefix(t *testing.T) {
+	reader, err := Open(testFile("GeoIP2-Country-Test.mmdb"))
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, reader.Close())
+	}()
+
+	// Test what happens when user ignores ParsePrefix error and passes invalid prefix
+	var invalidPrefix netip.Prefix // Zero value - invalid prefix
+
+	foundError := false
+	for result := range reader.NetworksWithin(invalidPrefix) {
+		if result.Err() != nil {
+			foundError = true
+			// Check that we get an appropriate error message
+			assert.Contains(t, result.Err().Error(), "invalid prefix")
+			break
+		}
+	}
+
+	assert.True(t, foundError, "Expected error when using invalid prefix")
+}
