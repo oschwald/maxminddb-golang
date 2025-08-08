@@ -234,7 +234,7 @@ func Open(file string, options ...ReaderOption) (*Reader, error) {
 		return nil, errors.New("file too large")
 	}
 
-	data, err := mmap(int(mapFile.Fd()), size)
+	data, err := openMmap(mapFile, size)
 	if err != nil {
 		if errors.Is(err, errors.ErrUnsupported) {
 			data, err = openFallback(mapFile, size)
@@ -255,6 +255,21 @@ func Open(file string, options ...ReaderOption) (*Reader, error) {
 	reader.hasMappedFile = true
 	runtime.SetFinalizer(reader, (*Reader).Close)
 	return reader, nil
+}
+
+func openMmap(f *os.File, size int) (data []byte, err error) {
+	rawConn, err := f.SyscallConn()
+	if err != nil {
+		return nil, err
+	}
+
+	if cerr := rawConn.Control(func(fd uintptr) {
+		data, err = mmap(int(fd), size)
+	}); cerr != nil {
+		return nil, cerr
+	}
+
+	return data, err
 }
 
 func openFallback(f *os.File, size int) (data []byte, err error) {
