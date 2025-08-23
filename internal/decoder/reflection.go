@@ -30,6 +30,29 @@ func New(buffer []byte) ReflectionDecoder {
 	}
 }
 
+// IsEmptyValueAt checks if the value at the given offset is an empty map or array.
+// Returns true if the value is a map or array with size 0.
+func (d *ReflectionDecoder) IsEmptyValueAt(offset uint) (bool, error) {
+	dataOffset := offset
+	for {
+		kindNum, size, newOffset, err := d.decodeCtrlData(dataOffset)
+		if err != nil {
+			return false, err
+		}
+
+		if kindNum == KindPointer {
+			dataOffset, _, err = d.decodePointer(size, newOffset)
+			if err != nil {
+				return false, err
+			}
+			continue
+		}
+
+		// Check if it's a map or array with size 0
+		return (kindNum == KindMap || kindNum == KindSlice) && size == 0, nil
+	}
+}
+
 // Decode decodes the data value at offset and stores it in the value
 // pointed at by v.
 func (d *ReflectionDecoder) Decode(offset uint, v any) error {

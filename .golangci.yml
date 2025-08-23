@@ -19,6 +19,7 @@ linters:
     - gosmopolitan
     - inamedparam
     - interfacebloat
+    - lll
     - mnd
     - nlreturn
     - noinlineerr
@@ -31,6 +32,9 @@ linters:
     - wsl
     - wsl_v5
   settings:
+    errcheck:
+      exclude-functions:
+        - (*github.com/oschwald/maxminddb-golang/v2.Reader).Close
     errorlint:
       errorf: true
       asserts: true

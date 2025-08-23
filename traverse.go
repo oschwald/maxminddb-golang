@@ -19,6 +19,7 @@ type netNode struct {
 type networkOptions struct {
 	includeAliasedNetworks bool
 	includeEmptyNetworks   bool
+	skipEmptyValues        bool
 }
 
 var (
@@ -43,6 +44,16 @@ func IncludeAliasedNetworks() NetworksOption {
 func IncludeNetworksWithoutData() NetworksOption {
 	return func(networks *networkOptions) {
 		networks.includeEmptyNetworks = true
+	}
+}
+
+// SkipEmptyValues is an option for Networks and NetworksWithin that makes
+// them skip networks whose data is an empty map or empty array. This is
+// useful for databases that store empty maps or arrays for records without
+// meaningful data, allowing iteration over only records with actual content.
+func SkipEmptyValues() NetworksOption {
+	return func(networks *networkOptions) {
+		networks.skipEmptyValues = true
 	}
 }
 
@@ -169,6 +180,17 @@ func (r *Reader) NetworksWithin(prefix netip.Prefix, options ...NetworksOption) 
 
 				if node.pointer > r.Metadata.NodeCount {
 					offset, err := r.resolveDataPointer(node.pointer)
+
+					// Check if we should skip empty values (only if no error)
+					if err == nil && n.skipEmptyValues {
+						var isEmpty bool
+						isEmpty, err = r.decoder.IsEmptyValueAt(uint(offset))
+						if err == nil && isEmpty {
+							// Skip this empty value
+							break
+						}
+					}
+
 					ok := yield(Result{
 						decoder:   r.decoder,
 						ip:        mappedIP(node.ip),

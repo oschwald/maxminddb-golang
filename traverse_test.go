@@ -402,3 +402,173 @@ func BenchmarkNetworks(b *testing.B) {
 	}
 	require.NoError(b, db.Close(), "error on close")
 }
+
+func TestSkipEmptyValues(t *testing.T) {
+	// Test with database that has many empty values
+	reader, err := Open(testFile("GeoIP2-Anonymous-IP-Test.mmdb"))
+	require.NoError(t, err)
+	defer reader.Close()
+
+	// Count networks without SkipEmptyValues
+	var countWithout, emptyCount int
+	for result := range reader.Networks() {
+		require.NoError(t, result.Err())
+		countWithout++
+
+		if result.Found() {
+			var data map[string]any
+			err := result.Decode(&data)
+			require.NoError(t, err)
+			if len(data) == 0 {
+				emptyCount++
+			}
+		}
+	}
+
+	// Count networks with SkipEmptyValues
+	var countWith int
+	for result := range reader.Networks(SkipEmptyValues()) {
+		require.NoError(t, result.Err())
+		countWith++
+
+		if result.Found() {
+			var data map[string]any
+			err := result.Decode(&data)
+			require.NoError(t, err)
+			assert.NotEmpty(t, data, "should not see empty maps with SkipEmptyValues")
+		}
+	}
+
+	// Verify the option works as expected
+	assert.Positive(t, emptyCount, "test database should have empty values")
+	assert.Equal(
+		t,
+		countWithout-emptyCount,
+		countWith,
+		"SkipEmptyValues should skip exactly the empty values",
+	)
+
+	t.Logf("Without SkipEmptyValues: %d networks (%d empty)", countWithout, emptyCount)
+	t.Logf("With SkipEmptyValues: %d networks (0 empty)", countWith)
+}
+
+func TestSkipEmptyValuesWithNetworksWithin(t *testing.T) {
+	tests := []struct {
+		name       string
+		dbFile     string
+		prefix     string
+		options    []NetworksOption
+		validateFn func(t *testing.T, count, emptyCount int)
+	}{
+		{
+			name:    "NetworksWithin without options on DB with empty values",
+			dbFile:  "GeoIP2-Anonymous-IP-Test.mmdb",
+			prefix:  "0.0.0.0/0",
+			options: nil,
+			validateFn: func(t *testing.T, count, emptyCount int) {
+				assert.Positive(t, count, "should have networks")
+				assert.Positive(t, emptyCount, "should find empty maps")
+				t.Logf("Found %d networks, %d empty", count, emptyCount)
+			},
+		},
+		{
+			name:    "NetworksWithin with SkipEmptyValues",
+			dbFile:  "GeoIP2-Anonymous-IP-Test.mmdb",
+			prefix:  "0.0.0.0/0",
+			options: []NetworksOption{SkipEmptyValues()},
+			validateFn: func(t *testing.T, count, emptyCount int) {
+				assert.Positive(t, count, "should have networks")
+				assert.Equal(t, 0, emptyCount, "should not find empty maps with SkipEmptyValues")
+			},
+		},
+		{
+			name:    "NetworksWithin specific subnet without empty values",
+			dbFile:  "GeoIP2-Connection-Type-Test.mmdb",
+			prefix:  "1.0.0.0/8",
+			options: []NetworksOption{SkipEmptyValues()},
+			validateFn: func(t *testing.T, count, _ int) {
+				assert.Positive(t, count, "should have networks in 1.0.0.0/8")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reader, err := Open(testFile(tt.dbFile))
+			require.NoError(t, err)
+			defer reader.Close()
+
+			prefix, err := netip.ParsePrefix(tt.prefix)
+			require.NoError(t, err)
+
+			var count, emptyCount int
+			for result := range reader.NetworksWithin(prefix, tt.options...) {
+				require.NoError(t, result.Err())
+				count++
+
+				if !result.Found() {
+					continue
+				}
+
+				var data map[string]any
+				err := result.Decode(&data)
+				require.NoError(t, err)
+
+				if len(data) == 0 {
+					emptyCount++
+				}
+			}
+
+			tt.validateFn(t, count, emptyCount)
+		})
+	}
+}
+
+func TestSkipEmptyValuesWithOtherOptions(t *testing.T) {
+	// Test that SkipEmptyValues works correctly with other options
+	reader, err := Open(testFile("GeoIP2-Anonymous-IP-Test.mmdb"))
+	require.NoError(t, err)
+	defer reader.Close()
+
+	// Test with IncludeNetworksWithoutData - should still skip empty maps
+	var count int
+	for result := range reader.Networks(IncludeNetworksWithoutData(), SkipEmptyValues()) {
+		require.NoError(t, result.Err())
+		count++
+
+		if result.Found() {
+			var data map[string]any
+			err := result.Decode(&data)
+			require.NoError(t, err)
+			assert.NotEmpty(t, data, "should not see empty maps even with other options")
+		}
+	}
+
+	assert.Positive(t, count, "should have some networks")
+}
+
+func BenchmarkSkipEmptyValues(b *testing.B) {
+	db, err := Open(testFile("GeoIP2-Anonymous-IP-Test.mmdb"))
+	require.NoError(b, err)
+	defer db.Close()
+
+	b.Run("without SkipEmptyValues", func(b *testing.B) {
+		for range b.N {
+			for r := range db.Networks() {
+				if r.Err() != nil {
+					b.Fatal(r.Err())
+				}
+			}
+		}
+	})
+
+	b.Run("with SkipEmptyValues", func(b *testing.B) {
+		for range b.N {
+			for r := range db.Networks(SkipEmptyValues()) {
+				if r.Err() != nil {
+					b.Fatal(r.Err())
+				}
+			}
+		}
+	})
+}

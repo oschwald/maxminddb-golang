@@ -10,6 +10,10 @@
   databases.
 - Added validation for invalid prefixes in `NetworksWithin` to prevent
   unexpected behavior with malformed input.
+- Added `SkipEmptyValues()` option for `Networks` and `NetworksWithin` to skip
+  networks whose data is an empty map or empty array. This is useful for
+  databases that store empty maps or arrays for records without meaningful
+  data. GitHub #172.
 
 ## 2.0.0-beta.8 - 2025-07-15
 

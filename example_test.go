@@ -15,7 +15,7 @@ func ExampleReader_Lookup_struct() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close() //nolint:errcheck // error doesn't matter
+	defer db.Close()
 
 	addr := netip.MustParseAddr("81.2.69.142")
 
@@ -40,7 +40,7 @@ func ExampleReader_Lookup_interface() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close() //nolint:errcheck // error doesn't matter
+	defer db.Close()
 
 	addr := netip.MustParseAddr("81.2.69.142")
 
@@ -50,7 +50,6 @@ func ExampleReader_Lookup_interface() {
 		log.Panic(err)
 	}
 	fmt.Printf("%v", record)
-	//nolint:lll
 	// Output:
 	// map[city:map[geoname_id:2643743 names:map[de:London en:London es:Londres fr:Londres ja:ロンドン pt-BR:Londres ru:Лондон]] continent:map[code:EU geoname_id:6255148 names:map[de:Europa en:Europe es:Europa fr:Europe ja:ヨーロッパ pt-BR:Europa ru:Европа zh-CN:欧洲]] country:map[geoname_id:2635167 iso_code:GB names:map[de:Vereinigtes Königreich en:United Kingdom es:Reino Unido fr:Royaume-Uni ja:イギリス pt-BR:Reino Unido ru:Великобритания zh-CN:英国]] location:map[accuracy_radius:10 latitude:51.5142 longitude:-0.0931 time_zone:Europe/London] registered_country:map[geoname_id:6252001 iso_code:US names:map[de:USA en:United States es:Estados Unidos fr:États-Unis ja:アメリカ合衆国 pt-BR:Estados Unidos ru:США zh-CN:美国]] subdivisions:[map[geoname_id:6269131 iso_code:ENG names:map[en:England es:Inglaterra fr:Angleterre pt-BR:Inglaterra]]]]
 }
@@ -62,7 +61,7 @@ func ExampleReader_Networks() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close() //nolint:errcheck // error doesn't matter
+	defer db.Close()
 
 	for result := range db.Networks() {
 		record := struct {
@@ -108,7 +107,7 @@ func ExampleReader_Verify() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close() //nolint:errcheck // error doesn't matter
+	defer db.Close()
 
 	// Verify database integrity
 	if err := db.Verify(); err != nil {
@@ -142,7 +141,7 @@ func ExampleReader_NetworksWithin() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close() //nolint:errcheck // error doesn't matter
+	defer db.Close()
 
 	prefix, err := netip.ParsePrefix("1.0.0.0/8")
 	if err != nil {
@@ -170,6 +169,80 @@ func ExampleReader_NetworksWithin() {
 	// 1.0.32.0/19: Cable/DSL
 	// 1.0.64.0/18: Cable/DSL
 	// 1.0.128.0/17: Cable/DSL
+}
+
+// This example demonstrates how to use SkipEmptyValues to iterate only over
+// networks that have actual data, skipping those with empty maps or arrays.
+func ExampleSkipEmptyValues() {
+	db, err := maxminddb.Open("test-data/test-data/GeoIP2-Anonymous-IP-Test.mmdb")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	// Without SkipEmptyValues, you get all networks including empty ones
+	fmt.Println("All networks:")
+	count := 0
+	for result := range db.Networks() {
+		if result.Err() != nil {
+			log.Panic(result.Err())
+		}
+		count++
+		if count > 10 {
+			fmt.Printf("... (%d more networks, many with empty data)\n", 529-count)
+			break
+		}
+
+		var record map[string]any
+		err := result.Decode(&record)
+		if err != nil {
+			log.Panic(err)
+		}
+
+		if len(record) == 0 {
+			fmt.Printf("%s: (empty)\n", result.Prefix())
+		} else {
+			fmt.Printf("%s: %v\n", result.Prefix(), record)
+		}
+	}
+
+	fmt.Println("\nOnly networks with data:")
+	// With SkipEmptyValues, you only get networks with actual data
+	for result := range db.Networks(maxminddb.SkipEmptyValues()) {
+		if result.Err() != nil {
+			log.Panic(result.Err())
+		}
+
+		var record map[string]any
+		err := result.Decode(&record)
+		if err != nil {
+			log.Panic(result.Err())
+		}
+		fmt.Printf("%s: %v\n", result.Prefix(), record)
+	}
+
+	// Output:
+	// All networks:
+	// 1.0.0.0/15: (empty)
+	// 1.2.0.0/16: map[is_anonymous:true is_anonymous_vpn:true]
+	// 1.3.0.0/16: (empty)
+	// 1.4.0.0/14: (empty)
+	// 1.8.0.0/13: (empty)
+	// 1.16.0.0/12: (empty)
+	// 1.32.0.0/11: (empty)
+	// 1.64.0.0/11: (empty)
+	// 1.96.0.0/12: (empty)
+	// 1.112.0.0/13: (empty)
+	// ... (518 more networks, many with empty data)
+	//
+	// Only networks with data:
+	// 1.2.0.0/16: map[is_anonymous:true is_anonymous_vpn:true]
+	// 1.124.213.1/32: map[is_anonymous:true is_anonymous_vpn:true is_tor_exit_node:true]
+	// 65.0.0.0/13: map[is_anonymous:true is_tor_exit_node:true]
+	// 71.160.223.0/24: map[is_anonymous:true is_hosting_provider:true]
+	// 81.2.69.0/24: map[is_anonymous:true is_anonymous_vpn:true is_hosting_provider:true is_public_proxy:true is_residential_proxy:true is_tor_exit_node:true]
+	// 186.30.236.0/24: map[is_anonymous:true is_public_proxy:true]
+	// abcd:1000::/112: map[is_anonymous:true is_public_proxy:true]
 }
 
 // CustomCity represents a simplified city record with custom unmarshaling.
@@ -252,7 +325,7 @@ func ExampleUnmarshaler() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close() //nolint:errcheck // error doesn't matter
+	defer db.Close()
 
 	addr := netip.MustParseAddr("81.2.69.142")
 
