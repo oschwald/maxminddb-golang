@@ -14,6 +14,9 @@
   networks whose data is an empty map or empty array. This is useful for
   databases that store empty maps or arrays for records without meaningful
   data. GitHub #172.
+- Optimized custom unmarshaler type assertion to use Go 1.25's
+  `reflect.TypeAssert` when available, reducing allocations in reflection code
+  paths.
 
 ## 2.0.0-beta.8 - 2025-07-15
 

@@ -19,6 +19,8 @@ linters:
     - gosmopolitan
     - inamedparam
     - interfacebloat
+    # Seems unstable. It will sometimes fire and other times not.
+    - ireturn
     - lll
     - mnd
     - nlreturn

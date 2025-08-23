@@ -318,7 +318,7 @@ func (d *ReflectionDecoder) decodeValue(
 
 	// Check if the value implements Unmarshaler interface using type assertion
 	if result.CanAddr() {
-		if unmarshaler, ok := result.Addr().Interface().(Unmarshaler); ok {
+		if unmarshaler, ok := tryTypeAssert(result.Addr()); ok {
 			decoder := NewDecoder(d.DataDecoder, offset)
 			if err := unmarshaler.UnmarshalMaxMindDB(decoder); err != nil {
 				return 0, err
