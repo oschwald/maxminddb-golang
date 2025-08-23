@@ -17,6 +17,9 @@
 - Optimized custom unmarshaler type assertion to use Go 1.25's
   `reflect.TypeAssert` when available, reducing allocations in reflection code
   paths.
+- Improved memory mapping implementation by using `SyscallConn()` instead of
+  `Fd()` to avoid side effects and prepare for Go 1.25+ Windows I/O
+  enhancements. Pull request by database64128. GitHub #179.
 
 ## 2.0.0-beta.8 - 2025-07-15
 
