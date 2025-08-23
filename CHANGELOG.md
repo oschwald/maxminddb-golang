@@ -1,6 +1,6 @@
 # Changes
 
-## 2.0.0-beta.9
+## 2.0.0-beta.9 - 2025-08-23
 
 - **SECURITY**: Fixed integer overflow vulnerability in search tree size
   calculation that could potentially allow malformed databases to trigger
