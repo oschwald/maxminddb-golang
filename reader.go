@@ -197,7 +197,7 @@ func (m Metadata) BuildTime() time.Time {
 
 type readerOptions struct{}
 
-// ReaderOption are options for [Open] and [FromBytes].
+// ReaderOption are options for [Open] and [OpenBytes].
 //
 // This was added to allow for future options, e.g., for caching, without
 // causing a breaking API change.
@@ -241,12 +241,12 @@ func Open(file string, options ...ReaderOption) (*Reader, error) {
 			if err != nil {
 				return nil, err
 			}
-			return FromBytes(data, options...)
+			return OpenBytes(data, options...)
 		}
 		return nil, err
 	}
 
-	reader, err := FromBytes(data, options...)
+	reader, err := OpenBytes(data, options...)
 	if err != nil {
 		_ = munmap(data)
 		return nil, err
@@ -290,9 +290,9 @@ func (r *Reader) Close() error {
 	return err
 }
 
-// FromBytes takes a byte slice corresponding to a MaxMind DB file and any
+// OpenBytes takes a byte slice corresponding to a MaxMind DB file and any
 // options. It returns a Reader structure or an error.
-func FromBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
+func OpenBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
 	opts := &readerOptions{}
 	for _, option := range options {
 		option(opts)
@@ -351,6 +351,14 @@ func FromBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
 	}
 
 	return reader, nil
+}
+
+// FromBytes takes a byte slice corresponding to a MaxMind DB file and any
+// options. It returns a Reader structure or an error.
+//
+// Deprecated: Use OpenBytes instead. FromBytes will be removed in a future version.
+func FromBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
+	return OpenBytes(buffer, options...)
 }
 
 // Lookup retrieves the database record for ip and returns a Result, which can

@@ -20,6 +20,9 @@
 - Improved memory mapping implementation by using `SyscallConn()` instead of
   `Fd()` to avoid side effects and prepare for Go 1.25+ Windows I/O
   enhancements. Pull request by database64128. GitHub #179.
+- Added `OpenBytes` function for better API discoverability and consistency
+  with `Open()`. `FromBytes` is now deprecated and will be removed in a future
+  version.
 
 ## 2.0.0-beta.8 - 2025-07-15
 
