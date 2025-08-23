@@ -367,6 +367,16 @@ func TestDecodePath(t *testing.T) {
 	var ne uint
 	require.NoError(t, result.DecodePath(&ne, "does-not-exist", 1))
 	assert.Equal(t, uint(0), ne)
+
+	// Test pointer pattern for path existence checking
+	var existingStringPtr *string
+	require.NoError(t, result.DecodePath(&existingStringPtr, "utf8_string"))
+	assert.NotNil(t, existingStringPtr, "existing path should decode to non-nil pointer")
+	assert.Equal(t, "unicode! ☯ - ♫", *existingStringPtr)
+
+	var nonExistentStringPtr *string
+	require.NoError(t, result.DecodePath(&nonExistentStringPtr, "does-not-exist"))
+	assert.Nil(t, nonExistentStringPtr, "non-existent path should decode to nil pointer")
 }
 
 type TestInterface interface {

@@ -59,6 +59,20 @@ func (r Result) Decode(v any) error {
 //
 // If the path is empty, the entire data structure is decoded into v.
 //
+// To check if a path exists (rather than relying on zero values), decode
+// into a pointer and check if it remains nil:
+//
+//	var city *string
+//	err := result.DecodePath(&city, "city", "names", "en")
+//	if err != nil {
+//		// Handle error
+//	}
+//	if city == nil {
+//		// Path not found
+//	} else {
+//		// Path exists, city contains the value
+//	}
+//
 // Returns an error if:
 //   - the path is invalid
 //   - the data cannot be decoded into the type of v
@@ -69,7 +83,7 @@ func (r Result) Decode(v any) error {
 // Example usage:
 //
 //	var city string
-//	err := result.DecodePath(&city, "location", "city", "names", "en")
+//	err := result.DecodePath(&city, "city", "names", "en")
 //
 //	var geonameID int
 //	err := result.DecodePath(&geonameID, "subdivisions", 0, "geoname_id")
