@@ -112,6 +112,7 @@ import (
 	"net/netip"
 	"os"
 	"runtime"
+	"sync/atomic"
 	"time"
 
 	"github.com/oschwald/maxminddb-golang/v2/internal/decoder"
@@ -121,6 +122,12 @@ import (
 const dataSectionSeparatorSize = 16
 
 var metadataStartMarker = []byte("\xAB\xCD\xEFMaxMind.com")
+
+// mmapCleanup holds the data needed to safely cleanup memory-mapped files.
+type mmapCleanup struct {
+	hasMapped *atomic.Bool
+	data      []byte
+}
 
 // Reader holds the data corresponding to the MaxMind DB file. Its only public
 // field is Metadata, which contains the metadata from the MaxMind DB file.
@@ -134,7 +141,7 @@ type Reader struct {
 	ipv4Start         uint
 	ipv4StartBitDepth int
 	nodeOffsetMult    uint
-	hasMappedFile     bool
+	hasMappedFile     atomic.Bool
 }
 
 // Metadata holds the metadata decoded from the MaxMind DB file.
@@ -252,8 +259,16 @@ func Open(file string, options ...ReaderOption) (*Reader, error) {
 		return nil, err
 	}
 
-	reader.hasMappedFile = true
-	runtime.SetFinalizer(reader, (*Reader).Close)
+	reader.hasMappedFile.Store(true)
+	cleanup := &mmapCleanup{
+		data:      data,
+		hasMapped: &reader.hasMappedFile,
+	}
+	runtime.AddCleanup(reader, func(mc *mmapCleanup) {
+		if mc.hasMapped.CompareAndSwap(true, false) {
+			_ = munmap(mc.data)
+		}
+	}, cleanup)
 	return reader, nil
 }
 
@@ -281,9 +296,7 @@ func openFallback(f *os.File, size int) (data []byte, err error) {
 // Close returns the resources used by the database to the system.
 func (r *Reader) Close() error {
 	var err error
-	if r.hasMappedFile {
-		runtime.SetFinalizer(r, nil)
-		r.hasMappedFile = false
+	if r.hasMappedFile.CompareAndSwap(true, false) {
 		err = munmap(r.buffer)
 	}
 	r.buffer = nil
@@ -384,7 +397,7 @@ func (r *Reader) Lookup(ip netip.Addr) Result {
 	}
 	offset, err := r.resolveDataPointer(pointer)
 	return Result{
-		decoder:   r.decoder,
+		reader:    r,
 		ip:        ip,
 		offset:    uint(offset),
 		prefixLen: uint8(prefixLen),
@@ -399,7 +412,7 @@ func (r *Reader) LookupOffset(offset uintptr) Result {
 		return Result{err: errors.New("cannot call LookupOffset on a closed database")}
 	}
 
-	return Result{decoder: r.decoder, offset: uint(offset)}
+	return Result{reader: r, offset: uint(offset)}
 }
 
 func (r *Reader) setIPv4Start() error {

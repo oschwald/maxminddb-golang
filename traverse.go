@@ -192,7 +192,7 @@ func (r *Reader) NetworksWithin(prefix netip.Prefix, options ...NetworksOption) 
 					}
 
 					ok := yield(Result{
-						decoder:   r.decoder,
+						reader:    r,
 						ip:        mappedIP(node.ip),
 						offset:    uint(offset),
 						prefixLen: uint8(node.bit),

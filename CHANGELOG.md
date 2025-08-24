@@ -1,5 +1,11 @@
 # Changes
 
+## 2.0.0-beta.10
+
+- Replaced `runtime.SetFinalizer` with `runtime.AddCleanup` for resource
+  cleanup in Go 1.24+. This provides more reliable finalization behavior and
+  better garbage collection performance.
+
 ## 2.0.0-beta.9 - 2025-08-23
 
 - **SECURITY**: Fixed integer overflow vulnerability in search tree size

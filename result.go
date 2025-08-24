@@ -3,8 +3,6 @@ package maxminddb
 import (
 	"math"
 	"net/netip"
-
-	"github.com/oschwald/maxminddb-golang/v2/internal/decoder"
 )
 
 const notFound uint = math.MaxUint
@@ -13,7 +11,7 @@ const notFound uint = math.MaxUint
 type Result struct {
 	ip        netip.Addr
 	err       error
-	decoder   decoder.ReflectionDecoder
+	reader    *Reader
 	offset    uint
 	prefixLen uint8
 }
@@ -37,7 +35,7 @@ func (r Result) Decode(v any) error {
 		return nil
 	}
 
-	return r.decoder.Decode(r.offset, v)
+	return r.reader.decoder.Decode(r.offset, v)
 }
 
 // DecodePath unmarshals a value from data section into v, following the
@@ -94,7 +92,7 @@ func (r Result) DecodePath(v any, path ...any) error {
 	if r.offset == notFound {
 		return nil
 	}
-	return r.decoder.DecodePath(r.offset, path, v)
+	return r.reader.decoder.DecodePath(r.offset, path, v)
 }
 
 // Err provides a way to check whether there was an error during the lookup
