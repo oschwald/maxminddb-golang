@@ -223,8 +223,12 @@ func (r *Reader) NetworksWithin(prefix netip.Prefix, options ...NetworksOption) 
 				}
 				ipRight[node.bit>>3] |= 1 << (7 - (node.bit % 8))
 
-				offset := node.pointer * r.nodeOffsetMult
-				rightPointer, err := readNodeBySize(r.buffer, offset, 1, r.Metadata.RecordSize)
+				baseOffset := node.pointer * r.nodeOffsetMult
+				leftPointer, rightPointer, err := readNodePairBySize(
+					r.buffer,
+					baseOffset,
+					r.Metadata.RecordSize,
+				)
 				if err != nil {
 					yield(Result{
 						ip:        mappedIP(node.ip),
@@ -241,15 +245,6 @@ func (r *Reader) NetworksWithin(prefix netip.Prefix, options ...NetworksOption) 
 					bit:     node.bit,
 				})
 
-				leftPointer, err := readNodeBySize(r.buffer, offset, 0, r.Metadata.RecordSize)
-				if err != nil {
-					yield(Result{
-						ip:        mappedIP(node.ip),
-						prefixLen: uint8(node.bit),
-						err:       err,
-					})
-					return
-				}
 				node.pointer = leftPointer
 			}
 		}
