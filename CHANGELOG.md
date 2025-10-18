@@ -3,6 +3,8 @@
 ## 2.0.0 - 2025-10-18
 
 - BREAKING CHANGE: Removed deprecated `FromBytes`. Use `OpenBytes` instead.
+- Fixed verifier metadata error message to require a non-empty map for the
+  database description. GitHub #187.
 
 ## 2.0.0-beta.10 - 2025-08-23
 

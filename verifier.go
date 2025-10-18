@@ -68,7 +68,7 @@ func (v *verifier) verifyMetadata() error {
 	if len(metadata.Description) == 0 {
 		return testError(
 			"description",
-			"non-empty slice",
+			"non-empty map",
 			metadata.Description,
 		)
 	}
