@@ -1,3 +1,4 @@
+// Package decoder provides low-level decoding utilities for MaxMind DB data.
 package decoder
 
 import (

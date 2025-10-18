@@ -1,4 +1,3 @@
-// Package decoder decodes values in the data section.
 package decoder
 
 import (

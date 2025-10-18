@@ -1,4 +1,3 @@
-// Package decoder decodes values in the data section.
 package decoder
 
 import (
@@ -238,14 +237,12 @@ func (d *DataDecoder) decodePointer(
 
 	var pointerValueOffset uint
 	switch pointerSize {
-	case 1:
+	case 1, 4:
 		pointerValueOffset = 0
 	case 2:
 		pointerValueOffset = 2048
 	case 3:
 		pointerValueOffset = 526336
-	case 4:
-		pointerValueOffset = 0
 	default:
 		return 0, 0, mmdberrors.NewInvalidDatabaseError("invalid pointer size: %d", pointerSize)
 	}

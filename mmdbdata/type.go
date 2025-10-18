@@ -1,4 +1,3 @@
-// Package mmdbdata provides types and interfaces for working with MaxMind DB data.
 package mmdbdata
 
 import "github.com/oschwald/maxminddb-golang/v2/internal/decoder"
