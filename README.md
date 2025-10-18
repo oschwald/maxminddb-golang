@@ -29,6 +29,10 @@ Version 2.0 includes significant improvements:
 - **Go 1.24+ Support**: Takes advantage of modern Go features including
   iterators
 - **Better Error Handling**: More detailed error types and improved debugging
+- **Integrity Checks**: Validate databases with `Reader.Verify()` and access
+  metadata helpers such as `Metadata.BuildTime()`
+
+See [MIGRATION.md](MIGRATION.md) for guidance on updating existing v1 code.
 
 ## Quick Start
 

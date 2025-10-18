@@ -5,6 +5,9 @@
 - BREAKING CHANGE: Removed deprecated `FromBytes`. Use `OpenBytes` instead.
 - Fixed verifier metadata error message to require a non-empty map for the
   database description. GitHub #187.
+- Introduces the v2 API with `Reader.Lookup(ip).Decode(...)`, `netip.Addr`
+  support, custom decoder interfaces, and richer error reporting.
+- See MIGRATION.md for guidance on upgrading projects from v1 to v2.
 
 ## 2.0.0-beta.10 - 2025-08-23
 
