@@ -366,14 +366,6 @@ func OpenBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
 	return reader, nil
 }
 
-// FromBytes takes a byte slice corresponding to a MaxMind DB file and any
-// options. It returns a Reader structure or an error.
-//
-// Deprecated: Use OpenBytes instead. FromBytes will be removed in a future version.
-func FromBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
-	return OpenBytes(buffer, options...)
-}
-
 // Lookup retrieves the database record for ip and returns a Result, which can
 // be used to decode the data.
 func (r *Reader) Lookup(ip netip.Addr) Result {

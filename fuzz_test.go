@@ -29,7 +29,7 @@ func FuzzDatabase(f *testing.F) {
 	f.Add([]byte{})
 
 	f.Fuzz(func(_ *testing.T, data []byte) {
-		reader, err := FromBytes(data)
+		reader, err := OpenBytes(data)
 		if err != nil {
 			return
 		}
@@ -74,7 +74,7 @@ func FuzzLookup(f *testing.F) {
 	}
 
 	f.Fuzz(func(_ *testing.T, data []byte) {
-		reader, err := FromBytes(data)
+		reader, err := OpenBytes(data)
 		if err != nil {
 			return
 		}
@@ -225,7 +225,7 @@ func FuzzNetworks(f *testing.F) {
 	f.Add(bytes.Repeat([]byte{0xFF}, 512))
 
 	f.Fuzz(func(_ *testing.T, data []byte) {
-		reader, err := FromBytes(data)
+		reader, err := OpenBytes(data)
 		if err != nil {
 			return
 		}

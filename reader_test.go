@@ -53,7 +53,7 @@ func TestReaderBytes(t *testing.T) {
 			)
 			bytes, err := os.ReadFile(fileName)
 			require.NoError(t, err)
-			reader, err := FromBytes(bytes)
+			reader, err := OpenBytes(bytes)
 			require.NoError(t, err, "unexpected error while opening bytes: %v", err)
 
 			checkMetadata(t, reader, ipVersion, recordSize)
@@ -1260,7 +1260,7 @@ func TestMetadataBuildTime(t *testing.T) {
 }
 
 func TestIntegerOverflowProtection(t *testing.T) {
-	// Test that FromBytes detects integer overflow in search tree size calculation
+	// Test that OpenBytes detects integer overflow in search tree size calculation
 	t.Run("NodeCount overflow protection", func(t *testing.T) {
 		// Create metadata that would cause overflow: very large NodeCount
 		// For a 64-bit system with RecordSize=32, this should trigger overflow
@@ -1289,14 +1289,14 @@ func TestIntegerOverflowProtection(t *testing.T) {
 
 		// Since we can't easily create an invalid MMDB file that parses but has overflow values,
 		// we test the core logic validation here and rely on integration tests
-		// for the full FromBytes flow
+		// for the full OpenBytes flow
 
 		if metadata.NodeCount > 0 && metadata.RecordSize > 0 {
 			recordSizeQuarter := metadata.RecordSize / 4
 			if recordSizeQuarter > 0 {
 				maxNodes := ^uint(0) / recordSizeQuarter
 				if metadata.NodeCount > maxNodes {
-					// This is what should happen in FromBytes
+					// This is what should happen in OpenBytes
 					err := mmdberrors.NewInvalidDatabaseError("database tree size would overflow")
 					assert.Equal(t, "database tree size would overflow", err.Error())
 				}

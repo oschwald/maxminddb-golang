@@ -1,5 +1,9 @@
 # Changes
 
+## 2.0.0 - 2025-10-18
+
+- BREAKING CHANGE: Removed deprecated `FromBytes`. Use `OpenBytes` instead.
+
 ## 2.0.0-beta.10 - 2025-08-23
 
 - Replaced `runtime.SetFinalizer` with `runtime.AddCleanup` for resource
