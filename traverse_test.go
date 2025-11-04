@@ -391,7 +391,7 @@ func BenchmarkNetworks(b *testing.B) {
 	db, err := Open(testFile("GeoIP2-Country-Test.mmdb"))
 	require.NoError(b, err)
 
-	for range b.N {
+	for b.Loop() {
 		for r := range db.Networks() {
 			var rec struct{}
 			err = r.Decode(&rec)

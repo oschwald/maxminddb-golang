@@ -25,9 +25,7 @@ func BenchmarkStructDecoding(b *testing.B) {
 		En string `maxminddb:"en"` // Simple field
 	}
 
-	b.ResetTimer()
-
-	for range b.N {
+	for b.Loop() {
 		var result TestStruct
 		err := decoder.Decode(0, &result)
 		if err != nil {
@@ -51,9 +49,7 @@ func BenchmarkSimpleDecoding(b *testing.B) {
 		En string `maxminddb:"en"`
 	}
 
-	b.ResetTimer()
-
-	for range b.N {
+	for b.Loop() {
 		var result TestStruct
 		err := decoder.Decode(0, &result)
 		if err != nil {
@@ -85,9 +81,7 @@ func BenchmarkFieldLookup(b *testing.B) {
 
 	fieldNames := []string{"f01", "f02", "f03", "f04", "f05", "f06", "f07", "f08", "f09", "f10"}
 
-	b.ResetTimer()
-
-	for range b.N {
+	for b.Loop() {
 		// Test field lookup performance
 		for _, name := range fieldNames {
 			_, exists := fields.namedFields[name]

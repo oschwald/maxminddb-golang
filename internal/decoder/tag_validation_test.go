@@ -58,7 +58,7 @@ func TestValidateTag(t *testing.T) {
 			// Create a mock struct field
 			field := reflect.StructField{
 				Name: tt.fieldName,
-				Type: reflect.TypeOf(""),
+				Type: reflect.TypeFor[string](),
 			}
 
 			err := validateTag(field, tt.tag)
@@ -85,7 +85,7 @@ func TestTagValidationIntegration(t *testing.T) {
 	}
 
 	// This should not panic even with invalid tags
-	structType := reflect.TypeOf(TestStruct{})
+	structType := reflect.TypeFor[TestStruct]()
 	fields := makeStructFields(structType)
 
 	// Verify that valid fields are still processed

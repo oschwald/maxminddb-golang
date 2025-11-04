@@ -72,10 +72,9 @@ func BenchmarkWrapError_HappyPath(b *testing.B) {
 	dd := NewDataDecoder(buffer)
 	decoder := NewDecoder(dd, 0)
 
-	b.ResetTimer()
 	b.ReportAllocs()
 
-	for range b.N {
+	for b.Loop() {
 		err := decoder.wrapError(nil)
 		if err != nil {
 			b.Fatal("unexpected error")
@@ -91,10 +90,9 @@ func BenchmarkWrapError_ErrorPath(b *testing.B) {
 
 	originalErr := mmdberrors.NewInvalidDatabaseError("test error")
 
-	b.ResetTimer()
 	b.ReportAllocs()
 
-	for range b.N {
+	for b.Loop() {
 		err := decoder.wrapError(originalErr)
 		if err == nil {
 			b.Fatal("expected error")
