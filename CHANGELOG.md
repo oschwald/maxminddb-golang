@@ -1,5 +1,11 @@
 # Changes
 
+## 2.1.0 - 2025-11-04
+
+- Updated `Offset` method on `Decoder` to return the resolved data offset
+  when positioned at a pointer. This makes more useful for caching values,
+  which is its stated purpose.
+
 ## 2.0.0 - 2025-10-18
 
 - BREAKING CHANGE: Removed deprecated `FromBytes`. Use `OpenBytes` instead.
