@@ -698,16 +698,6 @@ func TestDecodingToNonPointer(t *testing.T) {
 	require.NoError(t, reader.Close(), "error on close")
 }
 
-// func TestNilLookup(t *testing.T) {
-// 	reader, err := Open(testFile("MaxMind-DB-test-decoder.mmdb"))
-// 	require.NoError(t, err)
-
-// 	var recordInterface any
-// 	err = reader.Lookup(nil).Decode( recordInterface)
-// 	assert.Equal(t, "IP passed to Lookup cannot be nil", err.Error())
-// 	require.NoError(t, reader.Close(), "error on close")
-// }
-
 func TestUsingClosedDatabase(t *testing.T) {
 	reader, err := Open(testFile("MaxMind-DB-test-decoder.mmdb"))
 	require.NoError(t, err)
@@ -1165,45 +1155,6 @@ func (c *TestCity) UnmarshalMaxMindDB(d *mmdbdata.Decoder) error {
 			c.GeoNameID = uint(geoID)
 		default:
 			// Skip unknown fields
-			if err := d.SkipValue(); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-// TestASN represents ASN data for testing custom unmarshaling.
-type TestASN struct {
-	AutonomousSystemOrganization string `maxminddb:"autonomous_system_organization"`
-	AutonomousSystemNumber       uint   `maxminddb:"autonomous_system_number"`
-}
-
-// UnmarshalMaxMindDB implements the Unmarshaler interface for TestASN.
-func (a *TestASN) UnmarshalMaxMindDB(d *mmdbdata.Decoder) error {
-	mapIter, _, err := d.ReadMap()
-	if err != nil {
-		return err
-	}
-	for key, err := range mapIter {
-		if err != nil {
-			return err
-		}
-
-		switch string(key) {
-		case "autonomous_system_organization":
-			org, err := d.ReadString()
-			if err != nil {
-				return err
-			}
-			a.AutonomousSystemOrganization = org
-		case "autonomous_system_number":
-			asn, err := d.ReadUint32()
-			if err != nil {
-				return err
-			}
-			a.AutonomousSystemNumber = uint(asn)
-		default:
 			if err := d.SkipValue(); err != nil {
 				return err
 			}
