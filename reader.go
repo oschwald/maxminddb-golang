@@ -141,7 +141,7 @@ type Reader struct {
 	ipv4Start         uint
 	ipv4StartBitDepth int
 	nodeOffsetMult    uint
-	hasMappedFile     atomic.Bool
+	hasMappedFile     *atomic.Bool
 }
 
 // Metadata holds the metadata decoded from the MaxMind DB file.
@@ -262,7 +262,7 @@ func Open(file string, options ...ReaderOption) (*Reader, error) {
 	reader.hasMappedFile.Store(true)
 	cleanup := &mmapCleanup{
 		data:      data,
-		hasMapped: &reader.hasMappedFile,
+		hasMapped: reader.hasMappedFile,
 	}
 	runtime.AddCleanup(reader, func(mc *mmapCleanup) {
 		if mc.hasMapped.CompareAndSwap(true, false) {
@@ -356,6 +356,7 @@ func OpenBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
 		Metadata:       metadata,
 		ipv4Start:      0,
 		nodeOffsetMult: metadata.RecordSize / 4,
+		hasMappedFile:  &atomic.Bool{},
 	}
 
 	err = reader.setIPv4Start()

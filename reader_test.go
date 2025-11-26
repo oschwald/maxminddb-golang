@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -65,6 +66,32 @@ func TestReaderBytes(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestReaderLeaks(t *testing.T) {
+	collected := make(chan struct{})
+
+	func() {
+		r, err := Open(testFile("GeoLite2-City-Test.mmdb"))
+		require.NoError(t, err)
+
+		// We intentionally do NOT call Close() to test if GC picks it up
+		// and if AddCleanup doesn't prevent it.
+
+		runtime.SetFinalizer(r, func(obj *Reader) {
+			close(collected)
+		})
+	}()
+
+	require.Eventually(t, func() bool {
+		runtime.GC()
+		select {
+		case <-collected:
+			return true
+		default:
+			return false
+		}
+	}, 1*time.Second, 50*time.Millisecond, "Reader was NOT collected (leak detected)")
 }
 
 func TestLookupNetwork(t *testing.T) {

@@ -1,5 +1,10 @@
 # Changes
 
+## 2.1.1 - 2025-11-26
+
+- Fixed `runtime.AddCleanup` misuse that prevented the memory-mapped file from
+  being unmapped when the `Reader` was garbage collected.
+
 ## 2.1.0 - 2025-11-04
 
 - Updated `Offset` method on `Decoder` to return the resolved data offset
