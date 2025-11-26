@@ -59,12 +59,12 @@
 
 ## 2.0.0-beta.7 - 2025-07-07
 
-* Update capitalization of "uint" in `ReadUInt*` to match `KindUint*` as well
+- Update capitalization of "uint" in `ReadUInt*` to match `KindUint*` as well
   as the Go standard library.
 
 ## 2.0.0-beta.6 - 2025-07-07
 
-* Invalid release with no code changes.
+- Invalid release with no code changes.
 
 ## 2.0.0-beta.5 - 2025-07-06
 
