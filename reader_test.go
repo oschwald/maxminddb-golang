@@ -78,7 +78,7 @@ func TestReaderLeaks(t *testing.T) {
 		// We intentionally do NOT call Close() to test if GC picks it up
 		// and if AddCleanup doesn't prevent it.
 
-		runtime.SetFinalizer(r, func(obj *Reader) {
+		runtime.SetFinalizer(r, func(*Reader) {
 			close(collected)
 		})
 	}()

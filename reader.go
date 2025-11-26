@@ -135,13 +135,13 @@ type mmapCleanup struct {
 // All of the methods on Reader are thread-safe. The struct may be safely
 // shared across goroutines.
 type Reader struct {
-	buffer            []byte
+	hasMappedFile     *atomic.Bool
 	decoder           decoder.ReflectionDecoder
+	buffer            []byte
 	Metadata          Metadata
 	ipv4Start         uint
 	ipv4StartBitDepth int
 	nodeOffsetMult    uint
-	hasMappedFile     *atomic.Bool
 }
 
 // Metadata holds the metadata decoded from the MaxMind DB file.
