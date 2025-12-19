@@ -419,6 +419,51 @@ func (d *DataDecoder) decodeKey(offset uint) ([]byte, uint, error) {
 	return d.buffer[dataOffset:newOffset], nextOffset, nil
 }
 
+// decodeStringValue decodes a string (or pointer to string) from the given offset.
+func (d *DataDecoder) decodeStringValue(offset uint) (string, uint, error) {
+	kindNum, size, dataOffset, err := d.decodeCtrlData(offset)
+	if err != nil {
+		return "", 0, err
+	}
+
+	// Follow pointer if present (but only once, per spec)
+	nextOffset := dataOffset + size // default return offset
+	if kindNum == KindPointer {
+		pointer, newNextOffset, err := d.decodePointer(size, dataOffset)
+		if err != nil {
+			return "", 0, err
+		}
+		nextOffset = newNextOffset
+
+		// Decode the pointed-to data
+		kindNum, size, dataOffset, err = d.decodeCtrlData(pointer)
+		if err != nil {
+			return "", 0, err
+		}
+
+		// Check for pointer-to-pointer, which is invalid per spec
+		if kindNum == KindPointer {
+			return "", 0, mmdberrors.NewInvalidDatabaseError(
+				"invalid pointer to pointer at offset %d",
+				pointer,
+			)
+		}
+	}
+
+	if kindNum != KindString {
+		return "", 0, mmdberrors.NewInvalidDatabaseError(
+			"unexpected type when decoding string: %v",
+			kindNum,
+		)
+	}
+
+	s, _, err := d.decodeString(size, dataOffset)
+	if err != nil {
+		return "", 0, err
+	}
+	return s, nextOffset, nil
+}
+
 // NextValueOffset skips ahead to the next value without decoding
 // the one at the offset passed in. The size bits have different meanings for
 // different data types.

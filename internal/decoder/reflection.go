@@ -367,7 +367,10 @@ func (d *ReflectionDecoder) unmarshalBool(
 	return newOffset, mmdberrors.NewUnmarshalTypeError(value, result.Type())
 }
 
-var sliceType = reflect.TypeFor[[]byte]()
+var (
+	sliceType           = reflect.TypeFor[[]byte]()
+	mapStringStringType = reflect.TypeFor[map[string]string]()
+)
 
 func (d *ReflectionDecoder) unmarshalBytes(
 	size, offset uint,
@@ -492,6 +495,9 @@ func (d *ReflectionDecoder) unmarshalMap(
 	case reflect.Struct:
 		return d.decodeStruct(size, offset, result, depth)
 	case reflect.Map:
+		if result.Type() == mapStringStringType {
+			return d.decodeMapStringString(size, offset, result)
+		}
 		return d.decodeMap(size, offset, result, depth)
 	case reflect.Interface:
 		if result.NumMethod() == 0 {
@@ -700,6 +706,37 @@ func (d *ReflectionDecoder) unmarshalUint128(
 		// Fall through to error return
 	}
 	return newOffset, mmdberrors.NewUnmarshalTypeError(value, result.Type())
+}
+
+func (d *ReflectionDecoder) decodeMapStringString(
+	size uint,
+	offset uint,
+	result addressableValue,
+) (uint, error) {
+	if result.IsNil() {
+		result.Set(reflect.MakeMapWithSize(result.Type(), int(size)))
+	}
+	// We can trust it is map[string]string because of the check in unmarshalMap
+	m := result.Interface().(map[string]string)
+
+	for range size {
+		// Decode Key
+		key, nextOffset, err := d.decodeStringValue(offset)
+		if err != nil {
+			return 0, err
+		}
+		offset = nextOffset
+
+		// Decode Value
+		value, nextOffset, err := d.decodeStringValue(offset)
+		if err != nil {
+			return 0, d.wrapErrorWithMapKey(err, key)
+		}
+
+		offset = nextOffset
+		m[key] = value
+	}
+	return offset, nil
 }
 
 func (d *ReflectionDecoder) decodeMap(
