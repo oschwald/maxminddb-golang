@@ -221,6 +221,106 @@ func validateDecoding(t *testing.T, tests map[string]any) {
 	}
 }
 
+func TestMapStringString(t *testing.T) {
+	tests := []struct {
+		name        string
+		hex         string
+		initial     map[string]string
+		expected    map[string]string
+		expectError string
+	}{
+		{
+			name:     "empty map",
+			hex:      "e0",
+			expected: map[string]string{},
+		},
+		{
+			name:     "simple map",
+			hex:      "e142656e43466f6f",
+			expected: map[string]string{"en": "Foo"},
+		},
+		{
+			name:     "multiple entries",
+			hex:      "e242656e43466f6f427a6843e4baba",
+			expected: map[string]string{"en": "Foo", "zh": "人"},
+		},
+		{
+			name: "merging into existing map",
+			hex:  "e142656e43466f6f",
+			initial: map[string]string{
+				"existing": "value",
+			},
+			expected: map[string]string{
+				"existing": "value",
+				"en":       "Foo",
+			},
+		},
+		{
+			name: "overwriting existing key",
+			hex:  "e142656e434e6577", // "en" -> "New"
+			initial: map[string]string{
+				"en": "Old",
+			},
+			expected: map[string]string{
+				"en": "New",
+			},
+		},
+		{
+			name:     "nil map initialization",
+			hex:      "e142656e43466f6f",
+			initial:  nil,
+			expected: map[string]string{"en": "Foo"},
+		},
+		{
+			name:        "error - value is not a string (is int32)",
+			hex:         "e142656e0101", // "en" -> int32(1)
+			expectError: "unexpected type when decoding string",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inputBytes, err := hex.DecodeString(tt.hex)
+			require.NoError(t, err)
+			d := New(inputBytes)
+
+			actual := tt.initial
+			_, err = d.decode(0, reflect.ValueOf(&actual), 0)
+
+			if tt.expectError != "" {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.expectError)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tt.expected, actual)
+			}
+		})
+	}
+}
+
+func TestMapStringStringNested(t *testing.T) {
+	// e1 446e616d65 e2 42656e 43466f6f 427a68 43e4baba
+	// map { "name": map{"en": "Foo", "zh": "人"} }
+	hexStr := "e1446e616d65e242656e43466f6f427a6843e4baba"
+	inputBytes, err := hex.DecodeString(hexStr)
+	require.NoError(t, err)
+	d := New(inputBytes)
+
+	// Outer map is NOT map[string]string, so it uses slow path
+	// Inner map IS map[string]string, so it should use fast path
+	var actual map[string]map[string]string
+	_, err = d.decode(0, reflect.ValueOf(&actual), 0)
+
+	require.NoError(t, err)
+	expected := map[string]map[string]string{
+		"name": {
+			"en": "Foo",
+			"zh": "人",
+		},
+	}
+	require.Equal(t, expected, actual)
+}
+
 func TestPointers(t *testing.T) {
 	bytes, err := os.ReadFile(testFile("maps-with-pointers.raw"))
 	require.NoError(t, err)

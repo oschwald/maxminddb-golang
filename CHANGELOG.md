@@ -1,5 +1,12 @@
 # Changes
 
+## 2.2.0 - TBD
+
+- Increased internal string cache size to 4096 entries to reduce cache thrashing
+  and improve concurrent performance.
+- Optimized decoding of `map[string]string` to use a fast path, reducing
+  allocations and improving performance.
+
 ## 2.1.1 - 2025-11-26
 
 - Fixed `runtime.AddCleanup` misuse that prevented the memory-mapped file from
