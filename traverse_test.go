@@ -123,7 +123,7 @@ var tests = []networkTest{
 	{
 		Network:  "255.255.255.0/24",
 		Database: "ipv4",
-		Expected: []string(nil),
+		Expected: []string{},
 	},
 	{
 		Network:  "1.1.1.1/32",
@@ -135,7 +135,7 @@ var tests = []networkTest{
 	{
 		Network:  "255.255.255.0/24",
 		Database: "mixed",
-		Expected: []string(nil),
+		Expected: []string{},
 	},
 	{
 		Network:  "::1:ffff:ffff/128",
@@ -167,7 +167,7 @@ var tests = []networkTest{
 	{
 		Network:  "0:0:0:0:0:ffff:ffff:ff00/120",
 		Database: "ipv6",
-		Expected: []string(nil),
+		Expected: []string{},
 	},
 	{
 		Network:  "0.0.0.0/0",
@@ -302,7 +302,7 @@ var tests = []networkTest{
 func TestNetworksWithin(t *testing.T) {
 	for _, v := range tests {
 		for _, recordSize := range []uint{24, 28, 32} {
-			var opts []string
+			opts := make([]string, 0, len(v.Options))
 			for _, o := range v.Options {
 				opts = append(opts, runtime.FuncForPC(reflect.ValueOf(o).Pointer()).Name())
 			}
@@ -331,7 +331,7 @@ func TestNetworksWithin(t *testing.T) {
 				require.NoError(t, err)
 
 				require.NoError(t, err)
-				var innerIPs []string
+				innerIPs := make([]string, 0, len(v.Expected))
 
 				for result := range reader.NetworksWithin(network, v.Options...) {
 					record := struct {
@@ -370,7 +370,7 @@ func TestGeoIPNetworksWithin(t *testing.T) {
 
 		prefix, err := netip.ParsePrefix(v.Network)
 		require.NoError(t, err)
-		var innerIPs []string
+		innerIPs := make([]string, 0, len(v.Expected))
 
 		for result := range reader.NetworksWithin(prefix) {
 			record := struct {
