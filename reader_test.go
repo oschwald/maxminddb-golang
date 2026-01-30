@@ -863,7 +863,7 @@ func BenchmarkOpen(b *testing.B) {
 }
 
 func BenchmarkInterfaceLookup(b *testing.B) {
-	db, err := Open("GeoLite2-City.mmdb")
+	db, err := Open("GeoLite2-City.mmdb", WithIPv4Index)
 	require.NoError(b, err)
 
 	//nolint:gosec // this is a test
@@ -882,7 +882,7 @@ func BenchmarkInterfaceLookup(b *testing.B) {
 }
 
 func BenchmarkLookupNetwork(b *testing.B) {
-	db, err := Open("GeoLite2-City.mmdb")
+	db, err := Open("GeoLite2-City.mmdb", WithIPv4Index)
 	require.NoError(b, err)
 
 	//nolint:gosec // this is a test
@@ -953,7 +953,7 @@ type fullCity struct {
 }
 
 func BenchmarkCityLookup(b *testing.B) {
-	db, err := Open("GeoLite2-City.mmdb")
+	db, err := Open("GeoLite2-City.mmdb", WithIPv4Index)
 	require.NoError(b, err)
 
 	//nolint:gosec // this is a test
@@ -972,7 +972,7 @@ func BenchmarkCityLookup(b *testing.B) {
 }
 
 func BenchmarkCityLookupOnly(b *testing.B) {
-	db, err := Open("GeoLite2-City.mmdb")
+	db, err := Open("GeoLite2-City.mmdb", WithIPv4Index)
 	require.NoError(b, err)
 
 	//nolint:gosec // this is a test
