@@ -142,6 +142,11 @@ type Reader struct {
 	ipv4Start         uint
 	ipv4StartBitDepth int
 	nodeOffsetMult    uint
+	// ipv4Index contains a mix of node IDs and data offsets
+	// for fast lookup of IPv4 addresses by their first 16 bits.
+	// Instead of fetching the start node, then its right child, and so on,
+	// these paths are flattened into this array for direct access with Eytzinger layout.
+	ipv4Index []uint
 }
 
 // Metadata holds the metadata decoded from the MaxMind DB file.
@@ -202,13 +207,22 @@ func (m Metadata) BuildTime() time.Time {
 	return time.Unix(int64(m.BuildEpoch), 0)
 }
 
-type readerOptions struct{}
+type readerOptions struct {
+	useIPv4Index bool
+}
 
 // ReaderOption are options for [Open] and [OpenBytes].
 //
 // This was added to allow for future options, e.g., for caching, without
 // causing a breaking API change.
 type ReaderOption func(*readerOptions)
+
+// WithIPv4Index enables the IPv4 index that could yield almost 30% faster lookups
+// for IPv4 addresses, but increases memory usage by 1 MB and
+// slows down the database opening time to build the index.
+func WithIPv4Index(opts *readerOptions) {
+	opts.useIPv4Index = true
+}
 
 // Open takes a string path to a MaxMind DB file and any options. It returns a
 // Reader structure or an error. The database file is opened using a memory
@@ -364,7 +378,52 @@ func OpenBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
 		return nil, err
 	}
 
+	if opts.useIPv4Index {
+		reader.ipv4Index = make([]uint, 1<<17)
+
+		err = reader.populateIndex(reader.ipv4Start, 1, 0)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return reader, nil
+}
+
+func (r *Reader) populateIndex(node uint, indexPos uint, bitDepth int) error {
+	// If we've reached depth 16, store the node/pointer.
+	if bitDepth == 16 {
+		r.ipv4Index[indexPos] = node
+		return nil
+	}
+
+	// If the node is terminal (data pointer or empty),
+	// fill all descendants at depth 16 with that node ID.
+	if node >= r.Metadata.NodeCount {
+		start := indexPos << uint(16-bitDepth)
+		count := uint(1) << uint(16-bitDepth)
+		for i := range count {
+			r.ipv4Index[start+i] = node
+		}
+
+		return nil
+	}
+
+	left, right, err := readNodePairBySize(
+		r.buffer,
+		node*r.nodeOffsetMult,
+		r.Metadata.RecordSize,
+	)
+	if err != nil {
+		return err
+	}
+
+	err = r.populateIndex(left, indexPos*2, bitDepth+1)
+	if err != nil {
+		return err
+	}
+
+	return r.populateIndex(right, indexPos*2+1, bitDepth+1)
 }
 
 // Lookup retrieves the database record for ip and returns a Result, which can
@@ -441,7 +500,16 @@ func (r *Reader) lookupPointer(ip netip.Addr) (uint, int, error) {
 		)
 	}
 
-	node, prefixLength, err := r.traverseTree(ip, 0, 128)
+	var (
+		node         uint
+		prefixLength int
+		err          error
+	)
+	if len(r.ipv4Index) > 0 && ip.Is4() {
+		node, prefixLength, err = r.traverseTreeWithIndex(ip)
+	} else {
+		node, prefixLength, err = r.traverseTree(ip, 0, 128)
+	}
 	if err != nil {
 		return 0, 0, err
 	}
@@ -569,14 +637,46 @@ func readNodePairBySize(buffer []byte, baseOffset, recordSize uint) (left, right
 	}
 }
 
+// traverseTreeWithIndex uses the Eytzinger index for fast IPv4 lookups.
+// The index covers the first 16 bits of the IPv4 address, allowing us to
+// skip directly to the node at depth 16 instead of traversing bit by bit.
+func (r *Reader) traverseTreeWithIndex(ip netip.Addr) (uint, int, error) {
+	ip16 := ip.As16()
+	first16bits := uint(ip16[12])<<8 | uint(ip16[13])
+	indexPos := (1 << 16) + first16bits
+	node := r.ipv4Index[indexPos]
+
+	// If we hit a terminal at or before bit 16 of IPv4, fall back to regular
+	// traversal to get the accurate prefix length.
+	if node >= r.Metadata.NodeCount {
+		return r.traverseTree(ip, 0, 128)
+	}
+
+	// Calculate the bit position after the indexed portion.
+	indexEndBit := r.ipv4StartBitDepth + 16
+
+	// Continue traversal from where the index ends (bit 16 of IPv4 portion).
+	return r.traverseTreeFromBit(ip, node, indexEndBit, 128)
+}
+
 func (r *Reader) traverseTree(ip netip.Addr, node uint, stopBit int) (uint, int, error) {
+	startBit := 0
+	if ip.Is4() {
+		startBit = r.ipv4StartBitDepth
+		node = r.ipv4Start
+	}
+
+	return r.traverseTreeFromBit(ip, node, startBit, stopBit)
+}
+
+func (r *Reader) traverseTreeFromBit(ip netip.Addr, node uint, startBit, stopBit int) (uint, int, error) {
 	switch r.Metadata.RecordSize {
 	case 24:
-		return r.traverseTree24(ip, node, stopBit)
+		return r.traverseTree24(ip, node, startBit, stopBit)
 	case 28:
-		return r.traverseTree28(ip, node, stopBit)
+		return r.traverseTree28(ip, node, startBit, stopBit)
 	case 32:
-		return r.traverseTree32(ip, node, stopBit)
+		return r.traverseTree32(ip, node, startBit, stopBit)
 	default:
 		return 0, 0, mmdberrors.NewInvalidDatabaseError(
 			"unsupported record size: %d",
@@ -585,17 +685,13 @@ func (r *Reader) traverseTree(ip netip.Addr, node uint, stopBit int) (uint, int,
 	}
 }
 
-func (r *Reader) traverseTree24(ip netip.Addr, node uint, stopBit int) (uint, int, error) {
-	i := 0
-	if ip.Is4() {
-		i = r.ipv4StartBitDepth
-		node = r.ipv4Start
-	}
+func (r *Reader) traverseTree24(ip netip.Addr, node uint, startBit, stopBit int) (uint, int, error) {
 	nodeCount := r.Metadata.NodeCount
 	buffer := r.buffer
 	bufferLen := uint(len(buffer))
 	ip16 := ip.As16()
 
+	i := startBit
 	for ; i < stopBit && node < nodeCount; i++ {
 		byteIdx := i >> 3
 		bitPos := 7 - (i & 7)
@@ -618,17 +714,13 @@ func (r *Reader) traverseTree24(ip netip.Addr, node uint, stopBit int) (uint, in
 	return node, i, nil
 }
 
-func (r *Reader) traverseTree28(ip netip.Addr, node uint, stopBit int) (uint, int, error) {
-	i := 0
-	if ip.Is4() {
-		i = r.ipv4StartBitDepth
-		node = r.ipv4Start
-	}
+func (r *Reader) traverseTree28(ip netip.Addr, node uint, startBit, stopBit int) (uint, int, error) {
 	nodeCount := r.Metadata.NodeCount
 	buffer := r.buffer
 	bufferLen := uint(len(buffer))
 	ip16 := ip.As16()
 
+	i := startBit
 	for ; i < stopBit && node < nodeCount; i++ {
 		byteIdx := i >> 3
 		bitPos := 7 - (i & 7)
@@ -657,17 +749,13 @@ func (r *Reader) traverseTree28(ip netip.Addr, node uint, stopBit int) (uint, in
 	return node, i, nil
 }
 
-func (r *Reader) traverseTree32(ip netip.Addr, node uint, stopBit int) (uint, int, error) {
-	i := 0
-	if ip.Is4() {
-		i = r.ipv4StartBitDepth
-		node = r.ipv4Start
-	}
+func (r *Reader) traverseTree32(ip netip.Addr, node uint, startBit, stopBit int) (uint, int, error) {
 	nodeCount := r.Metadata.NodeCount
 	buffer := r.buffer
 	bufferLen := uint(len(buffer))
 	ip16 := ip.As16()
 
+	i := startBit
 	for ; i < stopBit && node < nodeCount; i++ {
 		byteIdx := i >> 3
 		bitPos := 7 - (i & 7)
