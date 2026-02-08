@@ -210,13 +210,9 @@ func TestContextualErrorIntegration(t *testing.T) {
 		err := rd.Decode(0, &result)
 		require.Error(t, err)
 
-		// Debug: print the actual error and path
-		t.Logf("Error: %v", err)
-
 		// Should get a wrapped error with slice index in path
 		var contextErr mmdberrors.ContextualError
 		require.ErrorAs(t, err, &contextErr)
-		t.Logf("Path: %s", contextErr.Path)
 
 		// Verify we get the exact path with correct order
 		require.Equal(t, "/list/0/name", contextErr.Path)
