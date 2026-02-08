@@ -62,3 +62,19 @@ func TestVerifyOnBrokenDatabases(t *testing.T) {
 		)
 	}
 }
+
+func TestVerifyDataSectionSeparatorOutOfBounds(t *testing.T) {
+	v := verifier{reader: &Reader{
+		buffer: []byte{0x00},
+		Metadata: Metadata{
+			NodeCount:  1,
+			RecordSize: 32,
+		},
+	}}
+
+	require.NotPanics(t, func() {
+		err := v.verifyDataSectionSeparator()
+		assert.Error(t, err)
+		assert.ErrorContains(t, err, "unexpected end of database")
+	})
+}
