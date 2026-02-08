@@ -18,7 +18,8 @@ type Decoder struct {
 }
 
 type decoderOptions struct {
-	// Reserved for future options
+	// Intentionally empty for now. DecoderOption callbacks are still invoked so
+	// adding options in a future release is non-breaking.
 }
 
 // DecoderOption configures a Decoder.

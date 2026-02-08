@@ -202,7 +202,10 @@ func (m Metadata) BuildTime() time.Time {
 	return time.Unix(int64(m.BuildEpoch), 0)
 }
 
-type readerOptions struct{}
+type readerOptions struct {
+	// Intentionally empty for now. ReaderOption callbacks are still invoked so
+	// adding options in a future release is non-breaking.
+}
 
 // ReaderOption are options for [Open] and [OpenBytes].
 //

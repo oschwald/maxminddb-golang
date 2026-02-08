@@ -68,6 +68,15 @@ func TestReaderBytes(t *testing.T) {
 	}
 }
 
+func TestOpenBytesAppliesReaderOptions(t *testing.T) {
+	optionCalled := false
+	_, err := OpenBytes(nil, func(*readerOptions) {
+		optionCalled = true
+	})
+	require.Error(t, err)
+	require.True(t, optionCalled)
+}
+
 func TestReaderLeaks(t *testing.T) {
 	collected := make(chan struct{})
 

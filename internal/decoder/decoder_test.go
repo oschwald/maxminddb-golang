@@ -556,12 +556,21 @@ func ExampleDecoder_PeekKind() {
 func TestDecoderOptions(t *testing.T) {
 	buffer := []byte{0x44, 't', 'e', 's', 't'} // String "test"
 	dd := NewDataDecoder(buffer)
+	optionCalled := false
+	option := func(*decoderOptions) {
+		optionCalled = true
+	}
 
-	// Test that options infrastructure works (even with no current options)
+	// Test that options infrastructure works (even with no current options).
 	decoder1 := NewDecoder(dd, 0)
 	require.NotNil(t, decoder1)
 
-	// Test that passing empty options slice works
+	// Test that passing options invokes each option callback.
+	decoderWithOption := NewDecoder(dd, 0, option)
+	require.NotNil(t, decoderWithOption)
+	require.True(t, optionCalled)
+
+	// Test that passing empty options slice works.
 	decoder2 := NewDecoder(dd, 0)
 	require.NotNil(t, decoder2)
 }
