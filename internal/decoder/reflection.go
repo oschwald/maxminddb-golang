@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"reflect"
+	"strings"
 	"sync"
 	"unicode/utf8"
 
@@ -771,6 +772,9 @@ func (d *ReflectionDecoder) decodeStruct(
 	depth int,
 ) (uint, error) {
 	fields := cachedFields(result.Value)
+	if fields.validationErr != nil {
+		return 0, fields.validationErr
+	}
 
 	// Single-phase processing: decode only the dominant fields
 	for range size {
@@ -832,13 +836,34 @@ type fieldInfo struct {
 }
 
 type fieldsType struct {
-	namedFields map[string]*fieldInfo // Map from field name to field info
+	namedFields   map[string]*fieldInfo // Map from field name to field info
+	validationErr error
 }
 
 type queueEntry struct {
 	typ   reflect.Type
 	index []int // Field index path
 	depth int   // Embedding depth
+}
+
+// validateTag performs basic validation of maxminddb struct tags.
+func validateTag(field reflect.StructField, tag string) error {
+	if tag == "" || tag == "-" {
+		return nil
+	}
+
+	if !utf8.ValidString(tag) {
+		return invalidMaxMindDBTagError(field.Name)
+	}
+
+	return nil
+}
+
+func invalidMaxMindDBTagError(fieldName string) error {
+	return fmt.Errorf(
+		"invalid maxminddb struct tag on field %q: must be valid UTF-8",
+		fieldName,
+	)
 }
 
 // getEmbeddedStructType returns the struct type for embedded fields.
@@ -877,21 +902,6 @@ func handleEmbeddedField(
 	return !hasTag
 }
 
-// validateTag performs basic validation of maxminddb struct tags.
-func validateTag(field reflect.StructField, tag string) error {
-	if tag == "" || tag == "-" {
-		return nil
-	}
-
-	// Check for invalid UTF-8
-	if !utf8.ValidString(tag) {
-		return fmt.Errorf("field %s has tag with invalid UTF-8: %q", field.Name, tag)
-	}
-
-	// Only flag very obvious mistakes - don't be too restrictive
-	return nil
-}
-
 var fieldsMap sync.Map
 
 func cachedFields(result reflect.Value) *fieldsType {
@@ -913,6 +923,7 @@ func makeStructFields(rootType reflect.Type) *fieldsType {
 
 	queue := []queueEntry{{rootType, nil, 0}}
 	var allFields []fieldInfo
+	var validationErr error
 	seen := make(map[reflect.Type]bool)
 	seen[rootType] = true
 
@@ -937,12 +948,12 @@ func makeStructFields(rootType reflect.Type) *fieldsType {
 			// Parse maxminddb tag
 			fieldName := field.Name
 			hasTag := false
+			if validationErr == nil {
+				validationErr = validateRawMaxMindDBTagValue(field, string(field.Tag))
+			}
 			if tag := field.Tag.Get("maxminddb"); tag != "" {
-				// Validate tag syntax
-				if err := validateTag(field, tag); err != nil {
-					// Log warning but continue processing
-					// In a real implementation, you might want to use a proper logger
-					_ = err // For now, just ignore validation errors
+				if validationErr == nil {
+					validationErr = validateTag(field, tag)
 				}
 
 				if tag == "-" {
@@ -1030,13 +1041,35 @@ func makeStructFields(rootType reflect.Type) *fieldsType {
 	}
 
 	fields := &fieldsType{
-		namedFields: namedFields,
+		namedFields:   namedFields,
+		validationErr: validationErr,
 	}
 
 	// Reindex all fields for optimized access
 	fields.reindex()
 
 	return fields
+}
+
+func validateRawMaxMindDBTagValue(field reflect.StructField, rawTag string) error {
+	const key = `maxminddb:"`
+
+	start := strings.Index(rawTag, key)
+	if start == -1 {
+		return nil
+	}
+
+	start += len(key)
+	end := strings.IndexByte(rawTag[start:], '"')
+	if end == -1 {
+		return nil
+	}
+
+	if !utf8.ValidString(rawTag[start : start+end]) {
+		return invalidMaxMindDBTagError(field.Name)
+	}
+
+	return nil
 }
 
 // reindex optimizes field indices to avoid bounds checks during runtime.
