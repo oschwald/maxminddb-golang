@@ -121,7 +121,7 @@ func (d *Decoder) ReadFloat64() (float64, error) {
 	return value, nil
 }
 
-// ReadInt32 reads the value pointed by the decoder as a int32.
+// ReadInt32 reads the value pointed by the decoder as an int32.
 //
 // Returns an error if the database is malformed or if the pointed value is not an int32.
 func (d *Decoder) ReadInt32() (int32, error) {
@@ -141,7 +141,7 @@ func (d *Decoder) ReadInt32() (int32, error) {
 
 // ReadUint16 reads the value pointed by the decoder as a uint16.
 //
-// Returns an error if the database is malformed or if the pointed value is not an uint16.
+// Returns an error if the database is malformed or if the pointed value is not a uint16.
 func (d *Decoder) ReadUint16() (uint16, error) {
 	size, offset, err := d.decodeCtrlDataAndFollow(KindUint16)
 	if err != nil {
@@ -159,7 +159,7 @@ func (d *Decoder) ReadUint16() (uint16, error) {
 
 // ReadUint32 reads the value pointed by the decoder as a uint32.
 //
-// Returns an error if the database is malformed or if the pointed value is not an uint32.
+// Returns an error if the database is malformed or if the pointed value is not a uint32.
 func (d *Decoder) ReadUint32() (uint32, error) {
 	size, offset, err := d.decodeCtrlDataAndFollow(KindUint32)
 	if err != nil {
@@ -177,7 +177,7 @@ func (d *Decoder) ReadUint32() (uint32, error) {
 
 // ReadUint64 reads the value pointed by the decoder as a uint64.
 //
-// Returns an error if the database is malformed or if the pointed value is not an uint64.
+// Returns an error if the database is malformed or if the pointed value is not a uint64.
 func (d *Decoder) ReadUint64() (uint64, error) {
 	size, offset, err := d.decodeCtrlDataAndFollow(KindUint64)
 	if err != nil {
@@ -195,7 +195,7 @@ func (d *Decoder) ReadUint64() (uint64, error) {
 
 // ReadUint128 reads the value pointed by the decoder as a uint128.
 //
-// Returns an error if the database is malformed or if the pointed value is not an uint128.
+// Returns an error if the database is malformed or if the pointed value is not a uint128.
 func (d *Decoder) ReadUint128() (hi, lo uint64, err error) {
 	size, offset, err := d.decodeCtrlDataAndFollow(KindUint128)
 	if err != nil {
