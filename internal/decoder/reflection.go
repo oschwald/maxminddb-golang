@@ -196,73 +196,37 @@ func (*ReflectionDecoder) wrapError(err error, offset uint) error {
 // wrapErrorWithMapKey wraps an error with map key context, building path retroactively.
 // Zero allocation on happy path - only allocates when error != nil.
 func (*ReflectionDecoder) wrapErrorWithMapKey(err error, key string) error {
-	if err == nil {
-		return nil
-	}
-
-	// Build path context retroactively by checking if the error already has context
-	var pathBuilder *mmdberrors.PathBuilder
-	var contextErr mmdberrors.ContextualError
-	if errors.As(err, &contextErr) {
-		// Error already has context, extract existing path and extend it
-		pathBuilder = mmdberrors.NewPathBuilder()
-		if contextErr.Path != "" && contextErr.Path != "/" {
-			// Parse existing path and rebuild
-			pathBuilder.ParseAndExtend(contextErr.Path)
-		}
+	return wrapErrorWithPath(err, func(pathBuilder *mmdberrors.PathBuilder) {
 		pathBuilder.PrependMap(key)
-		// Return unwrapped error with extended path, preserving original offset
-		return mmdberrors.WrapWithContext(contextErr.Err, contextErr.Offset, pathBuilder)
-	}
-
-	// New error, start building path - extract offset if it's already a contextual error
-	pathBuilder = mmdberrors.NewPathBuilder()
-	pathBuilder.PrependMap(key)
-
-	// Try to get existing offset from any wrapped contextual error
-	var existingOffset uint
-	var existingErr mmdberrors.ContextualError
-	if errors.As(err, &existingErr) {
-		existingOffset = existingErr.Offset
-	}
-
-	return mmdberrors.WrapWithContext(err, existingOffset, pathBuilder)
+	})
 }
 
 // wrapErrorWithSliceIndex wraps an error with slice index context, building path retroactively.
 // Zero allocation on happy path - only allocates when error != nil.
 func (*ReflectionDecoder) wrapErrorWithSliceIndex(err error, index int) error {
+	return wrapErrorWithPath(err, func(pathBuilder *mmdberrors.PathBuilder) {
+		pathBuilder.PrependSlice(index)
+	})
+}
+
+func wrapErrorWithPath(err error, prepend func(*mmdberrors.PathBuilder)) error {
 	if err == nil {
 		return nil
 	}
 
-	// Build path context retroactively by checking if the error already has context
-	var pathBuilder *mmdberrors.PathBuilder
 	var contextErr mmdberrors.ContextualError
 	if errors.As(err, &contextErr) {
-		// Error already has context, extract existing path and extend it
-		pathBuilder = mmdberrors.NewPathBuilder()
+		pathBuilder := mmdberrors.NewPathBuilder()
 		if contextErr.Path != "" && contextErr.Path != "/" {
-			// Parse existing path and rebuild
 			pathBuilder.ParseAndExtend(contextErr.Path)
 		}
-		pathBuilder.PrependSlice(index)
-		// Return unwrapped error with extended path, preserving original offset
+		prepend(pathBuilder)
 		return mmdberrors.WrapWithContext(contextErr.Err, contextErr.Offset, pathBuilder)
 	}
 
-	// New error, start building path - extract offset if it's already a contextual error
-	pathBuilder = mmdberrors.NewPathBuilder()
-	pathBuilder.PrependSlice(index)
-
-	// Try to get existing offset from any wrapped contextual error
-	var existingOffset uint
-	var existingErr mmdberrors.ContextualError
-	if errors.As(err, &existingErr) {
-		existingOffset = existingErr.Offset
-	}
-
-	return mmdberrors.WrapWithContext(err, existingOffset, pathBuilder)
+	pathBuilder := mmdberrors.NewPathBuilder()
+	prepend(pathBuilder)
+	return mmdberrors.WrapWithContext(err, 0, pathBuilder)
 }
 
 func (d *ReflectionDecoder) decode(offset uint, result reflect.Value, depth int) (uint, error) {
