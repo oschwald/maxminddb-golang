@@ -177,7 +177,7 @@ PATH:
 				return err
 			}
 		default:
-			return fmt.Errorf("unexpected type for %d value in path, %v: %T", i, v, v)
+			return fmt.Errorf("unexpected path element at index %d (%v): %T", i, v, v)
 		}
 	}
 	_, err := d.decode(offset, result, len(path))
