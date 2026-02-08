@@ -48,22 +48,18 @@ func TestPathBuilder(t *testing.T) {
 	// Test basic path building
 	require.Equal(t, "/", builder.Build())
 
-	builder.PushMap("city")
+	builder.PrependMap("city")
 	require.Equal(t, "/city", builder.Build())
 
-	builder.PushMap("names")
+	builder.PrependMap("names")
+	require.Equal(t, "/names/city", builder.Build())
+
+	builder = mmdberrors.NewPathBuilder()
+	builder.ParseAndExtend("/city/names")
 	require.Equal(t, "/city/names", builder.Build())
 
-	builder.PushSlice(0)
-	require.Equal(t, "/city/names/0", builder.Build())
-
-	// Test pop
-	builder.Pop()
-	require.Equal(t, "/city/names", builder.Build())
-
-	// Test reset
-	builder.Reset()
-	require.Equal(t, "/", builder.Build())
+	builder.PrependSlice(0)
+	require.Equal(t, "/0/city/names", builder.Build())
 }
 
 // Benchmark to verify zero allocation on happy path.
@@ -104,9 +100,9 @@ func BenchmarkWrapError_ErrorPath(b *testing.B) {
 func ExampleContextualError() {
 	// This would be internal to the decoder, shown for illustration
 	builder := mmdberrors.NewPathBuilder()
-	builder.PushMap("city")
-	builder.PushMap("names")
-	builder.PushMap("en")
+	builder.PrependMap("en")
+	builder.PrependMap("names")
+	builder.PrependMap("city")
 
 	// Simulate an error with context
 	originalErr := mmdberrors.NewInvalidDatabaseError("string too long")
