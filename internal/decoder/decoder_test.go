@@ -354,12 +354,11 @@ func TestPointersInDecoder(t *testing.T) {
 	for startOffset, expectedValue := range expected {
 		t.Run(fmt.Sprintf("Offset_%d", startOffset), func(t *testing.T) {
 			decoder := NewDecoder(dd, startOffset) // Start at the specific offset
-			actualValue := make(map[string]string)
 
 			// Expecting a map at the target offset (may be behind a pointer)
 			mapIter, size, err := decoder.ReadMap()
 			require.NoError(t, err, "ReadMap failed")
-			_ = size // Use size if needed for pre-allocation
+			actualValue := make(map[string]string, int(size))
 			for keyBytes, errIter := range mapIter {
 				require.NoError(t, errIter)
 				key := string(keyBytes)
