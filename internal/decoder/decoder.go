@@ -33,12 +33,10 @@ func NewDecoder(d DataDecoder, offset uint, options ...DecoderOption) *Decoder {
 		option(&opts)
 	}
 
-	decoder := &Decoder{
+	return &Decoder{
 		d:      d,
 		offset: offset,
 	}
-
-	return decoder
 }
 
 // ReadBool reads the value pointed by the decoder as a bool.
