@@ -18,7 +18,7 @@ func TestWrapError_ZeroAllocationHappyPath(t *testing.T) {
 	err := decoder.wrapError(nil)
 	require.NoError(t, err)
 
-	// DataDecoder should always have path tracking enabled
+	// Decoder should be initialized
 	require.NotNil(t, decoder.d)
 }
 
@@ -111,8 +111,7 @@ func ExampleContextualError() {
 	// Simulate an error with context
 	originalErr := mmdberrors.NewInvalidDatabaseError("string too long")
 
-	contextTracker := &errorContext{path: builder}
-	wrappedErr := mmdberrors.WrapWithContext(originalErr, 1234, contextTracker)
+	wrappedErr := mmdberrors.WrapWithContext(originalErr, 1234, builder)
 
 	fmt.Println(wrappedErr.Error())
 	// Output: at offset 1234, path /city/names/en: string too long
