@@ -14,7 +14,6 @@ type Decoder struct {
 	d             DataDecoder
 	offset        uint
 	nextOffset    uint
-	opts          decoderOptions
 	hasNextOffset bool
 }
 
@@ -37,7 +36,6 @@ func NewDecoder(d DataDecoder, offset uint, options ...DecoderOption) *Decoder {
 	decoder := &Decoder{
 		d:      d,
 		offset: offset,
-		opts:   opts,
 	}
 
 	return decoder
