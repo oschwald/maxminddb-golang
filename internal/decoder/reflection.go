@@ -522,7 +522,7 @@ func (d *ReflectionDecoder) unmarshalPointer(
 	// This is done efficiently by checking the control byte at the pointer location
 	if len(d.buffer) > int(pointer) {
 		controlByte := d.buffer[pointer]
-		if (controlByte >> 5) == 1 { // KindPointer = 1, stored in top 3 bits
+		if Kind(controlByte>>5) == KindPointer {
 			return 0, mmdberrors.NewInvalidDatabaseError(
 				"invalid pointer to pointer at offset %d",
 				pointer,
