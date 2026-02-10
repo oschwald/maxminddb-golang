@@ -1,5 +1,10 @@
 # Changes
 
+## 2.2.0 - TBD
+
+- An error is returned when a `maxminddb` struct tag is clearly invalid (non
+  UTF-8) instead of silently ignoring validation failures.
+
 ## 2.1.1 - 2025-11-26
 
 - Fixed `runtime.AddCleanup` misuse that prevented the memory-mapped file from

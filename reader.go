@@ -202,7 +202,10 @@ func (m Metadata) BuildTime() time.Time {
 	return time.Unix(int64(m.BuildEpoch), 0)
 }
 
-type readerOptions struct{}
+type readerOptions struct {
+	// Intentionally empty for now. ReaderOption callbacks are still invoked so
+	// adding options in a future release is non-breaking.
+}
 
 // ReaderOption are options for [Open] and [OpenBytes].
 //
@@ -694,15 +697,14 @@ func (r *Reader) traverseTree32(ip netip.Addr, node uint, stopBit int) (uint, in
 func (r *Reader) resolveDataPointer(pointer uint) (uintptr, error) {
 	// Check for integer underflow: pointer must be greater than nodeCount + separator
 	minPointer := r.Metadata.NodeCount + dataSectionSeparatorSize
-	if pointer >= minPointer {
-		resolved := uintptr(pointer - minPointer)
-		bufferLen := uintptr(len(r.buffer))
-		if resolved < bufferLen {
-			return resolved, nil
-		}
-		// Error case - bounds exceeded
+	if pointer < minPointer {
 		return 0, mmdberrors.NewInvalidDatabaseError("the MaxMind DB file's search tree is corrupt")
 	}
-	// Error case - underflow
+
+	resolved := uintptr(pointer - minPointer)
+	if resolved < uintptr(len(r.buffer)) {
+		return resolved, nil
+	}
+
 	return 0, mmdberrors.NewInvalidDatabaseError("the MaxMind DB file's search tree is corrupt")
 }

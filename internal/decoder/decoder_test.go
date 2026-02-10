@@ -245,7 +245,7 @@ func TestDecodeUint16(t *testing.T) {
 		"a1ff":   uint16(255),
 		"a201f4": uint16(500),
 		"a22a78": uint16(10872),
-		"a2ffff": uint16(65535), // [cite: 88] - Note: reflection test uses uint64 expected value
+		"a2ffff": uint16(65535),
 	}
 
 	for hexStr, expected := range tests {
@@ -337,16 +337,12 @@ func TestDecodeUint128(t *testing.T) {
 	}
 }
 
-// TestPointers requires a specific data file and structure.
 func TestPointersInDecoder(t *testing.T) {
-	// This test requires the 'maps-with-pointers.raw' file used in reflection_test [cite: 92]
-	// It demonstrates how to handle pointers using the basic Decoder.
-	bytes, err := os.ReadFile(testFile("maps-with-pointers.raw")) // [cite: 92]
+	bytes, err := os.ReadFile(testFile("maps-with-pointers.raw"))
 	require.NoError(t, err)
 	dd := NewDataDecoder(bytes)
 
 	expected := map[uint]map[string]string{
-		// Offsets and expected values from reflection_test.go [cite: 92]
 		0:  {"long_key": "long_value1"},
 		22: {"long_key": "long_value2"},
 		37: {"long_key2": "long_value1"},
@@ -358,12 +354,11 @@ func TestPointersInDecoder(t *testing.T) {
 	for startOffset, expectedValue := range expected {
 		t.Run(fmt.Sprintf("Offset_%d", startOffset), func(t *testing.T) {
 			decoder := NewDecoder(dd, startOffset) // Start at the specific offset
-			actualValue := make(map[string]string)
 
 			// Expecting a map at the target offset (may be behind a pointer)
 			mapIter, size, err := decoder.ReadMap()
 			require.NoError(t, err, "ReadMap failed")
-			_ = size // Use size if needed for pre-allocation
+			actualValue := make(map[string]string, int(size))
 			for keyBytes, errIter := range mapIter {
 				require.NoError(t, errIter)
 				key := string(keyBytes)
@@ -487,28 +482,18 @@ func TestPeekKind(t *testing.T) {
 // TestPeekKindWithPointer tests that PeekKind correctly follows pointers
 // to get the actual kind of the pointed-to value.
 func TestPeekKindWithPointer(t *testing.T) {
-	// Create a buffer with a pointer that points to a string
-	// This is a simplified test - in real MMDB files pointers are more complex
+	// Create a buffer with a pointer at offset 0 and a string at offset 5.
 	buffer := []byte{
-		// Pointer (TypePointer=1, size/pointer encoding)
-		0x20, 0x05, // Simple pointer to offset 5
-		// Target string at offset 5 (but we'll put it at offset 2 for this test)
-		0x44, 't', 'e', 's', 't', // String "test"
+		0x20, 0x05,
+		0x00, 0x00, 0x00,
+		0x44, 't', 'e', 's', 't',
 	}
 
 	decoder := NewDecoder(NewDataDecoder(buffer), 0)
 
-	// PeekKind should follow the pointer and return KindString
 	actualType, err := decoder.PeekKind()
 	require.NoError(t, err, "PeekKind with pointer failed")
-
-	// Note: This test may need adjustment based on actual pointer encoding
-	// The important thing is that PeekKind follows pointers
-	if actualType != KindPointer {
-		// If the implementation follows pointers completely, it should return the target kind
-		// If it just returns KindPointer, that's also acceptable behavior
-		t.Logf("PeekKind returned %d (this may be expected behavior)", actualType)
-	}
+	require.Equal(t, KindString, actualType)
 }
 
 // ExampleDecoder_PeekKind demonstrates how to use PeekKind for
@@ -556,12 +541,21 @@ func ExampleDecoder_PeekKind() {
 func TestDecoderOptions(t *testing.T) {
 	buffer := []byte{0x44, 't', 'e', 's', 't'} // String "test"
 	dd := NewDataDecoder(buffer)
+	optionCalled := false
+	option := func(*decoderOptions) {
+		optionCalled = true
+	}
 
-	// Test that options infrastructure works (even with no current options)
+	// Test that options infrastructure works (even with no current options).
 	decoder1 := NewDecoder(dd, 0)
 	require.NotNil(t, decoder1)
 
-	// Test that passing empty options slice works
+	// Test that passing options invokes each option callback.
+	decoderWithOption := NewDecoder(dd, 0, option)
+	require.NotNil(t, decoderWithOption)
+	require.True(t, optionCalled)
+
+	// Test that passing empty options slice works.
 	decoder2 := NewDecoder(dd, 0)
 	require.NotNil(t, decoder2)
 }

@@ -95,3 +95,28 @@ func TestTagValidationIntegration(t *testing.T) {
 	// The important thing is that it doesn't crash
 	assert.NotNil(t, fields.namedFields, "Fields map should be created")
 }
+
+func TestDecodeReturnsErrorOnInvalidStructTag(t *testing.T) {
+	invalidTag := string([]byte{
+		'm', 'a', 'x', 'm', 'i', 'n', 'd', 'd', 'b', ':', '"',
+		'b', 'a', 'd', 0xff,
+		'"',
+	})
+
+	structType := reflect.StructOf([]reflect.StructField{{
+		Name: "Field",
+		Type: reflect.TypeFor[string](),
+		Tag:  reflect.StructTag(invalidTag),
+	}})
+
+	value := reflect.New(structType).Interface()
+	d := New([]byte{0xe0}) // empty map
+	err := d.Decode(0, value)
+
+	require.Error(t, err)
+	assert.ErrorContains(
+		t,
+		err,
+		`invalid maxminddb struct tag on field "Field": must be valid UTF-8`,
+	)
+}

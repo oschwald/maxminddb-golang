@@ -18,7 +18,7 @@ func TestWrapError_ZeroAllocationHappyPath(t *testing.T) {
 	err := decoder.wrapError(nil)
 	require.NoError(t, err)
 
-	// DataDecoder should always have path tracking enabled
+	// Decoder should be initialized
 	require.NotNil(t, decoder.d)
 }
 
@@ -48,22 +48,18 @@ func TestPathBuilder(t *testing.T) {
 	// Test basic path building
 	require.Equal(t, "/", builder.Build())
 
-	builder.PushMap("city")
+	builder.PrependMap("city")
 	require.Equal(t, "/city", builder.Build())
 
-	builder.PushMap("names")
+	builder.PrependMap("names")
+	require.Equal(t, "/names/city", builder.Build())
+
+	builder = mmdberrors.NewPathBuilder()
+	builder.ParseAndExtend("/city/names")
 	require.Equal(t, "/city/names", builder.Build())
 
-	builder.PushSlice(0)
-	require.Equal(t, "/city/names/0", builder.Build())
-
-	// Test pop
-	builder.Pop()
-	require.Equal(t, "/city/names", builder.Build())
-
-	// Test reset
-	builder.Reset()
-	require.Equal(t, "/", builder.Build())
+	builder.PrependSlice(0)
+	require.Equal(t, "/0/city/names", builder.Build())
 }
 
 // Benchmark to verify zero allocation on happy path.
@@ -104,15 +100,14 @@ func BenchmarkWrapError_ErrorPath(b *testing.B) {
 func ExampleContextualError() {
 	// This would be internal to the decoder, shown for illustration
 	builder := mmdberrors.NewPathBuilder()
-	builder.PushMap("city")
-	builder.PushMap("names")
-	builder.PushMap("en")
+	builder.PrependMap("en")
+	builder.PrependMap("names")
+	builder.PrependMap("city")
 
 	// Simulate an error with context
 	originalErr := mmdberrors.NewInvalidDatabaseError("string too long")
 
-	contextTracker := &errorContext{path: builder}
-	wrappedErr := mmdberrors.WrapWithContext(originalErr, 1234, contextTracker)
+	wrappedErr := mmdberrors.WrapWithContext(originalErr, 1234, builder)
 
 	fmt.Println(wrappedErr.Error())
 	// Output: at offset 1234, path /city/names/en: string too long
@@ -211,13 +206,9 @@ func TestContextualErrorIntegration(t *testing.T) {
 		err := rd.Decode(0, &result)
 		require.Error(t, err)
 
-		// Debug: print the actual error and path
-		t.Logf("Error: %v", err)
-
 		// Should get a wrapped error with slice index in path
 		var contextErr mmdberrors.ContextualError
 		require.ErrorAs(t, err, &contextErr)
-		t.Logf("Path: %s", contextErr.Path)
 
 		// Verify we get the exact path with correct order
 		require.Equal(t, "/list/0/name", contextErr.Path)
