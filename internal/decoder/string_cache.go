@@ -14,12 +14,20 @@ type cacheEntry struct {
 // stringCache provides bounded string interning with per-entry mutexes for minimal contention.
 // This achieves thread safety while avoiding the global lock bottleneck.
 type stringCache struct {
-	entries [4096]cacheEntry
+	twoLetterStrings [26 * 26]string
+	entries          [4096]cacheEntry
 }
 
 // newStringCache creates a new per-entry mutex-based string cache.
 func newStringCache() *stringCache {
-	return &stringCache{}
+	sc := &stringCache{}
+	for a := byte('a'); a <= 'z'; a++ {
+		for b := byte('a'); b <= 'z'; b++ {
+			i := int(a-'a')*26 + int(b-'a')
+			sc.twoLetterStrings[i] = string([]byte{a, b})
+		}
+	}
+	return sc
 }
 
 // internAt returns a canonical string for the data at the given offset and size.
@@ -32,6 +40,14 @@ func (sc *stringCache) internAt(offset, size uint, data []byte) string {
 	// Skip caching for very short or very long strings
 	if size < minCachedLen || size > maxCachedLen {
 		return string(data[offset : offset+size])
+	}
+	if size == 2 {
+		a := data[offset]
+		b := data[offset+1]
+		if a >= 'a' && a <= 'z' && b >= 'a' && b <= 'z' {
+			i := int(a-'a')*26 + int(b-'a')
+			return sc.twoLetterStrings[i]
+		}
 	}
 
 	// Use same cache index calculation as original: offset % cacheSize
