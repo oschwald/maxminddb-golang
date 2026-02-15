@@ -77,6 +77,85 @@ func TestOpenBytesAppliesReaderOptions(t *testing.T) {
 	require.True(t, optionCalled)
 }
 
+type countingCache struct{}
+
+func (countingCache) InternAt(offset, size uint, data []byte) string {
+	return string(data[offset : offset+size])
+}
+
+type countingCacheProvider struct {
+	acquireCount int
+	releaseCount int
+	cache        Cache
+}
+
+func (p *countingCacheProvider) Acquire() Cache {
+	p.acquireCount++
+	return p.cache
+}
+
+func (p *countingCacheProvider) Release(Cache) {
+	p.releaseCount++
+}
+
+func TestOpenBytesWithCacheOption(t *testing.T) {
+	bytes, err := os.ReadFile("GeoLite2-City.mmdb")
+	require.NoError(t, err)
+
+	t.Run("nil provider disables cache", func(t *testing.T) {
+		reader, err := OpenBytes(bytes, WithCache(nil))
+		require.NoError(t, err)
+		defer func() { require.NoError(t, reader.Close()) }()
+
+		result := reader.Lookup(netip.MustParseAddr("81.2.69.142"))
+		var city fullCityGeneratedLow
+		require.NoError(t, result.Decode(&city))
+	})
+
+	t.Run("shared provider", func(t *testing.T) {
+		provider := NewSharedCacheProvider(CacheOptions{
+			EntryCount:   2048,
+			MinCachedLen: 2,
+			MaxCachedLen: 32,
+		})
+		reader, err := OpenBytes(bytes, WithCache(provider))
+		require.NoError(t, err)
+		defer func() { require.NoError(t, reader.Close()) }()
+
+		result := reader.Lookup(netip.MustParseAddr("81.2.69.142"))
+		var city fullCityGeneratedLow
+		require.NoError(t, result.Decode(&city))
+	})
+
+	t.Run("pooled provider", func(t *testing.T) {
+		provider := NewPooledCacheProvider(CacheOptions{
+			EntryCount:   2048,
+			MinCachedLen: 2,
+			MaxCachedLen: 32,
+		})
+		reader, err := OpenBytes(bytes, WithCache(provider))
+		require.NoError(t, err)
+		defer func() { require.NoError(t, reader.Close()) }()
+
+		result := reader.Lookup(netip.MustParseAddr("81.2.69.142"))
+		var city fullCityGeneratedLow
+		require.NoError(t, result.Decode(&city))
+	})
+
+	t.Run("custom provider acquire/release", func(t *testing.T) {
+		p := &countingCacheProvider{cache: countingCache{}}
+		reader, err := OpenBytes(bytes, WithCache(p))
+		require.NoError(t, err)
+		defer func() { require.NoError(t, reader.Close()) }()
+
+		result := reader.Lookup(netip.MustParseAddr("81.2.69.142"))
+		var city fullCityGeneratedLow
+		require.NoError(t, result.Decode(&city))
+		require.Equal(t, 1, p.acquireCount)
+		require.Equal(t, 1, p.releaseCount)
+	})
+}
+
 func TestReaderLeaks(t *testing.T) {
 	collected := make(chan struct{})
 
@@ -1401,7 +1480,29 @@ func BenchmarkCityLookup(b *testing.B) {
 }
 
 func BenchmarkCityLookupGeneratedLow(b *testing.B) {
-	db, err := Open("GeoLite2-City.mmdb")
+	benchmarkCityLookupGeneratedLowWithOptions(b)
+}
+
+func BenchmarkCityLookupGeneratedLowCacheOff(b *testing.B) {
+	benchmarkCityLookupGeneratedLowWithOptions(b, WithCache(nil))
+}
+
+func BenchmarkCityLookupGeneratedLowCacheShared(b *testing.B) {
+	benchmarkCityLookupGeneratedLowWithOptions(
+		b,
+		WithCache(NewSharedCacheProvider(DefaultCacheOptions())),
+	)
+}
+
+func BenchmarkCityLookupGeneratedLowCachePooled(b *testing.B) {
+	benchmarkCityLookupGeneratedLowWithOptions(
+		b,
+		WithCache(NewPooledCacheProvider(DefaultCacheOptions())),
+	)
+}
+
+func benchmarkCityLookupGeneratedLowWithOptions(b *testing.B, opts ...ReaderOption) {
+	db, err := Open("GeoLite2-City.mmdb", opts...)
 	require.NoError(b, err)
 
 	//nolint:gosec // this is a test

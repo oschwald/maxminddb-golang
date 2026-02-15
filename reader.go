@@ -205,6 +205,8 @@ func (m Metadata) BuildTime() time.Time {
 type readerOptions struct {
 	// Intentionally empty for now. ReaderOption callbacks are still invoked so
 	// adding options in a future release is non-breaking.
+	cacheProvider   CacheProvider
+	cacheConfigured bool
 }
 
 // ReaderOption are options for [Open] and [OpenBytes].
@@ -212,6 +214,16 @@ type readerOptions struct {
 // This was added to allow for future options, e.g., for caching, without
 // causing a breaking API change.
 type ReaderOption func(*readerOptions)
+
+// WithCache configures a cache provider used during decoding.
+//
+// Passing nil disables string interning cache usage.
+func WithCache(provider CacheProvider) ReaderOption {
+	return func(opts *readerOptions) {
+		opts.cacheConfigured = true
+		opts.cacheProvider = provider
+	}
+}
 
 // Open takes a string path to a MaxMind DB file and any options. It returns a
 // Reader structure or an error. The database file is opened using a memory
@@ -349,9 +361,17 @@ func OpenBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
 	if dataSectionStart > dataSectionEnd {
 		return nil, mmdberrors.NewInvalidDatabaseError("the MaxMind DB contains invalid metadata")
 	}
-	d := decoder.New(
-		buffer[searchTreeSize+dataSectionSeparatorSize : metadataStart-len(metadataStartMarker)],
-	)
+	dataSection := buffer[searchTreeSize+dataSectionSeparatorSize : metadataStart-len(metadataStartMarker)]
+	var d decoder.ReflectionDecoder
+	if opts.cacheConfigured {
+		internalProvider := toInternalCacheProvider(opts.cacheProvider)
+		if internalProvider == nil {
+			internalProvider = decoder.NewNoCacheProvider()
+		}
+		d = decoder.NewWithCacheProvider(dataSection, internalProvider)
+	} else {
+		d = decoder.New(dataSection)
+	}
 
 	reader := &Reader{
 		buffer:         buffer,

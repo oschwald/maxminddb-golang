@@ -107,6 +107,8 @@ func (k Kind) IsScalar() bool {
 // This is exported so mmdbdata package can use it, but still internal.
 type DataDecoder struct {
 	stringCache *stringCache
+	cache       StringInterner
+	cacheHandle *cacheProviderHandle
 	buffer      []byte
 }
 
@@ -299,7 +301,11 @@ func (d *DataDecoder) decodeString(size, offset uint) (string, uint, error) {
 	}
 
 	newOffset := offset + size
-	value := d.stringCache.internAt(offset, size, d.buffer)
+	if d.cache != nil {
+		value := d.cache.InternAt(offset, size, d.buffer)
+		return value, newOffset, nil
+	}
+	value := d.stringCache.InternAt(offset, size, d.buffer)
 	return value, newOffset, nil
 }
 

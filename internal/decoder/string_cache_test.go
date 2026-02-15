@@ -11,11 +11,11 @@ func TestStringCacheOffsetZero(t *testing.T) {
 	data := []byte("hello world, this is test data")
 
 	// Test string at offset 0
-	str1 := cache.internAt(0, 5, data)
+	str1 := cache.InternAt(0, 5, data)
 	require.Equal(t, "hello", str1)
 
 	// Second call should hit cache and return same interned string
-	str2 := cache.internAt(0, 5, data)
+	str2 := cache.InternAt(0, 5, data)
 	require.Equal(t, "hello", str2)
 
 	// Note: Both strings should be identical (cache hit)
@@ -40,11 +40,11 @@ func TestStringCacheVariousOffsets(t *testing.T) {
 
 	for _, tc := range testCases {
 		// First call
-		str1 := cache.internAt(tc.offset, tc.size, data)
+		str1 := cache.InternAt(tc.offset, tc.size, data)
 		require.Equal(t, tc.expected, str1)
 
 		// Second call should hit cache
-		str2 := cache.internAt(tc.offset, tc.size, data)
+		str2 := cache.InternAt(tc.offset, tc.size, data)
 		require.Equal(t, tc.expected, str2)
 		// Verify cache hit returns correct value (interning tested via behavior)
 	}

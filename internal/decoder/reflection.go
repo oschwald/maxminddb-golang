@@ -23,11 +23,25 @@ type ReflectionDecoder struct {
 	DataDecoder
 }
 
+type cacheProviderHandle struct {
+	provider CacheProvider
+}
+
 // New creates a [ReflectionDecoder].
 func New(buffer []byte) ReflectionDecoder {
 	return ReflectionDecoder{
 		DataDecoder: NewDataDecoder(buffer),
 	}
+}
+
+// NewWithCacheProvider creates a [ReflectionDecoder] using the provided cache
+// provider for string interning during decode operations.
+func NewWithCacheProvider(buffer []byte, provider CacheProvider) ReflectionDecoder {
+	rd := New(buffer)
+	if provider != nil {
+		rd.cacheHandle = &cacheProviderHandle{provider: provider}
+	}
+	return rd
 }
 
 // IsEmptyValueAt checks if the value at the given offset is an empty map or array.
@@ -56,9 +70,18 @@ func (d *ReflectionDecoder) IsEmptyValueAt(offset uint) (bool, error) {
 // Decode decodes the data value at offset and stores it in the value
 // pointed at by v.
 func (d *ReflectionDecoder) Decode(offset uint, v any) error {
+	decoderToUse := d
+	if d.cacheHandle != nil {
+		decoderWithCache, cache := d.withCache()
+		decoderToUse = &decoderWithCache
+		if cache != nil {
+			defer d.cacheHandle.provider.Release(cache)
+		}
+	}
+
 	// Check if the type implements Unmarshaler interface without reflection
 	if unmarshaler, ok := v.(Unmarshaler); ok {
-		decoder := NewDecoder(d.DataDecoder, offset)
+		decoder := NewDecoder(decoderToUse.DataDecoder, offset)
 		return unmarshaler.UnmarshalMaxMindDB(decoder)
 	}
 
@@ -67,7 +90,7 @@ func (d *ReflectionDecoder) Decode(offset uint, v any) error {
 		return errors.New("result param must be a pointer")
 	}
 
-	_, err := d.decode(offset, rv, 0)
+	_, err := decoderToUse.decode(offset, rv, 0)
 	if err == nil {
 		return nil
 	}
@@ -94,6 +117,15 @@ func (d *ReflectionDecoder) DecodePath(
 	path []any,
 	v any,
 ) error {
+	decoderToUse := d
+	if d.cacheHandle != nil {
+		decoderWithCache, cache := d.withCache()
+		decoderToUse = &decoderWithCache
+		if cache != nil {
+			defer d.cacheHandle.provider.Release(cache)
+		}
+	}
+
 	result := reflect.ValueOf(v)
 	if result.Kind() != reflect.Ptr || result.IsNil() {
 		return errors.New("result param must be a pointer")
@@ -106,18 +138,18 @@ PATH:
 			size    uint
 			err     error
 		)
-		typeNum, size, offset, err = d.decodeCtrlData(offset)
+		typeNum, size, offset, err = decoderToUse.decodeCtrlData(offset)
 		if err != nil {
 			return err
 		}
 
 		if typeNum == KindPointer {
-			pointer, _, err := d.decodePointer(size, offset)
+			pointer, _, err := decoderToUse.decodePointer(size, offset)
 			if err != nil {
 				return err
 			}
 
-			typeNum, size, offset, err = d.decodeCtrlData(pointer)
+			typeNum, size, offset, err = decoderToUse.decodeCtrlData(pointer)
 			if err != nil {
 				return err
 			}
@@ -139,14 +171,14 @@ PATH:
 			}
 			for range size {
 				var key []byte
-				key, offset, err = d.decodeKey(offset)
+				key, offset, err = decoderToUse.decodeKey(offset)
 				if err != nil {
 					return err
 				}
 				if string(key) == v {
 					continue PATH
 				}
-				offset, err = d.nextValueOffset(offset, 1)
+				offset, err = decoderToUse.nextValueOffset(offset, 1)
 				if err != nil {
 					return err
 				}
@@ -172,7 +204,7 @@ PATH:
 				}
 				i = uint(v)
 			}
-			offset, err = d.nextValueOffset(offset, i)
+			offset, err = decoderToUse.nextValueOffset(offset, i)
 			if err != nil {
 				return err
 			}
@@ -180,8 +212,25 @@ PATH:
 			return fmt.Errorf("unexpected path element at index %d (%v): %T", i, v, v)
 		}
 	}
-	_, err := d.decode(offset, result, len(path))
+	_, err := decoderToUse.decode(offset, result, len(path))
 	return d.wrapError(err, offset)
+}
+
+func (d *ReflectionDecoder) withCache() (ReflectionDecoder, StringInterner) {
+	if d.cacheHandle == nil {
+		return *d, nil
+	}
+
+	cache := d.cacheHandle.provider.Acquire()
+	if cache == nil {
+		return *d, nil
+	}
+
+	dd := d.DataDecoder
+	dd.cache = cache
+
+	rd := ReflectionDecoder{DataDecoder: dd}
+	return rd, cache
 }
 
 // wrapError wraps an error with context information when an error occurs.
