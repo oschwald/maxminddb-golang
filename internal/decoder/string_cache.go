@@ -8,7 +8,7 @@ import (
 type cacheEntry struct {
 	str    string
 	offset uint
-	mu     sync.RWMutex
+	mu     sync.Mutex
 }
 
 // stringCache provides bounded string interning with per-entry mutexes for minimal contention.
@@ -23,7 +23,6 @@ func newStringCache() *stringCache {
 }
 
 // internAt returns a canonical string for the data at the given offset and size.
-// Uses per-entry RWMutex for fine-grained thread safety with minimal contention.
 func (sc *stringCache) internAt(offset, size uint, data []byte) string {
 	const (
 		minCachedLen = 2   // single byte strings not worth caching
@@ -39,20 +38,17 @@ func (sc *stringCache) internAt(offset, size uint, data []byte) string {
 	i := offset % uint(len(sc.entries))
 	entry := &sc.entries[i]
 
-	// Fast path: read lock and check
-	entry.mu.RLock()
+	entry.mu.Lock()
 	if entry.offset == offset && entry.str != "" {
 		str := entry.str
-		entry.mu.RUnlock()
+		entry.mu.Unlock()
 		return str
 	}
-	entry.mu.RUnlock()
 
 	// Cache miss - create new string
 	str := string(data[offset : offset+size])
 
-	// Store with write lock on this specific entry
-	entry.mu.Lock()
+	// Store in this slot.
 	entry.offset = offset
 	entry.str = str
 	entry.mu.Unlock()
