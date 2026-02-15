@@ -254,37 +254,6 @@ func (d *Decoder) ReadMap() (iter.Seq2[[]byte, error], uint, error) {
 	return iterator, size, nil
 }
 
-// ReadMapFunc reads a map and calls fn for each key. While fn runs, the decoder
-// is positioned at the corresponding value.
-func (d *Decoder) ReadMapFunc(fn func([]byte) error) (uint, error) {
-	size, offset, err := d.decodeCtrlDataAndFollow(KindMap)
-	if err != nil {
-		return 0, d.wrapError(err)
-	}
-
-	currentOffset := offset
-	for range size {
-		key, keyEndOffset, err := d.d.decodeKey(currentOffset)
-		if err != nil {
-			return 0, d.wrapErrorAtOffset(err, currentOffset)
-		}
-
-		d.reset(keyEndOffset)
-		if err := fn(key); err != nil {
-			return 0, err
-		}
-
-		valueEndOffset, err := d.d.nextValueOffset(keyEndOffset, 1)
-		if err != nil {
-			return 0, d.wrapError(err)
-		}
-		currentOffset = valueEndOffset
-	}
-
-	d.reset(currentOffset)
-	return size, nil
-}
-
 // ReadSlice returns an iterator over the values of the slice along with the
 // slice size. The size can be used to pre-allocate a slice with the correct
 // capacity for better performance. The iterator returns an error if the
@@ -329,32 +298,6 @@ func (d *Decoder) ReadSlice() (iter.Seq[error], uint, error) {
 	}
 
 	return iterator, size, nil
-}
-
-// ReadSliceFunc reads a slice and calls fn for each element index. While fn
-// runs, the decoder is positioned at the corresponding element value.
-func (d *Decoder) ReadSliceFunc(fn func(int) error) (uint, error) {
-	size, offset, err := d.decodeCtrlDataAndFollow(KindSlice)
-	if err != nil {
-		return 0, d.wrapError(err)
-	}
-
-	currentOffset := offset
-	for i := range size {
-		d.reset(currentOffset)
-		if err := fn(int(i)); err != nil {
-			return 0, err
-		}
-
-		nextOffset, err := d.d.nextValueOffset(currentOffset, 1)
-		if err != nil {
-			return 0, d.wrapError(err)
-		}
-		currentOffset = nextOffset
-	}
-
-	d.reset(currentOffset)
-	return size, nil
 }
 
 // SkipValue skips over the current value without decoding it.
@@ -576,72 +519,6 @@ func (d *Decoder) ReadUintAt(offset uint) (uint64, uint, error) {
 	}
 }
 
-// ReadMapAt iterates a map value at the provided offset. For each key, fn is
-// called with the key and the value offset. Unknown values can be ignored as
-// traversal always advances to the next key/value pair.
-func (d *Decoder) ReadMapAt(
-	offset uint,
-	fn func(key []byte, valueOffset uint) error,
-) (uint, error) {
-	size, dataOffset, _, err := d.decodeCtrlDataAndFollowAt(offset, KindMap)
-	if err != nil {
-		return 0, err
-	}
-
-	currentOffset := dataOffset
-	for range size {
-		key, keyEndOffset, err := d.d.decodeKey(currentOffset)
-		if err != nil {
-			return 0, d.wrapErrorAtOffset(err, currentOffset)
-		}
-
-		if err := fn(key, keyEndOffset); err != nil {
-			return 0, err
-		}
-
-		valueEndOffset, err := d.d.nextValueOffset(keyEndOffset, 1)
-		if err != nil {
-			return 0, d.wrapError(err)
-		}
-		currentOffset = valueEndOffset
-	}
-
-	return currentOffset, nil
-}
-
-// ReadMapAtString iterates a map value at the provided offset and decodes map
-// keys as strings. The callback receives the decoded key string and value
-// offset.
-func (d *Decoder) ReadMapAtString(
-	offset uint,
-	fn func(key string, valueOffset uint) error,
-) (uint, error) {
-	size, dataOffset, _, err := d.decodeCtrlDataAndFollowAt(offset, KindMap)
-	if err != nil {
-		return 0, err
-	}
-
-	currentOffset := dataOffset
-	for range size {
-		key, keyEndOffset, err := d.d.decodeStringValue(currentOffset)
-		if err != nil {
-			return 0, d.wrapErrorAtOffset(err, currentOffset)
-		}
-
-		if err := fn(key, keyEndOffset); err != nil {
-			return 0, err
-		}
-
-		valueEndOffset, err := d.d.nextValueOffset(keyEndOffset, 1)
-		if err != nil {
-			return 0, d.wrapError(err)
-		}
-		currentOffset = valueEndOffset
-	}
-
-	return currentOffset, nil
-}
-
 // ReadMapHeaderAt reads a map header at the given offset and returns the map
 // size and the offset of the first key.
 func (d *Decoder) ReadMapHeaderAt(offset uint) (uint, uint, error) {
@@ -650,23 +527,6 @@ func (d *Decoder) ReadMapHeaderAt(offset uint) (uint, uint, error) {
 		return 0, 0, err
 	}
 	return size, dataOffset, nil
-}
-
-// ReadMapEntryStringAt reads one map entry key at keyOffset and returns the
-// decoded key string, the value offset, and the next key offset.
-func (d *Decoder) ReadMapEntryStringAt(
-	keyOffset uint,
-) (string, uint, uint, error) {
-	key, valueOffset, err := d.ReadMapEntryStringValueOffsetAt(keyOffset)
-	if err != nil {
-		return "", 0, 0, err
-	}
-
-	nextKeyOffset, err := d.d.nextValueOffset(valueOffset, 1)
-	if err != nil {
-		return "", 0, 0, d.wrapError(err)
-	}
-	return key, valueOffset, nextKeyOffset, nil
 }
 
 // ReadMapEntryStringValueOffsetAt reads one map entry key at keyOffset and
@@ -681,24 +541,6 @@ func (d *Decoder) ReadMapEntryStringValueOffsetAt(
 	return key, valueOffset, nil
 }
 
-// ReadMapEntryKeyAt reads one map entry key at keyOffset and returns the key
-// bytes (pointing into decoder buffer), the value offset, and the next key
-// offset.
-func (d *Decoder) ReadMapEntryKeyAt(
-	keyOffset uint,
-) ([]byte, uint, uint, error) {
-	key, valueOffset, err := d.ReadMapEntryKeyValueOffsetAt(keyOffset)
-	if err != nil {
-		return nil, 0, 0, err
-	}
-
-	nextKeyOffset, err := d.d.nextValueOffset(valueOffset, 1)
-	if err != nil {
-		return nil, 0, 0, d.wrapError(err)
-	}
-	return key, valueOffset, nextKeyOffset, nil
-}
-
 // ReadMapEntryKeyValueOffsetAt reads one map entry key at keyOffset and
 // returns the key bytes (pointing into decoder buffer) and value offset.
 func (d *Decoder) ReadMapEntryKeyValueOffsetAt(
@@ -709,33 +551,6 @@ func (d *Decoder) ReadMapEntryKeyValueOffsetAt(
 		return nil, 0, d.wrapErrorAtOffset(err, keyOffset)
 	}
 	return key, valueOffset, nil
-}
-
-// ReadSliceAt iterates a slice value at the provided offset. For each element,
-// fn is called with the element index and element offset.
-func (d *Decoder) ReadSliceAt(
-	offset uint,
-	fn func(index int, valueOffset uint) error,
-) (uint, error) {
-	size, dataOffset, _, err := d.decodeCtrlDataAndFollowAt(offset, KindSlice)
-	if err != nil {
-		return 0, err
-	}
-
-	currentOffset := dataOffset
-	for i := range size {
-		if err := fn(int(i), currentOffset); err != nil {
-			return 0, err
-		}
-
-		nextOffset, err := d.d.nextValueOffset(currentOffset, 1)
-		if err != nil {
-			return 0, d.wrapError(err)
-		}
-		currentOffset = nextOffset
-	}
-
-	return currentOffset, nil
 }
 
 // ReadSliceHeaderAt reads a slice header at the given offset and returns the
@@ -755,24 +570,6 @@ func (d *Decoder) NextValueOffsetAt(offset uint) (uint, error) {
 		return 0, d.wrapError(err)
 	}
 	return nextOffset, nil
-}
-
-// PeekKindAt returns the kind at a provided offset, following pointers.
-func (d *Decoder) PeekKindAt(offset uint) (Kind, error) {
-	dataOffset := offset
-	for {
-		kindNum, size, ctrlEndOffset, err := d.d.decodeCtrlData(dataOffset)
-		if err != nil {
-			return 0, d.wrapError(err)
-		}
-		if kindNum != KindPointer {
-			return kindNum, nil
-		}
-		dataOffset, _, err = d.d.decodePointer(size, ctrlEndOffset)
-		if err != nil {
-			return 0, d.wrapError(err)
-		}
-	}
 }
 
 func (d *Decoder) reset(offset uint) {
