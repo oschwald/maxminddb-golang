@@ -570,9 +570,9 @@ func TestNestedMapDecode(t *testing.T) {
 		t,
 		map[string]map[string]any{
 			"continent": {
-				"code":       "EU",
-				"geoname_id": uint64(6255148),
-				"names": map[string]any{
+				keyCode:      "EU",
+				keyGeoNameID: uint64(6255148),
+				keyNames: map[string]any{
 					"de":    "Europa",
 					"en":    "Europe",
 					"es":    "Europa",
@@ -584,10 +584,10 @@ func TestNestedMapDecode(t *testing.T) {
 				},
 			},
 			"country": {
-				"geoname_id":           uint64(2661886),
-				"is_in_european_union": true,
-				"iso_code":             "SE",
-				"names": map[string]any{
+				keyGeoNameID:         uint64(2661886),
+				keyIsInEuropeanUnion: true,
+				keyISOCode:           "SE",
+				keyNames: map[string]any{
 					"de":    "Schweden",
 					"en":    "Sweden",
 					"es":    "Suecia",
@@ -599,10 +599,10 @@ func TestNestedMapDecode(t *testing.T) {
 				},
 			},
 			"registered_country": {
-				"geoname_id":           uint64(2921044),
-				"is_in_european_union": true,
-				"iso_code":             "DE",
-				"names": map[string]any{
+				keyGeoNameID:         uint64(2921044),
+				keyIsInEuropeanUnion: true,
+				keyISOCode:           "DE",
+				keyNames: map[string]any{
 					"de":    "Deutschland",
 					"en":    "Germany",
 					"es":    "Alemania",
@@ -961,6 +961,721 @@ type fullCity struct {
 	} `maxminddb:"traits"`
 }
 
+type generatedGeoNamesSection struct {
+	GeoNameID uint
+	Names     map[string]string
+}
+
+type generatedContinentSection struct {
+	Code      string
+	GeoNameID uint
+	Names     map[string]string
+}
+
+type generatedCountrySection struct {
+	GeoNameID         uint
+	IsInEuropeanUnion bool
+	IsoCode           string
+	Names             map[string]string
+}
+
+type generatedRepresentedCountrySection struct {
+	GeoNameID         uint
+	IsInEuropeanUnion bool
+	IsoCode           string
+	Names             map[string]string
+	Type              string
+}
+
+type generatedLocationSection struct {
+	AccuracyRadius uint16
+	Latitude       float64
+	Longitude      float64
+	MetroCode      uint
+	TimeZone       string
+}
+
+type generatedPostalSection struct {
+	Code string
+}
+
+type generatedSubdivision struct {
+	GeoNameID uint
+	IsoCode   string
+	Names     map[string]string
+}
+
+type generatedTraitsSection struct {
+	IsAnonymousProxy    bool
+	IsSatelliteProvider bool
+}
+
+// fullCityGenerated is a hand-written stand-in for generated decode output.
+type fullCityGenerated struct {
+	City               generatedGeoNamesSection
+	Continent          generatedContinentSection
+	Country            generatedCountrySection
+	Location           generatedLocationSection
+	Postal             generatedPostalSection
+	RegisteredCountry  generatedCountrySection
+	RepresentedCountry generatedRepresentedCountrySection
+	Subdivisions       []generatedSubdivision
+	Traits             generatedTraitsSection
+}
+
+const (
+	keyGeoNameID         = "geoname_id"
+	keyNames             = "names"
+	keyCode              = "code"
+	keyIsInEuropeanUnion = "is_in_european_union"
+	keyISOCode           = "iso_code"
+)
+
+func readUint(d *mmdbdata.Decoder) (uint, error) {
+	kind, err := d.PeekKind()
+	if err != nil {
+		return 0, err
+	}
+
+	switch kind {
+	case mmdbdata.KindUint16:
+		v, err := d.ReadUint16()
+		return uint(v), err
+	case mmdbdata.KindUint32:
+		v, err := d.ReadUint32()
+		return uint(v), err
+	case mmdbdata.KindUint64:
+		v, err := d.ReadUint64()
+		return uint(v), err
+	default:
+		return 0, fmt.Errorf("unexpected uint kind: %s", kind.String())
+	}
+}
+
+func decodeStringMapInto(d *mmdbdata.Decoder, out *map[string]string) error {
+	if *out == nil {
+		*out = map[string]string{}
+	} else {
+		clear(*out)
+	}
+
+	_, err := d.ReadMapFunc(func(key []byte) error {
+		value, err := d.ReadString()
+		if err != nil {
+			return err
+		}
+		(*out)[string(key)] = value
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func decodeGeoNamesSection(d *mmdbdata.Decoder, out *generatedGeoNamesSection) error {
+	_, err := d.ReadMapFunc(func(key []byte) error {
+		switch string(key) {
+		case keyGeoNameID:
+			var err error
+			out.GeoNameID, err = readUint(d)
+			return err
+		case keyNames:
+			return decodeStringMapInto(d, &out.Names)
+		default:
+			return d.SkipValue()
+		}
+	})
+	return err
+}
+
+func decodeContinentSection(d *mmdbdata.Decoder, out *generatedContinentSection) error {
+	_, err := d.ReadMapFunc(func(key []byte) error {
+		switch string(key) {
+		case keyCode:
+			var err error
+			out.Code, err = d.ReadString()
+			return err
+		case keyGeoNameID:
+			var err error
+			out.GeoNameID, err = readUint(d)
+			return err
+		case keyNames:
+			return decodeStringMapInto(d, &out.Names)
+		default:
+			return d.SkipValue()
+		}
+	})
+	return err
+}
+
+func decodeCountrySection(d *mmdbdata.Decoder, out *generatedCountrySection) error {
+	_, err := d.ReadMapFunc(func(key []byte) error {
+		switch string(key) {
+		case keyGeoNameID:
+			var err error
+			out.GeoNameID, err = readUint(d)
+			return err
+		case keyIsInEuropeanUnion:
+			var err error
+			out.IsInEuropeanUnion, err = d.ReadBool()
+			return err
+		case keyISOCode:
+			var err error
+			out.IsoCode, err = d.ReadString()
+			return err
+		case keyNames:
+			return decodeStringMapInto(d, &out.Names)
+		default:
+			return d.SkipValue()
+		}
+	})
+	return err
+}
+
+func decodeRepresentedCountrySection(
+	d *mmdbdata.Decoder,
+	out *generatedRepresentedCountrySection,
+) error {
+	_, err := d.ReadMapFunc(func(key []byte) error {
+		switch string(key) {
+		case keyGeoNameID:
+			var err error
+			out.GeoNameID, err = readUint(d)
+			return err
+		case keyIsInEuropeanUnion:
+			var err error
+			out.IsInEuropeanUnion, err = d.ReadBool()
+			return err
+		case keyISOCode:
+			var err error
+			out.IsoCode, err = d.ReadString()
+			return err
+		case keyNames:
+			return decodeStringMapInto(d, &out.Names)
+		case "type":
+			var err error
+			out.Type, err = d.ReadString()
+			return err
+		default:
+			return d.SkipValue()
+		}
+	})
+	return err
+}
+
+func decodeLocationSection(d *mmdbdata.Decoder, out *generatedLocationSection) error {
+	_, err := d.ReadMapFunc(func(key []byte) error {
+		switch string(key) {
+		case "accuracy_radius":
+			var err error
+			out.AccuracyRadius, err = d.ReadUint16()
+			return err
+		case "latitude":
+			var err error
+			out.Latitude, err = d.ReadFloat64()
+			return err
+		case "longitude":
+			var err error
+			out.Longitude, err = d.ReadFloat64()
+			return err
+		case "metro_code":
+			var err error
+			out.MetroCode, err = readUint(d)
+			return err
+		case "time_zone":
+			var err error
+			out.TimeZone, err = d.ReadString()
+			return err
+		default:
+			return d.SkipValue()
+		}
+	})
+	return err
+}
+
+func decodePostalSection(d *mmdbdata.Decoder, out *generatedPostalSection) error {
+	_, err := d.ReadMapFunc(func(key []byte) error {
+		switch string(key) {
+		case keyCode:
+			var err error
+			out.Code, err = d.ReadString()
+			return err
+		default:
+			return d.SkipValue()
+		}
+	})
+	return err
+}
+
+func decodeSubdivision(d *mmdbdata.Decoder, out *generatedSubdivision) error {
+	_, err := d.ReadMapFunc(func(key []byte) error {
+		switch string(key) {
+		case keyGeoNameID:
+			var err error
+			out.GeoNameID, err = readUint(d)
+			return err
+		case keyISOCode:
+			var err error
+			out.IsoCode, err = d.ReadString()
+			return err
+		case keyNames:
+			return decodeStringMapInto(d, &out.Names)
+		default:
+			return d.SkipValue()
+		}
+	})
+	return err
+}
+
+func decodeTraitsSection(d *mmdbdata.Decoder, out *generatedTraitsSection) error {
+	_, err := d.ReadMapFunc(func(key []byte) error {
+		switch string(key) {
+		case "is_anonymous_proxy":
+			var err error
+			out.IsAnonymousProxy, err = d.ReadBool()
+			return err
+		case "is_satellite_provider":
+			var err error
+			out.IsSatelliteProvider, err = d.ReadBool()
+			return err
+		default:
+			return d.SkipValue()
+		}
+	})
+	return err
+}
+
+func decodeSubdivisions(d *mmdbdata.Decoder, out *[]generatedSubdivision) error {
+	iter, size, err := d.ReadSlice()
+	if err != nil {
+		return err
+	}
+
+	if cap(*out) < int(size) {
+		*out = make([]generatedSubdivision, size)
+	} else {
+		*out = (*out)[:size]
+	}
+
+	i := 0
+	for err := range iter {
+		if err != nil {
+			return err
+		}
+		if err := decodeSubdivision(d, &(*out)[i]); err != nil {
+			return err
+		}
+		i++
+	}
+	return nil
+}
+
+func (c *fullCityGenerated) UnmarshalMaxMindDB(d *mmdbdata.Decoder) error {
+	_, err := d.ReadMapFunc(func(key []byte) error {
+		switch string(key) {
+		case "city":
+			return decodeGeoNamesSection(d, &c.City)
+		case "continent":
+			return decodeContinentSection(d, &c.Continent)
+		case "country":
+			return decodeCountrySection(d, &c.Country)
+		case "location":
+			return decodeLocationSection(d, &c.Location)
+		case "postal":
+			return decodePostalSection(d, &c.Postal)
+		case "registered_country":
+			return decodeCountrySection(d, &c.RegisteredCountry)
+		case "represented_country":
+			return decodeRepresentedCountrySection(d, &c.RepresentedCountry)
+		case "subdivisions":
+			return decodeSubdivisions(d, &c.Subdivisions)
+		case "traits":
+			return decodeTraitsSection(d, &c.Traits)
+		default:
+			return d.SkipValue()
+		}
+	})
+
+	return err
+}
+
+// fullCityGeneratedLow uses the low-level offset-based decoder APIs.
+type fullCityGeneratedLow struct {
+	City               generatedGeoNamesSection
+	Continent          generatedContinentSection
+	Country            generatedCountrySection
+	Location           generatedLocationSection
+	Postal             generatedPostalSection
+	RegisteredCountry  generatedCountrySection
+	RepresentedCountry generatedRepresentedCountrySection
+	Subdivisions       []generatedSubdivision
+	Traits             generatedTraitsSection
+}
+
+func readUintAt(d *mmdbdata.Decoder, offset uint) (uint, uint, error) {
+	v, nextOffset, err := d.ReadUintAt(offset)
+	return uint(v), nextOffset, err
+}
+
+func containerEndOffsetAt(d *mmdbdata.Decoder, offset, decodedEnd uint) (uint, error) {
+	isPointer, err := d.IsPointerAt(offset)
+	if err != nil {
+		return 0, err
+	}
+	if !isPointer {
+		return decodedEnd, nil
+	}
+	return d.NextValueOffsetAt(offset)
+}
+
+func decodeStringMapAt(d *mmdbdata.Decoder, offset uint, out *map[string]string) (uint, error) {
+	if *out == nil {
+		*out = map[string]string{}
+	} else {
+		clear(*out)
+	}
+
+	size, keyOffset, err := d.ReadMapHeaderAt(offset)
+	if err != nil {
+		return 0, err
+	}
+
+	for range size {
+		key, valueOffset, err := d.ReadMapEntryStringValueOffsetAt(keyOffset)
+		if err != nil {
+			return 0, err
+		}
+		value, nextOffset, err := d.ReadStringAt(valueOffset)
+		if err != nil {
+			return 0, err
+		}
+		(*out)[key] = value
+		keyOffset = nextOffset
+	}
+	return containerEndOffsetAt(d, offset, keyOffset)
+}
+
+func decodeGeoNamesSectionAt(
+	d *mmdbdata.Decoder,
+	offset uint,
+	out *generatedGeoNamesSection,
+) (uint, error) {
+	size, keyOffset, err := d.ReadMapHeaderAt(offset)
+	if err != nil {
+		return 0, err
+	}
+	for range size {
+		key, valueOffset, err := d.ReadMapEntryKeyValueOffsetAt(keyOffset)
+		if err != nil {
+			return 0, err
+		}
+		switch string(key) {
+		case keyGeoNameID:
+			out.GeoNameID, keyOffset, err = readUintAt(d, valueOffset)
+		case keyNames:
+			keyOffset, err = decodeStringMapAt(d, valueOffset, &out.Names)
+		default:
+			keyOffset, err = d.NextValueOffsetAt(valueOffset)
+		}
+		if err != nil {
+			return 0, err
+		}
+	}
+	return containerEndOffsetAt(d, offset, keyOffset)
+}
+
+func decodeContinentSectionAt(
+	d *mmdbdata.Decoder,
+	offset uint,
+	out *generatedContinentSection,
+) (uint, error) {
+	size, keyOffset, err := d.ReadMapHeaderAt(offset)
+	if err != nil {
+		return 0, err
+	}
+	for range size {
+		key, valueOffset, err := d.ReadMapEntryKeyValueOffsetAt(keyOffset)
+		if err != nil {
+			return 0, err
+		}
+		switch string(key) {
+		case keyCode:
+			out.Code, keyOffset, err = d.ReadStringAt(valueOffset)
+		case keyGeoNameID:
+			out.GeoNameID, keyOffset, err = readUintAt(d, valueOffset)
+		case keyNames:
+			keyOffset, err = decodeStringMapAt(d, valueOffset, &out.Names)
+		default:
+			keyOffset, err = d.NextValueOffsetAt(valueOffset)
+		}
+		if err != nil {
+			return 0, err
+		}
+	}
+	return containerEndOffsetAt(d, offset, keyOffset)
+}
+
+func decodeCountrySectionAt(
+	d *mmdbdata.Decoder,
+	offset uint,
+	out *generatedCountrySection,
+) (uint, error) {
+	size, keyOffset, err := d.ReadMapHeaderAt(offset)
+	if err != nil {
+		return 0, err
+	}
+	for range size {
+		key, valueOffset, err := d.ReadMapEntryKeyValueOffsetAt(keyOffset)
+		if err != nil {
+			return 0, err
+		}
+		switch string(key) {
+		case keyGeoNameID:
+			out.GeoNameID, keyOffset, err = readUintAt(d, valueOffset)
+		case keyIsInEuropeanUnion:
+			out.IsInEuropeanUnion, keyOffset, err = d.ReadBoolAt(valueOffset)
+		case keyISOCode:
+			out.IsoCode, keyOffset, err = d.ReadStringAt(valueOffset)
+		case keyNames:
+			keyOffset, err = decodeStringMapAt(d, valueOffset, &out.Names)
+		default:
+			keyOffset, err = d.NextValueOffsetAt(valueOffset)
+		}
+		if err != nil {
+			return 0, err
+		}
+	}
+	return containerEndOffsetAt(d, offset, keyOffset)
+}
+
+func decodeRepresentedCountrySectionAt(
+	d *mmdbdata.Decoder,
+	offset uint,
+	out *generatedRepresentedCountrySection,
+) (uint, error) {
+	size, keyOffset, err := d.ReadMapHeaderAt(offset)
+	if err != nil {
+		return 0, err
+	}
+	for range size {
+		key, valueOffset, err := d.ReadMapEntryKeyValueOffsetAt(keyOffset)
+		if err != nil {
+			return 0, err
+		}
+		switch string(key) {
+		case keyGeoNameID:
+			out.GeoNameID, keyOffset, err = readUintAt(d, valueOffset)
+		case keyIsInEuropeanUnion:
+			out.IsInEuropeanUnion, keyOffset, err = d.ReadBoolAt(valueOffset)
+		case keyISOCode:
+			out.IsoCode, keyOffset, err = d.ReadStringAt(valueOffset)
+		case keyNames:
+			keyOffset, err = decodeStringMapAt(d, valueOffset, &out.Names)
+		case "type":
+			out.Type, keyOffset, err = d.ReadStringAt(valueOffset)
+		default:
+			keyOffset, err = d.NextValueOffsetAt(valueOffset)
+		}
+		if err != nil {
+			return 0, err
+		}
+	}
+	return containerEndOffsetAt(d, offset, keyOffset)
+}
+
+func decodeLocationSectionAt(
+	d *mmdbdata.Decoder,
+	offset uint,
+	out *generatedLocationSection,
+) (uint, error) {
+	size, keyOffset, err := d.ReadMapHeaderAt(offset)
+	if err != nil {
+		return 0, err
+	}
+	for range size {
+		key, valueOffset, err := d.ReadMapEntryKeyValueOffsetAt(keyOffset)
+		if err != nil {
+			return 0, err
+		}
+		switch string(key) {
+		case "accuracy_radius":
+			out.AccuracyRadius, keyOffset, err = d.ReadUint16At(valueOffset)
+		case "latitude":
+			out.Latitude, keyOffset, err = d.ReadFloat64At(valueOffset)
+		case "longitude":
+			out.Longitude, keyOffset, err = d.ReadFloat64At(valueOffset)
+		case "metro_code":
+			out.MetroCode, keyOffset, err = readUintAt(d, valueOffset)
+		case "time_zone":
+			out.TimeZone, keyOffset, err = d.ReadStringAt(valueOffset)
+		default:
+			keyOffset, err = d.NextValueOffsetAt(valueOffset)
+		}
+		if err != nil {
+			return 0, err
+		}
+	}
+	return containerEndOffsetAt(d, offset, keyOffset)
+}
+
+func decodePostalSectionAt(
+	d *mmdbdata.Decoder,
+	offset uint,
+	out *generatedPostalSection,
+) (uint, error) {
+	size, keyOffset, err := d.ReadMapHeaderAt(offset)
+	if err != nil {
+		return 0, err
+	}
+	for range size {
+		key, valueOffset, err := d.ReadMapEntryKeyValueOffsetAt(keyOffset)
+		if err != nil {
+			return 0, err
+		}
+		if string(key) == keyCode {
+			out.Code, keyOffset, err = d.ReadStringAt(valueOffset)
+		} else {
+			keyOffset, err = d.NextValueOffsetAt(valueOffset)
+		}
+		if err != nil {
+			return 0, err
+		}
+	}
+	return containerEndOffsetAt(d, offset, keyOffset)
+}
+
+func decodeSubdivisionAt(
+	d *mmdbdata.Decoder,
+	offset uint,
+	out *generatedSubdivision,
+) (uint, error) {
+	size, keyOffset, err := d.ReadMapHeaderAt(offset)
+	if err != nil {
+		return 0, err
+	}
+	for range size {
+		key, valueOffset, err := d.ReadMapEntryKeyValueOffsetAt(keyOffset)
+		if err != nil {
+			return 0, err
+		}
+		switch string(key) {
+		case keyGeoNameID:
+			out.GeoNameID, keyOffset, err = readUintAt(d, valueOffset)
+		case keyISOCode:
+			out.IsoCode, keyOffset, err = d.ReadStringAt(valueOffset)
+		case keyNames:
+			keyOffset, err = decodeStringMapAt(d, valueOffset, &out.Names)
+		default:
+			keyOffset, err = d.NextValueOffsetAt(valueOffset)
+		}
+		if err != nil {
+			return 0, err
+		}
+	}
+	return containerEndOffsetAt(d, offset, keyOffset)
+}
+
+func decodeTraitsSectionAt(
+	d *mmdbdata.Decoder,
+	offset uint,
+	out *generatedTraitsSection,
+) (uint, error) {
+	size, keyOffset, err := d.ReadMapHeaderAt(offset)
+	if err != nil {
+		return 0, err
+	}
+	for range size {
+		key, valueOffset, err := d.ReadMapEntryKeyValueOffsetAt(keyOffset)
+		if err != nil {
+			return 0, err
+		}
+		switch string(key) {
+		case "is_anonymous_proxy":
+			out.IsAnonymousProxy, keyOffset, err = d.ReadBoolAt(valueOffset)
+		case "is_satellite_provider":
+			out.IsSatelliteProvider, keyOffset, err = d.ReadBoolAt(valueOffset)
+		default:
+			keyOffset, err = d.NextValueOffsetAt(valueOffset)
+		}
+		if err != nil {
+			return 0, err
+		}
+	}
+	return containerEndOffsetAt(d, offset, keyOffset)
+}
+
+func decodeSubdivisionsAt(
+	d *mmdbdata.Decoder,
+	offset uint,
+	out *[]generatedSubdivision,
+) (uint, error) {
+	size, elemOffset, err := d.ReadSliceHeaderAt(offset)
+	if err != nil {
+		return 0, err
+	}
+
+	if cap(*out) < int(size) {
+		*out = make([]generatedSubdivision, int(size))
+	} else {
+		*out = (*out)[:int(size)]
+	}
+
+	for i := range size {
+		elemOffset, err = decodeSubdivisionAt(d, elemOffset, &(*out)[i])
+		if err != nil {
+			return 0, err
+		}
+	}
+	return containerEndOffsetAt(d, offset, elemOffset)
+}
+
+func (c *fullCityGeneratedLow) UnmarshalMaxMindDB(d *mmdbdata.Decoder) error {
+	rootOffset := d.Offset()
+	size, keyOffset, err := d.ReadMapHeaderAt(rootOffset)
+	if err != nil {
+		return err
+	}
+
+	for range size {
+		key, valueOffset, err := d.ReadMapEntryKeyValueOffsetAt(keyOffset)
+		if err != nil {
+			return err
+		}
+		switch string(key) {
+		case "city":
+			keyOffset, err = decodeGeoNamesSectionAt(d, valueOffset, &c.City)
+		case "continent":
+			keyOffset, err = decodeContinentSectionAt(d, valueOffset, &c.Continent)
+		case "country":
+			keyOffset, err = decodeCountrySectionAt(d, valueOffset, &c.Country)
+		case "location":
+			keyOffset, err = decodeLocationSectionAt(d, valueOffset, &c.Location)
+		case "postal":
+			keyOffset, err = decodePostalSectionAt(d, valueOffset, &c.Postal)
+		case "registered_country":
+			keyOffset, err = decodeCountrySectionAt(d, valueOffset, &c.RegisteredCountry)
+		case "represented_country":
+			keyOffset, err = decodeRepresentedCountrySectionAt(
+				d,
+				valueOffset,
+				&c.RepresentedCountry,
+			)
+		case "subdivisions":
+			keyOffset, err = decodeSubdivisionsAt(d, valueOffset, &c.Subdivisions)
+		case "traits":
+			keyOffset, err = decodeTraitsSectionAt(d, valueOffset, &c.Traits)
+		default:
+			keyOffset, err = d.NextValueOffsetAt(valueOffset)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func BenchmarkCityLookup(b *testing.B) {
 	db, err := Open("GeoLite2-City.mmdb")
 	require.NoError(b, err)
@@ -968,6 +1683,44 @@ func BenchmarkCityLookup(b *testing.B) {
 	//nolint:gosec // this is a test
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	var result fullCity
+
+	s := make(net.IP, 4)
+	for b.Loop() {
+		ip := randomIPv4Address(r, s)
+		err = db.Lookup(ip).Decode(&result)
+		if err != nil {
+			b.Error(err)
+		}
+	}
+	require.NoError(b, db.Close(), "error on close")
+}
+
+func BenchmarkCityLookupGenerated(b *testing.B) {
+	db, err := Open("GeoLite2-City.mmdb")
+	require.NoError(b, err)
+
+	//nolint:gosec // this is a test
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	var result fullCityGenerated
+
+	s := make(net.IP, 4)
+	for b.Loop() {
+		ip := randomIPv4Address(r, s)
+		err = db.Lookup(ip).Decode(&result)
+		if err != nil {
+			b.Error(err)
+		}
+	}
+	require.NoError(b, db.Close(), "error on close")
+}
+
+func BenchmarkCityLookupGeneratedLow(b *testing.B) {
+	db, err := Open("GeoLite2-City.mmdb")
+	require.NoError(b, err)
+
+	//nolint:gosec // this is a test
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	var result fullCityGeneratedLow
 
 	s := make(net.IP, 4)
 	for b.Loop() {
@@ -1027,7 +1780,7 @@ func BenchmarkDecodePathCountryCode(b *testing.B) {
 	db, err := Open("GeoLite2-City.mmdb")
 	require.NoError(b, err)
 
-	path := []any{"country", "iso_code"}
+	path := []any{"country", keyISOCode}
 
 	//nolint:gosec // this is a test
 	r := rand.New(rand.NewSource(0))
@@ -1165,7 +1918,7 @@ func (c *TestCity) UnmarshalMaxMindDB(d *mmdbdata.Decoder) error {
 		}
 
 		switch string(key) {
-		case "names":
+		case keyNames:
 			// Decode nested map[string]string for localized names
 			nameMapIter, size, err := d.ReadMap()
 			if err != nil {
@@ -1183,7 +1936,7 @@ func (c *TestCity) UnmarshalMaxMindDB(d *mmdbdata.Decoder) error {
 				names[string(nameKey)] = value
 			}
 			c.Names = names
-		case "geoname_id":
+		case keyGeoNameID:
 			geoID, err := d.ReadUint32()
 			if err != nil {
 				return err
