@@ -577,17 +577,21 @@ func (d *Decoder) NextValueOffsetAt(offset uint) (uint, error) {
 // container entries/elements. For non-pointer values, decodedEnd is returned.
 // For pointer values, the end offset in the original stream is returned.
 func (d *Decoder) ContainerEndOffsetAt(offset, decodedEnd uint) (uint, error) {
-	kindNum, _, _, err := d.d.decodeCtrlData(offset)
-	if err != nil {
-		return 0, d.wrapError(err)
+	buffer := d.d.getBuffer()
+	if offset >= uint(len(buffer)) {
+		return 0, d.wrapError(mmdberrors.NewOffsetError())
 	}
-	if kindNum != KindPointer {
+
+	ctrlByte := buffer[offset]
+	if Kind(ctrlByte>>5) != KindPointer {
 		return decodedEnd, nil
 	}
 
-	nextOffset, err := d.d.nextValueOffset(offset, 1)
-	if err != nil {
-		return 0, d.wrapError(err)
+	size := uint(ctrlByte & 0x1f)
+	pointerSize := ((size >> 3) & 0x3) + 1
+	nextOffset := offset + 1 + pointerSize
+	if nextOffset > uint(len(buffer)) {
+		return 0, d.wrapError(mmdberrors.NewOffsetError())
 	}
 	return nextOffset, nil
 }
