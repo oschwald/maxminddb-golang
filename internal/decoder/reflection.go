@@ -280,8 +280,9 @@ func (d *ReflectionDecoder) decodeValue(
 		} // dereferenced pointer is always addressable
 	}
 
-	// Check if the value implements Unmarshaler interface using type assertion
-	if result.CanAddr() {
+	// Check if the value implements Unmarshaler interface using type assertion.
+	// Most decoded types don't implement it, so cache the type check.
+	if result.CanAddr() && mayImplementUnmarshaler(result.Type()) {
 		if unmarshaler, ok := tryTypeAssert(result.Addr()); ok {
 			decoder := NewDecoder(d.DataDecoder, offset)
 			if err := unmarshaler.UnmarshalMaxMindDB(decoder); err != nil {
@@ -370,7 +371,25 @@ func (d *ReflectionDecoder) unmarshalBool(
 var (
 	sliceType           = reflect.TypeFor[[]byte]()
 	mapStringStringType = reflect.TypeFor[map[string]string]()
+	unmarshalerType     = reflect.TypeFor[Unmarshaler]()
 )
+
+var unmarshalerTypeCache sync.Map
+
+func mayImplementUnmarshaler(t reflect.Type) bool {
+	// Builtin and unnamed types cannot have methods.
+	if t.PkgPath() == "" {
+		return false
+	}
+
+	if cached, ok := unmarshalerTypeCache.Load(t); ok {
+		return cached.(bool)
+	}
+
+	implements := reflect.PointerTo(t).Implements(unmarshalerType)
+	unmarshalerTypeCache.Store(t, implements)
+	return implements
+}
 
 func (d *ReflectionDecoder) unmarshalBytes(
 	size, offset uint,
