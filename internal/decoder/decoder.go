@@ -377,16 +377,6 @@ func (d *Decoder) Offset() uint {
 	return dataOffset
 }
 
-// IsPointerAt reports whether the value at the provided offset is a pointer
-// in the original container stream.
-func (d *Decoder) IsPointerAt(offset uint) (bool, error) {
-	kindNum, _, _, err := d.d.decodeCtrlData(offset)
-	if err != nil {
-		return false, d.wrapError(err)
-	}
-	return kindNum == KindPointer, nil
-}
-
 // ReadStringAt reads a string value at the provided offset and returns the
 // decoded value and end offset for the value in the original container stream.
 func (d *Decoder) ReadStringAt(offset uint) (string, uint, error) {
@@ -529,6 +519,16 @@ func (d *Decoder) ReadMapHeaderAt(offset uint) (uint, uint, error) {
 	return size, dataOffset, nil
 }
 
+// ReadMapHeader reads a map header at the decoder's current position and
+// returns the map size and the offset of the first key.
+func (d *Decoder) ReadMapHeader() (uint, uint, error) {
+	size, dataOffset, err := d.decodeCtrlDataAndFollow(KindMap)
+	if err != nil {
+		return 0, 0, d.wrapError(err)
+	}
+	return size, dataOffset, nil
+}
+
 // ReadMapEntryStringValueOffsetAt reads one map entry key at keyOffset and
 // returns the decoded key string and value offset.
 func (d *Decoder) ReadMapEntryStringValueOffsetAt(
@@ -565,6 +565,26 @@ func (d *Decoder) ReadSliceHeaderAt(offset uint) (uint, uint, error) {
 
 // NextValueOffsetAt returns the offset immediately after the value at offset.
 func (d *Decoder) NextValueOffsetAt(offset uint) (uint, error) {
+	nextOffset, err := d.d.nextValueOffset(offset, 1)
+	if err != nil {
+		return 0, d.wrapError(err)
+	}
+	return nextOffset, nil
+}
+
+// ContainerEndOffsetAt returns the end offset for a container value decoded at
+// offset where decodedEnd is the end offset after iterating the decoded
+// container entries/elements. For non-pointer values, decodedEnd is returned.
+// For pointer values, the end offset in the original stream is returned.
+func (d *Decoder) ContainerEndOffsetAt(offset, decodedEnd uint) (uint, error) {
+	kindNum, _, _, err := d.d.decodeCtrlData(offset)
+	if err != nil {
+		return 0, d.wrapError(err)
+	}
+	if kindNum != KindPointer {
+		return decodedEnd, nil
+	}
+
 	nextOffset, err := d.d.nextValueOffset(offset, 1)
 	if err != nil {
 		return 0, d.wrapError(err)

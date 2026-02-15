@@ -1036,17 +1036,6 @@ func readUintAt(d *mmdbdata.Decoder, offset uint) (uint, uint, error) {
 	return uint(v), nextOffset, err
 }
 
-func containerEndOffsetAt(d *mmdbdata.Decoder, offset, decodedEnd uint) (uint, error) {
-	isPointer, err := d.IsPointerAt(offset)
-	if err != nil {
-		return 0, err
-	}
-	if !isPointer {
-		return decodedEnd, nil
-	}
-	return d.NextValueOffsetAt(offset)
-}
-
 func decodeStringMapAt(d *mmdbdata.Decoder, offset uint, out *map[string]string) (uint, error) {
 	if *out == nil {
 		*out = map[string]string{}
@@ -1071,7 +1060,7 @@ func decodeStringMapAt(d *mmdbdata.Decoder, offset uint, out *map[string]string)
 		(*out)[key] = value
 		keyOffset = nextOffset
 	}
-	return containerEndOffsetAt(d, offset, keyOffset)
+	return d.ContainerEndOffsetAt(offset, keyOffset)
 }
 
 func decodeGeoNamesSectionAt(
@@ -1100,7 +1089,7 @@ func decodeGeoNamesSectionAt(
 			return 0, err
 		}
 	}
-	return containerEndOffsetAt(d, offset, keyOffset)
+	return d.ContainerEndOffsetAt(offset, keyOffset)
 }
 
 func decodeContinentSectionAt(
@@ -1131,7 +1120,7 @@ func decodeContinentSectionAt(
 			return 0, err
 		}
 	}
-	return containerEndOffsetAt(d, offset, keyOffset)
+	return d.ContainerEndOffsetAt(offset, keyOffset)
 }
 
 func decodeCountrySectionAt(
@@ -1164,7 +1153,7 @@ func decodeCountrySectionAt(
 			return 0, err
 		}
 	}
-	return containerEndOffsetAt(d, offset, keyOffset)
+	return d.ContainerEndOffsetAt(offset, keyOffset)
 }
 
 func decodeRepresentedCountrySectionAt(
@@ -1199,7 +1188,7 @@ func decodeRepresentedCountrySectionAt(
 			return 0, err
 		}
 	}
-	return containerEndOffsetAt(d, offset, keyOffset)
+	return d.ContainerEndOffsetAt(offset, keyOffset)
 }
 
 func decodeLocationSectionAt(
@@ -1234,7 +1223,7 @@ func decodeLocationSectionAt(
 			return 0, err
 		}
 	}
-	return containerEndOffsetAt(d, offset, keyOffset)
+	return d.ContainerEndOffsetAt(offset, keyOffset)
 }
 
 func decodePostalSectionAt(
@@ -1260,7 +1249,7 @@ func decodePostalSectionAt(
 			return 0, err
 		}
 	}
-	return containerEndOffsetAt(d, offset, keyOffset)
+	return d.ContainerEndOffsetAt(offset, keyOffset)
 }
 
 func decodeSubdivisionAt(
@@ -1291,7 +1280,7 @@ func decodeSubdivisionAt(
 			return 0, err
 		}
 	}
-	return containerEndOffsetAt(d, offset, keyOffset)
+	return d.ContainerEndOffsetAt(offset, keyOffset)
 }
 
 func decodeTraitsSectionAt(
@@ -1320,7 +1309,7 @@ func decodeTraitsSectionAt(
 			return 0, err
 		}
 	}
-	return containerEndOffsetAt(d, offset, keyOffset)
+	return d.ContainerEndOffsetAt(offset, keyOffset)
 }
 
 func decodeSubdivisionsAt(
@@ -1345,12 +1334,11 @@ func decodeSubdivisionsAt(
 			return 0, err
 		}
 	}
-	return containerEndOffsetAt(d, offset, elemOffset)
+	return d.ContainerEndOffsetAt(offset, elemOffset)
 }
 
 func (c *fullCityGeneratedLow) UnmarshalMaxMindDB(d *mmdbdata.Decoder) error {
-	rootOffset := d.Offset()
-	size, keyOffset, err := d.ReadMapHeaderAt(rootOffset)
+	size, keyOffset, err := d.ReadMapHeader()
 	if err != nil {
 		return err
 	}
