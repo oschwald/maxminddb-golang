@@ -61,16 +61,12 @@ func (d *Decoder) ReadBool() (bool, error) {
 //
 // Returns an error if the database is malformed or if the pointed value is not a string.
 func (d *Decoder) ReadString() (string, error) {
-	size, offset, err := d.decodeCtrlDataAndFollow(KindString)
+	value, nextOffset, err := d.d.decodeStringValue(d.offset)
 	if err != nil {
 		return "", d.wrapError(err)
 	}
 
-	value, newOffset, err := d.d.decodeString(size, offset)
-	if err != nil {
-		return "", d.wrapError(err)
-	}
-	d.setNextOffset(newOffset)
+	d.setNextOffset(nextOffset)
 	return value, nil
 }
 
