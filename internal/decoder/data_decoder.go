@@ -132,10 +132,11 @@ func (d *DataDecoder) getBuffer() []byte {
 
 // decodeCtrlData decodes the control byte and data info at the given offset.
 func (d *DataDecoder) decodeCtrlData(offset uint) (Kind, uint, uint, error) {
-	newOffset := offset + 1
 	if offset >= uint(len(d.buffer)) {
 		return 0, 0, 0, mmdberrors.NewOffsetError()
 	}
+
+	newOffset := offset + 1
 	ctrlByte := d.buffer[offset]
 
 	kindNum := Kind(ctrlByte >> 5)
@@ -147,9 +148,32 @@ func (d *DataDecoder) decodeCtrlData(offset uint) (Kind, uint, uint, error) {
 		newOffset++
 	}
 
-	var size uint
-	size, newOffset, err := d.sizeFromCtrlByte(ctrlByte, newOffset, kindNum)
-	return kindNum, size, newOffset, err
+	size := uint(ctrlByte & 0x1f)
+	if size < 29 {
+		return kindNum, size, newOffset, nil
+	}
+
+	// Variable-length size encoding:
+	// 29 => next 1 byte + 29
+	// 30 => next 2 bytes + 285
+	// 31 => next 3 bytes + 65821
+	bytesToRead := size - 28
+	if newOffset+bytesToRead > uint(len(d.buffer)) {
+		return 0, 0, 0, mmdberrors.NewOffsetError()
+	}
+
+	switch size {
+	case 29:
+		return kindNum, 29 + uint(d.buffer[newOffset]), newOffset + 1, nil
+	case 30:
+		v := (uint(d.buffer[newOffset]) << 8) | uint(d.buffer[newOffset+1])
+		return kindNum, 285 + v, newOffset + 2, nil
+	default:
+		v := (uint(d.buffer[newOffset]) << 16) |
+			(uint(d.buffer[newOffset+1]) << 8) |
+			uint(d.buffer[newOffset+2])
+		return kindNum, 65821 + v, newOffset + 3, nil
+	}
 }
 
 // decodeBytes decodes a byte slice from the given offset with the given size.
@@ -228,30 +252,32 @@ func (d *DataDecoder) decodePointer(
 	if newOffset > uint(len(d.buffer)) {
 		return 0, 0, mmdberrors.NewOffsetError()
 	}
-	pointerBytes := d.buffer[offset:newOffset]
-	var prefix uint
-	if pointerSize == 4 {
-		prefix = 0
-	} else {
-		prefix = size & 0x7
-	}
-	unpacked := uintFromBytes(prefix, pointerBytes)
 
-	var pointerValueOffset uint
+	var unpacked uint
 	switch pointerSize {
-	case 1, 4:
-		pointerValueOffset = 0
+	case 1:
+		unpacked = ((size & 0x7) << 8) | uint(d.buffer[offset])
 	case 2:
-		pointerValueOffset = pointerBase2
+		unpacked = ((size & 0x7) << 16) |
+			(uint(d.buffer[offset]) << 8) |
+			uint(d.buffer[offset+1])
+		return unpacked + pointerBase2, newOffset, nil
 	case 3:
-		pointerValueOffset = pointerBase3
+		unpacked = ((size & 0x7) << 24) |
+			(uint(d.buffer[offset]) << 16) |
+			(uint(d.buffer[offset+1]) << 8) |
+			uint(d.buffer[offset+2])
+		return unpacked + pointerBase3, newOffset, nil
+	case 4:
+		unpacked = (uint(d.buffer[offset]) << 24) |
+			(uint(d.buffer[offset+1]) << 16) |
+			(uint(d.buffer[offset+2]) << 8) |
+			uint(d.buffer[offset+3])
 	default:
 		return 0, 0, mmdberrors.NewInvalidDatabaseError("invalid pointer size: %d", pointerSize)
 	}
 
-	pointer := unpacked + pointerValueOffset
-
-	return pointer, newOffset, nil
+	return unpacked, newOffset, nil
 }
 
 // DecodeBool decodes a boolean from the given offset.
@@ -500,51 +526,6 @@ func (d *DataDecoder) nextValueOffset(offset, numberToSkip uint) (uint, error) {
 	return offset, nil
 }
 
-func (d *DataDecoder) sizeFromCtrlByte(
-	ctrlByte byte,
-	offset uint,
-	kindNum Kind,
-) (uint, uint, error) {
-	size := uint(ctrlByte & 0x1f)
-	if kindNum == KindExtended {
-		return size, offset, nil
-	}
-
-	var bytesToRead uint
-	if size < 29 {
-		return size, offset, nil
-	}
-
-	bytesToRead = size - 28
-	newOffset := offset + bytesToRead
-	if newOffset > uint(len(d.buffer)) {
-		return 0, 0, mmdberrors.NewOffsetError()
-	}
-	if size == 29 {
-		return 29 + uint(d.buffer[offset]), offset + 1, nil
-	}
-
-	sizeBytes := d.buffer[offset:newOffset]
-
-	switch {
-	case size == 30:
-		size = 285 + uintFromBytes(0, sizeBytes)
-	case size > 30:
-		size = uintFromBytes(0, sizeBytes) + 65821
-	default:
-		// size < 30, no modification needed
-	}
-	return size, newOffset, nil
-}
-
 func decodeBool(size, offset uint) (bool, uint) {
 	return size != 0, offset
-}
-
-func uintFromBytes(prefix uint, uintBytes []byte) uint {
-	val := prefix
-	for _, b := range uintBytes {
-		val = (val << 8) | uint(b)
-	}
-	return val
 }

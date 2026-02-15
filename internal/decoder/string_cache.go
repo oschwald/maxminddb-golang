@@ -25,8 +25,8 @@ func newStringCache() *stringCache {
 // internAt returns a canonical string for the data at the given offset and size.
 func (sc *stringCache) internAt(offset, size uint, data []byte) string {
 	const (
-		minCachedLen = 2   // single byte strings not worth caching
-		maxCachedLen = 100 // reasonable upper bound for geographic strings
+		minCachedLen = 2  // single byte strings not worth caching
+		maxCachedLen = 32 // favor short, frequently repeated strings
 	)
 
 	// Skip caching for very short or very long strings

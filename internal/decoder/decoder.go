@@ -23,8 +23,6 @@ type decoderOptions struct {
 }
 
 // DecoderOption configures a Decoder.
-//
-//nolint:revive // name follows existing library pattern (ReaderOption, NetworksOption)
 type DecoderOption func(*decoderOptions)
 
 // NewDecoder creates a new Decoder with the given DataDecoder, offset, and options.
