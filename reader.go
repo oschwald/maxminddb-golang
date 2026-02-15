@@ -115,6 +115,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/oschwald/maxminddb-golang/v2/cache"
 	"github.com/oschwald/maxminddb-golang/v2/internal/decoder"
 	"github.com/oschwald/maxminddb-golang/v2/internal/mmdberrors"
 )
@@ -205,20 +206,22 @@ func (m Metadata) BuildTime() time.Time {
 type readerOptions struct {
 	// Intentionally empty for now. ReaderOption callbacks are still invoked so
 	// adding options in a future release is non-breaking.
-	cacheProvider   CacheProvider
+	cacheProvider   cache.Provider
 	cacheConfigured bool
 }
 
 // ReaderOption are options for [Open] and [OpenBytes].
 //
-// This was added to allow for future options, e.g., for caching, without
-// causing a breaking API change.
+// Options are used for configurable behavior such as decode caching without
+// requiring additional API entry points.
 type ReaderOption func(*readerOptions)
 
 // WithCache configures a cache provider used during decoding.
+// Providers are defined in the `github.com/oschwald/maxminddb-golang/v2/cache`
+// package.
 //
 // Passing nil disables string interning cache usage.
-func WithCache(provider CacheProvider) ReaderOption {
+func WithCache(provider cache.Provider) ReaderOption {
 	return func(opts *readerOptions) {
 		opts.cacheConfigured = true
 		opts.cacheProvider = provider

@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/oschwald/maxminddb-golang/v2/cache"
 	"github.com/oschwald/maxminddb-golang/v2/internal/mmdberrors"
 	"github.com/oschwald/maxminddb-golang/v2/mmdbdata"
 )
@@ -86,15 +87,15 @@ func (countingCache) InternAt(offset, size uint, data []byte) string {
 type countingCacheProvider struct {
 	acquireCount int
 	releaseCount int
-	cache        Cache
+	cache        cache.Cache
 }
 
-func (p *countingCacheProvider) Acquire() Cache {
+func (p *countingCacheProvider) Acquire() cache.Cache {
 	p.acquireCount++
 	return p.cache
 }
 
-func (p *countingCacheProvider) Release(Cache) {
+func (p *countingCacheProvider) Release(cache.Cache) {
 	p.releaseCount++
 }
 
@@ -113,7 +114,7 @@ func TestOpenBytesWithCacheOption(t *testing.T) {
 	})
 
 	t.Run("shared provider", func(t *testing.T) {
-		provider := NewSharedCacheProvider(CacheOptions{
+		provider := cache.NewSharedProvider(cache.Options{
 			EntryCount:   2048,
 			MinCachedLen: 2,
 			MaxCachedLen: 32,
@@ -128,7 +129,7 @@ func TestOpenBytesWithCacheOption(t *testing.T) {
 	})
 
 	t.Run("pooled provider", func(t *testing.T) {
-		provider := NewPooledCacheProvider(CacheOptions{
+		provider := cache.NewPooledProvider(cache.Options{
 			EntryCount:   2048,
 			MinCachedLen: 2,
 			MaxCachedLen: 32,
@@ -1490,14 +1491,14 @@ func BenchmarkCityLookupGeneratedLowCacheOff(b *testing.B) {
 func BenchmarkCityLookupGeneratedLowCacheShared(b *testing.B) {
 	benchmarkCityLookupGeneratedLowWithOptions(
 		b,
-		WithCache(NewSharedCacheProvider(DefaultCacheOptions())),
+		WithCache(cache.NewSharedProvider(cache.DefaultOptions())),
 	)
 }
 
 func BenchmarkCityLookupGeneratedLowCachePooled(b *testing.B) {
 	benchmarkCityLookupGeneratedLowWithOptions(
 		b,
-		WithCache(NewPooledCacheProvider(DefaultCacheOptions())),
+		WithCache(cache.NewPooledProvider(cache.DefaultOptions())),
 	)
 }
 

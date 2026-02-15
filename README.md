@@ -114,13 +114,15 @@ err = db.Lookup(ip).Decode(&city)
 
 ### High-Performance Custom Unmarshaling
 
+Use `mmdbdata.Decoder` from `github.com/oschwald/maxminddb-golang/v2/mmdbdata`.
+
 ```go
 type FastCity struct {
 	CountryISO string
 	CityName   string
 }
 
-func (c *FastCity) UnmarshalMaxMindDB(d *maxminddb.Decoder) error {
+func (c *FastCity) UnmarshalMaxMindDB(d *mmdbdata.Decoder) error {
 	mapIter, size, err := d.ReadMap()
 	if err != nil {
 		return err
