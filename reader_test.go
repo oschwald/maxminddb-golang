@@ -1502,6 +1502,13 @@ func BenchmarkCityLookupGeneratedLowCachePooled(b *testing.B) {
 	)
 }
 
+func BenchmarkCityLookupGeneratedLowCacheDefault(b *testing.B) {
+	benchmarkCityLookupGeneratedLowWithOptions(
+		b,
+		WithCache(cache.NewDefaultProvider()),
+	)
+}
+
 func benchmarkCityLookupGeneratedLowWithOptions(b *testing.B, opts ...ReaderOption) {
 	db, err := Open("GeoLite2-City.mmdb", opts...)
 	require.NoError(b, err)

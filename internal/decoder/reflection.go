@@ -9,6 +9,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	"github.com/oschwald/maxminddb-golang/v2/cache"
 	"github.com/oschwald/maxminddb-golang/v2/internal/mmdberrors"
 )
 
@@ -24,7 +25,7 @@ type ReflectionDecoder struct {
 }
 
 type cacheProviderHandle struct {
-	provider CacheProvider
+	provider cache.Provider
 }
 
 // New creates a [ReflectionDecoder].
@@ -36,7 +37,7 @@ func New(buffer []byte) ReflectionDecoder {
 
 // NewWithCacheProvider creates a [ReflectionDecoder] using the provided cache
 // provider for string interning during decode operations.
-func NewWithCacheProvider(buffer []byte, provider CacheProvider) ReflectionDecoder {
+func NewWithCacheProvider(buffer []byte, provider cache.Provider) ReflectionDecoder {
 	rd := New(buffer)
 	if provider != nil {
 		rd.cacheHandle = &cacheProviderHandle{provider: provider}
@@ -72,10 +73,10 @@ func (d *ReflectionDecoder) IsEmptyValueAt(offset uint) (bool, error) {
 func (d *ReflectionDecoder) Decode(offset uint, v any) error {
 	decoderToUse := d
 	if d.cacheHandle != nil {
-		decoderWithCache, cache := d.withCache()
+		decoderWithCache, interner := d.withCache()
 		decoderToUse = &decoderWithCache
-		if cache != nil {
-			defer d.cacheHandle.provider.Release(cache)
+		if interner != nil {
+			defer d.cacheHandle.provider.Release(interner)
 		}
 	}
 
@@ -119,10 +120,10 @@ func (d *ReflectionDecoder) DecodePath(
 ) error {
 	decoderToUse := d
 	if d.cacheHandle != nil {
-		decoderWithCache, cache := d.withCache()
+		decoderWithCache, interner := d.withCache()
 		decoderToUse = &decoderWithCache
-		if cache != nil {
-			defer d.cacheHandle.provider.Release(cache)
+		if interner != nil {
+			defer d.cacheHandle.provider.Release(interner)
 		}
 	}
 
@@ -216,21 +217,21 @@ PATH:
 	return d.wrapError(err, offset)
 }
 
-func (d *ReflectionDecoder) withCache() (ReflectionDecoder, StringInterner) {
+func (d *ReflectionDecoder) withCache() (ReflectionDecoder, cache.Cache) {
 	if d.cacheHandle == nil {
 		return *d, nil
 	}
 
-	cache := d.cacheHandle.provider.Acquire()
-	if cache == nil {
+	interner := d.cacheHandle.provider.Acquire()
+	if interner == nil {
 		return *d, nil
 	}
 
 	dd := d.DataDecoder
-	dd.cache = cache
+	dd.cache = interner
 
 	rd := ReflectionDecoder{DataDecoder: dd}
-	return rd, cache
+	return rd, interner
 }
 
 // wrapError wraps an error with context information when an error occurs.

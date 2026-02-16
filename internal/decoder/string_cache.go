@@ -4,11 +4,6 @@ import (
 	"sync"
 )
 
-// StringInterner interns strings at MMDB offsets.
-type StringInterner interface {
-	InternAt(offset, size uint, data []byte) string
-}
-
 // cacheEntry represents a cached string with its offset and dedicated mutex.
 type cacheEntry struct {
 	str    string

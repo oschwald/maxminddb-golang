@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/oschwald/maxminddb-golang/v2/cache"
 	"github.com/oschwald/maxminddb-golang/v2/internal/mmdberrors"
 )
 
@@ -107,7 +108,7 @@ func (k Kind) IsScalar() bool {
 // This is exported so mmdbdata package can use it, but still internal.
 type DataDecoder struct {
 	stringCache *stringCache
-	cache       StringInterner
+	cache       cache.Cache
 	cacheHandle *cacheProviderHandle
 	buffer      []byte
 }

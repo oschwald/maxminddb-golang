@@ -34,6 +34,11 @@ func DefaultOptions() Options {
 	}
 }
 
+// DefaultProviderOptions returns options used by [NewDefaultProvider].
+func DefaultProviderOptions() Options {
+	return DefaultOptions()
+}
+
 func (o Options) normalized() Options {
 	def := DefaultOptions()
 	out := o
@@ -181,6 +186,12 @@ func NewPooledProvider(opts Options) Provider {
 			},
 		},
 	}
+}
+
+// NewDefaultProvider creates a general-purpose provider tuned for good
+// all-round performance with bounded per-cache memory.
+func NewDefaultProvider() Provider {
+	return NewPooledProvider(DefaultProviderOptions())
 }
 
 type noCache struct{}

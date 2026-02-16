@@ -365,16 +365,13 @@ func OpenBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
 		return nil, mmdberrors.NewInvalidDatabaseError("the MaxMind DB contains invalid metadata")
 	}
 	dataSection := buffer[searchTreeSize+dataSectionSeparatorSize : metadataStart-len(metadataStartMarker)]
-	var d decoder.ReflectionDecoder
-	if opts.cacheConfigured {
-		internalProvider := toInternalCacheProvider(opts.cacheProvider)
-		if internalProvider == nil {
-			internalProvider = decoder.NewNoCacheProvider()
-		}
-		d = decoder.NewWithCacheProvider(dataSection, internalProvider)
-	} else {
-		d = decoder.New(dataSection)
+	provider := opts.cacheProvider
+	if !opts.cacheConfigured {
+		provider = cache.NewDefaultProvider()
+	} else if provider == nil {
+		provider = cache.NewNoCacheProvider()
 	}
+	d := decoder.NewWithCacheProvider(dataSection, provider)
 
 	reader := &Reader{
 		buffer:         buffer,
