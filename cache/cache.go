@@ -5,14 +5,19 @@ package cache
 import "sync"
 
 // Cache interns strings at MMDB offsets.
+//
+// A Cache implementation only needs to be thread-safe if a Provider may return
+// the same Cache instance to multiple goroutines at once.
 type Cache interface {
 	InternAt(offset, size uint, data []byte) string
 }
 
 // Provider acquires and releases caches for decode operations.
 //
+// Acquire and Release must be safe for concurrent use.
+//
 // Providers may return a shared thread-safe Cache or a per-decode exclusive
-// Cache (e.g., from a pool). Release is called after decoding.
+// Cache (for example, from a pool). Release is called after decoding.
 type Provider interface {
 	Acquire() Cache
 	Release(Cache)
@@ -146,8 +151,11 @@ func (p *sharedProvider) Acquire() Cache {
 
 func (*sharedProvider) Release(Cache) {}
 
-// NewSharedProvider creates a provider that returns one shared lock-based
-// cache instance.
+// NewSharedProvider creates a provider that always returns one shared
+// lock-based cache instance.
+//
+// Use this when you prefer a single bounded cache instance shared by all
+// goroutines.
 func NewSharedProvider(opts Options) Provider {
 	opts = opts.normalized()
 	return &sharedProvider{
@@ -177,6 +185,8 @@ func (p *pooledProvider) Release(c Cache) {
 
 // NewPooledProvider creates a provider that returns an exclusive no-lock cache
 // from a pool per decode call.
+//
+// Use this when you want lower lock contention in concurrent decode workloads.
 func NewPooledProvider(opts Options) Provider {
 	opts = opts.normalized()
 	return &pooledProvider{
@@ -190,6 +200,9 @@ func NewPooledProvider(opts Options) Provider {
 
 // NewDefaultProvider creates a general-purpose provider tuned for good
 // all-round performance with bounded per-cache memory.
+//
+// This is the default used by maxminddb.Open/OpenBytes when no explicit
+// WithCache option is provided.
 func NewDefaultProvider() Provider {
 	return NewPooledProvider(DefaultProviderOptions())
 }
@@ -211,6 +224,9 @@ func (p *noCacheProvider) Acquire() Cache {
 func (*noCacheProvider) Release(Cache) {}
 
 // NewNoCacheProvider creates a provider that disables interning.
+//
+// Use this to avoid cache memory/locking overhead when values have little
+// string reuse.
 func NewNoCacheProvider() Provider {
 	return &noCacheProvider{}
 }

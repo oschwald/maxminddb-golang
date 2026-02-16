@@ -198,6 +198,64 @@ var cityName string
 err = db.Lookup(ip).DecodePath(&cityName, "city", "names", "en")
 ```
 
+### Decode Cache Providers
+
+String interning cache behavior is configurable with `WithCache(...)` using
+`github.com/oschwald/maxminddb-golang/v2/cache`.
+
+By default (`Open`/`OpenBytes` without `WithCache`), the reader uses
+`cache.NewDefaultProvider()`.
+
+```go
+import (
+	"github.com/oschwald/maxminddb-golang/v2"
+	"github.com/oschwald/maxminddb-golang/v2/cache"
+)
+
+db, err := maxminddb.Open(
+	"GeoLite2-City.mmdb",
+	maxminddb.WithCache(cache.NewDefaultProvider()),
+)
+```
+
+Use these providers based on workload:
+
+- `cache.NewDefaultProvider()`: best starting point for most applications.
+  Good throughput and low lock contention for concurrent lookups.
+- `cache.NewPooledProvider(opts)`: choose when you want to tune cache size or
+  string-length limits (`cache.Options`) for your workload.
+- `cache.NewSharedProvider(opts)`: one shared lock-based cache. Good when you
+  prefer a single bounded cache instance and simpler behavior.
+- `cache.NewNoCacheProvider()` or `maxminddb.WithCache(nil)`: disable interning.
+  Useful when data has little string reuse or memory overhead from interning is
+  not wanted.
+
+Implement your own cache provider when built-ins do not fit:
+
+```go
+type myCache struct{}
+
+func (myCache) InternAt(offset, size uint, data []byte) string {
+	// Replace with your own strategy.
+	return string(data[offset : offset+size])
+}
+
+type myProvider struct {
+	cache myCache
+}
+
+func (p *myProvider) Acquire() cache.Cache { return p.cache }
+func (p *myProvider) Release(cache.Cache)  {}
+```
+
+Provider safety requirements:
+
+- `Acquire`/`Release` must be safe for concurrent use.
+- If `Acquire` may return the same `cache.Cache` instance to multiple
+  goroutines, that cache must be internally synchronized.
+- If `Acquire` returns exclusive caches (for example, from a pool), those cache
+  instances may be lock-free.
+
 ## Supported Database Types
 
 This library supports **all MaxMind DB (.mmdb) format databases**, including:
