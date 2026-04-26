@@ -2,6 +2,8 @@
 
 ## 2.2.0 - TBD
 
+- Improved reflection decoding performance by skipping `Unmarshaler` checks for
+  destination types that cannot implement the interface.
 - Fixed verifier search-tree size arithmetic to match the reader's safe
   multiplication order instead of using an overflow-prone equivalent formula.
 - Fixed unsigned bounds checks in search-tree node reads and traversal so very

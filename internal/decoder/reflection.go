@@ -18,6 +18,8 @@ type Unmarshaler interface {
 	UnmarshalMaxMindDB(d *Decoder) error
 }
 
+var unmarshalerType = reflect.TypeFor[Unmarshaler]()
+
 // ReflectionDecoder is a decoder for the MMDB data section.
 type ReflectionDecoder struct {
 	DataDecoder
@@ -292,8 +294,9 @@ func (d *ReflectionDecoder) decodeValue(
 		} // dereferenced pointer is always addressable
 	}
 
-	// Check if the value implements Unmarshaler interface using type assertion
-	if result.CanAddr() {
+	// Skip the reflective type assertion when the destination type cannot
+	// implement Unmarshaler. This is the common case in normal struct decoding.
+	if result.CanAddr() && mayImplementUnmarshaler(result.Type()) {
 		if unmarshaler, ok := tryTypeAssert(result.Addr()); ok {
 			decoder := NewDecoder(d.DataDecoder, offset)
 			if err := unmarshaler.UnmarshalMaxMindDB(decoder); err != nil {
@@ -917,7 +920,24 @@ func handleEmbeddedField(
 	return !hasTag
 }
 
-var fieldsMap sync.Map
+var (
+	fieldsMap        sync.Map
+	unmarshalerCache sync.Map
+)
+
+func mayImplementUnmarshaler(t reflect.Type) bool {
+	if t.PkgPath() == "" || t.Kind() == reflect.Interface {
+		return false
+	}
+
+	if cached, ok := unmarshalerCache.Load(t); ok {
+		return cached.(bool)
+	}
+
+	implements := reflect.PointerTo(t).Implements(unmarshalerType)
+	unmarshalerCache.Store(t, implements)
+	return implements
+}
 
 func cachedFields(result reflect.Value) *fieldsType {
 	resultType := result.Type()
