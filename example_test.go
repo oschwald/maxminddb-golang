@@ -97,6 +97,7 @@ func ExampleReader_Networks() {
 	// 187.156.138.0/24: Cable/DSL
 	// 201.243.200.0/24: Corporate
 	// 207.179.48.0/20: Cellular
+	// 214.78.120.0/22: Satellite
 	// 216.160.83.56/29: Corporate
 	// 2003::/24: Cable/DSL
 }
@@ -128,7 +129,7 @@ func ExampleReader_Verify() {
 
 	// Output:
 	// Database type: GeoIP2-City
-	// Build time: 2022-07-26 14:53:10
+	// Build time: 2026-02-04 22:49:29
 	// IP version: IPv6
 	// Languages: [en zh]
 	// Description: GeoIP2 City Test Database (fake GeoIP2 data, for example purposes only)
@@ -238,10 +239,15 @@ func ExampleSkipEmptyValues() {
 	// Only networks with data:
 	// 1.2.0.0/16: map[is_anonymous:true is_anonymous_vpn:true]
 	// 1.124.213.1/32: map[is_anonymous:true is_anonymous_vpn:true is_tor_exit_node:true]
+	// 6.1.0.0/31: map[is_anonymous:true is_anonymous_vpn:true]
+	// 6.1.0.2/32: map[is_anonymous:true is_hosting_provider:true]
+	// 6.1.0.3/32: map[is_anonymous:true is_public_proxy:true]
+	// 6.1.0.4/32: map[is_anonymous:true is_residential_proxy:true]
 	// 65.0.0.0/13: map[is_anonymous:true is_tor_exit_node:true]
 	// 71.160.223.0/24: map[is_anonymous:true is_hosting_provider:true]
 	// 81.2.69.0/24: map[is_anonymous:true is_anonymous_vpn:true is_hosting_provider:true is_public_proxy:true is_residential_proxy:true is_tor_exit_node:true]
 	// 186.30.236.0/24: map[is_anonymous:true is_public_proxy:true]
+	// 2001:480:3a::/64: map[is_anonymous:true is_public_proxy:true]
 	// abcd:1000::/112: map[is_anonymous:true is_public_proxy:true]
 }
 

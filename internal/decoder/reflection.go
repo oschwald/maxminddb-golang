@@ -18,6 +18,8 @@ type Unmarshaler interface {
 	UnmarshalMaxMindDB(d *Decoder) error
 }
 
+var unmarshalerType = reflect.TypeFor[Unmarshaler]()
+
 // ReflectionDecoder is a decoder for the MMDB data section.
 type ReflectionDecoder struct {
 	DataDecoder
@@ -247,12 +249,23 @@ func (d *ReflectionDecoder) decodeValue(
 	offset uint,
 	result addressableValue,
 	depth int,
-) (uint, error) {
+) (newOffset uint, retErr error) {
 	if depth > maximumDataStructureDepth {
 		return 0, mmdberrors.NewInvalidDatabaseError(
 			"exceeded maximum data structure depth; database is likely corrupt",
 		)
 	}
+
+	var allocatedPointers []reflect.Value
+	defer func() {
+		if retErr == nil {
+			return
+		}
+
+		for i := len(allocatedPointers) - 1; i >= 0; i-- {
+			allocatedPointers[i].SetZero()
+		}
+	}()
 
 	// Apply the original indirect logic to handle pointers and interfaces properly
 	for {
@@ -272,6 +285,7 @@ func (d *ReflectionDecoder) decodeValue(
 
 		if result.IsNil() {
 			result.Set(reflect.New(result.Type().Elem()))
+			allocatedPointers = append(allocatedPointers, result.Value)
 		}
 
 		result = addressableValue{
@@ -280,8 +294,9 @@ func (d *ReflectionDecoder) decodeValue(
 		} // dereferenced pointer is always addressable
 	}
 
-	// Check if the value implements Unmarshaler interface using type assertion
-	if result.CanAddr() {
+	// Skip the reflective type assertion when the destination type cannot
+	// implement Unmarshaler. This is the common case in normal struct decoding.
+	if result.CanAddr() && mayImplementUnmarshaler(result.Type()) {
 		if unmarshaler, ok := tryTypeAssert(result.Addr()); ok {
 			decoder := NewDecoder(d.DataDecoder, offset)
 			if err := unmarshaler.UnmarshalMaxMindDB(decoder); err != nil {
@@ -466,6 +481,9 @@ func (d *ReflectionDecoder) unmarshalInt32(
 		reflect.Uint32,
 		reflect.Uint64,
 		reflect.Uintptr:
+		if value < 0 {
+			break
+		}
 		n := uint64(value)
 		if !result.OverflowUint(n) {
 			result.SetUint(n)
@@ -902,7 +920,24 @@ func handleEmbeddedField(
 	return !hasTag
 }
 
-var fieldsMap sync.Map
+var (
+	fieldsMap        sync.Map
+	unmarshalerCache sync.Map
+)
+
+func mayImplementUnmarshaler(t reflect.Type) bool {
+	if t.PkgPath() == "" || t.Kind() == reflect.Interface {
+		return false
+	}
+
+	if cached, ok := unmarshalerCache.Load(t); ok {
+		return cached.(bool)
+	}
+
+	implements := reflect.PointerTo(t).Implements(unmarshalerType)
+	unmarshalerCache.Store(t, implements)
+	return implements
+}
 
 func cachedFields(result reflect.Value) *fieldsType {
 	resultType := result.Type()
@@ -1242,7 +1277,17 @@ func (d *ReflectionDecoder) tryFastDecodeTyped(
 	case reflect.Ptr:
 		// Handle pointer to fast types
 		if result.IsNil() {
-			result.Set(reflect.New(expectedType.Elem()))
+			elem := reflect.New(expectedType.Elem()).Elem()
+			finalOffset, ok := d.tryFastDecodeTyped(
+				offset,
+				addressableValue{elem, false},
+				expectedType.Elem(),
+			)
+			if !ok {
+				return 0, false
+			}
+			result.Set(elem.Addr())
+			return finalOffset, true
 		}
 		return d.tryFastDecodeTyped(
 			offset,

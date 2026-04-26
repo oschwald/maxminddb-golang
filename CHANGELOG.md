@@ -2,8 +2,26 @@
 
 ## 2.2.0 - TBD
 
+- Improved reflection decoding performance by skipping `Unmarshaler` checks for
+  destination types that cannot implement the interface.
+- Fixed verifier search-tree size arithmetic to match the reader's safe
+  multiplication order instead of using an overflow-prone equivalent formula.
+- Fixed unsigned bounds checks in search-tree node reads and traversal so very
+  short malformed buffers return errors instead of underflowing the bounds
+  calculation.
+- Fixed the reflection decoder so pointer fields are not allocated when
+  decoding fails with a type mismatch.
+- Fixed `Result.Prefix()` to use the reader's measured IPv4 subtree depth
+  instead of assuming IPv4 records always start at bit 96 in IPv6 databases.
+- Fixed reflection decoding of negative `int32` values into unsigned Go fields
+  so it now returns a type error instead of wrapping them to large integers.
+- Fixed lookups that followed malformed search-tree pointers past the data
+  section so they now fail during `Lookup` instead of surfacing a deferred
+  decode error.
 - An error is returned when a `maxminddb` struct tag is clearly invalid (non
   UTF-8) instead of silently ignoring validation failures.
+- Increased internal string cache size to 4096 entries to reduce cache thrashing
+  and improve concurrent performance.
 
 ## 2.1.1 - 2025-11-26
 

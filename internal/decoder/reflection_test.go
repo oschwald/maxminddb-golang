@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -66,6 +67,34 @@ func TestInt32(t *testing.T) {
 		"040180000001": int32(-2147483647),
 	}
 	validateDecoding(t, int32s)
+}
+
+func TestNegativeInt32DoesNotDecodeIntoUint(t *testing.T) {
+	inputBytes, err := hex.DecodeString("0401ffffffff")
+	require.NoError(t, err)
+
+	d := New(inputBytes)
+
+	var result uint64
+	err = d.Decode(0, &result)
+	require.Error(t, err)
+	assert.Equal(t, uint64(0), result)
+	assert.Contains(t, err.Error(), "cannot unmarshal -1 (int32) into type uint64")
+}
+
+func TestFastDecodePointerFieldDoesNotAllocateOnTypeError(t *testing.T) {
+	inputBytes, err := hex.DecodeString("e14173c101")
+	require.NoError(t, err)
+
+	d := New(inputBytes)
+
+	var result struct {
+		S *string `maxminddb:"s"`
+	}
+	err = d.Decode(0, &result)
+	require.Error(t, err)
+	assert.Nil(t, result.S)
+	assert.Contains(t, err.Error(), "cannot unmarshal 1 (uint64) into type string")
 }
 
 func TestMap(t *testing.T) {
