@@ -206,21 +206,21 @@ func TestLookupNetwork(t *testing.T) {
 			IP:              netip.MustParseAddr("200.0.2.1"),
 			DBFile:          "MaxMind-DB-no-ipv4-search-tree.mmdb",
 			ExpectedNetwork: "::/64",
-			ExpectedRecord:  "::0/64",
+			ExpectedRecord:  "::/64",
 			ExpectedFound:   true,
 		},
 		{
 			IP:              netip.MustParseAddr("::200.0.2.1"),
 			DBFile:          "MaxMind-DB-no-ipv4-search-tree.mmdb",
 			ExpectedNetwork: "::/64",
-			ExpectedRecord:  "::0/64",
+			ExpectedRecord:  "::/64",
 			ExpectedFound:   true,
 		},
 		{
 			IP:              netip.MustParseAddr("0:0:0:0:ffff:ffff:ffff:ffff"),
 			DBFile:          "MaxMind-DB-no-ipv4-search-tree.mmdb",
 			ExpectedNetwork: "::/64",
-			ExpectedRecord:  "::0/64",
+			ExpectedRecord:  "::/64",
 			ExpectedFound:   true,
 		},
 		{
@@ -712,6 +712,25 @@ func TestInvalidNodeCountDatabase(t *testing.T) {
 	assert.Equal(t, expected, err)
 }
 
+func TestDecodeDeeplyNestedBadData(t *testing.T) {
+	tests := []string{
+		"libmaxminddb/libmaxminddb-deep-array-nesting.mmdb",
+		"libmaxminddb/libmaxminddb-deep-nesting.mmdb",
+	}
+
+	for _, file := range tests {
+		t.Run(file, func(t *testing.T) {
+			reader, err := Open(badDataFile(file))
+			require.NoError(t, err)
+			defer reader.Close()
+
+			var result any
+			err = reader.Lookup(netip.MustParseAddr("1.1.1.1")).Decode(&result)
+			require.ErrorContains(t, err, "exceeded maximum data structure depth")
+		})
+	}
+}
+
 func TestMissingDatabase(t *testing.T) {
 	reader, err := Open("file-does-not-exist.mmdb")
 	assert.Nil(t, reader, "received reader when doing lookups on DB that doesn't exist")
@@ -769,9 +788,9 @@ func checkMetadata(t *testing.T, reader *Reader, ipVersion, recordSize uint) {
 	assert.Equal(t, []string{"en", "zh"}, metadata.Languages)
 
 	if ipVersion == 4 {
-		assert.Equal(t, uint(164), metadata.NodeCount)
+		assert.Equal(t, uint(163), metadata.NodeCount)
 	} else {
-		assert.Equal(t, uint(416), metadata.NodeCount)
+		assert.Equal(t, uint(415), metadata.NodeCount)
 	}
 
 	assert.Equal(t, recordSize, metadata.RecordSize)
@@ -1111,6 +1130,10 @@ func randomIPv4Address(r *rand.Rand, ip []byte) netip.Addr {
 
 func testFile(file string) string {
 	return filepath.Join("test-data", "test-data", file)
+}
+
+func badDataFile(file string) string {
+	return filepath.Join("test-data", "bad-data", file)
 }
 
 // Test custom unmarshaling through Reader.Lookup.
