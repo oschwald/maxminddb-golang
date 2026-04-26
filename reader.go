@@ -436,6 +436,10 @@ func (r *Reader) setIPv4Start() error {
 	return nil
 }
 
+func (r *Reader) hasIPv4Subtree() bool {
+	return r.Metadata.IPVersion == 4 || r.ipv4Start < r.Metadata.NodeCount
+}
+
 var zeroIP = netip.MustParseAddr("::")
 
 func (r *Reader) lookupPointer(ip netip.Addr) (uint, int, error) {

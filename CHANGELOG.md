@@ -2,6 +2,8 @@
 
 ## 2.2.0 - TBD
 
+- Fixed `Result.Prefix()` to use the reader's measured IPv4 subtree depth
+  instead of assuming IPv4 records always start at bit 96 in IPv6 databases.
 - Fixed reflection decoding of negative `int32` values into unsigned Go fields
   so it now returns a type error instead of wrapping them to large integers.
 - Fixed lookups that followed malformed search-tree pointers past the data
