@@ -2,6 +2,8 @@
 
 ## 2.2.0 - TBD
 
+- Fixed the reflection decoder so pointer fields are not allocated when
+  decoding fails with a type mismatch.
 - Fixed `Result.Prefix()` to use the reader's measured IPv4 subtree depth
   instead of assuming IPv4 records always start at bit 96 in IPv6 databases.
 - Fixed reflection decoding of negative `int32` values into unsigned Go fields

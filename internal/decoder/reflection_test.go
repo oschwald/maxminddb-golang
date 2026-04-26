@@ -82,6 +82,21 @@ func TestNegativeInt32DoesNotDecodeIntoUint(t *testing.T) {
 	assert.Contains(t, err.Error(), "cannot unmarshal -1 (int32) into type uint64")
 }
 
+func TestFastDecodePointerFieldDoesNotAllocateOnTypeError(t *testing.T) {
+	inputBytes, err := hex.DecodeString("e14173c101")
+	require.NoError(t, err)
+
+	d := New(inputBytes)
+
+	var result struct {
+		S *string `maxminddb:"s"`
+	}
+	err = d.Decode(0, &result)
+	require.Error(t, err)
+	assert.Nil(t, result.S)
+	assert.Contains(t, err.Error(), "cannot unmarshal 1 (uint64) into type string")
+}
+
 func TestMap(t *testing.T) {
 	maps := map[string]any{
 		"e0":                             map[string]any{},
