@@ -466,6 +466,9 @@ func (d *ReflectionDecoder) unmarshalInt32(
 		reflect.Uint32,
 		reflect.Uint64,
 		reflect.Uintptr:
+		if value < 0 {
+			break
+		}
 		n := uint64(value)
 		if !result.OverflowUint(n) {
 			result.SetUint(n)

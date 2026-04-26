@@ -2,6 +2,8 @@
 
 ## 2.2.0 - TBD
 
+- Fixed reflection decoding of negative `int32` values into unsigned Go fields
+  so it now returns a type error instead of wrapping them to large integers.
 - Fixed lookups that followed malformed search-tree pointers past the data
   section so they now fail during `Lookup` instead of surfacing a deferred
   decode error.
