@@ -1,6 +1,6 @@
 # Changes
 
-## 2.2.0 - TBD
+## 2.2.0 - 2026-04-26
 
 - Improved reflection decoding performance by skipping `Unmarshaler` checks for
   destination types that cannot implement the interface.
