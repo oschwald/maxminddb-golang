@@ -140,8 +140,9 @@ type Reader struct {
 	buffer            []byte
 	Metadata          Metadata
 	ipv4Start         uint
-	ipv4StartBitDepth int
 	nodeOffsetMult    uint
+	dataSectionSize   uint
+	ipv4StartBitDepth int
 }
 
 // Metadata holds the metadata decoded from the MaxMind DB file.
@@ -354,12 +355,13 @@ func OpenBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
 	)
 
 	reader := &Reader{
-		buffer:         buffer,
-		decoder:        d,
-		Metadata:       metadata,
-		ipv4Start:      0,
-		nodeOffsetMult: metadata.RecordSize / 4,
-		hasMappedFile:  &atomic.Bool{},
+		buffer:          buffer,
+		dataSectionSize: dataSectionEnd - dataSectionStart,
+		decoder:         d,
+		Metadata:        metadata,
+		ipv4Start:       0,
+		nodeOffsetMult:  metadata.RecordSize / 4,
+		hasMappedFile:   &atomic.Bool{},
 	}
 
 	err = reader.setIPv4Start()
@@ -702,7 +704,7 @@ func (r *Reader) resolveDataPointer(pointer uint) (uintptr, error) {
 	}
 
 	resolved := uintptr(pointer - minPointer)
-	if resolved < uintptr(len(r.buffer)) {
+	if resolved < uintptr(r.dataSectionSize) {
 		return resolved, nil
 	}
 

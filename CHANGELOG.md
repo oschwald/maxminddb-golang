@@ -2,6 +2,9 @@
 
 ## 2.2.0 - TBD
 
+- Fixed lookups that followed malformed search-tree pointers past the data
+  section so they now fail during `Lookup` instead of surfacing a deferred
+  decode error.
 - An error is returned when a `maxminddb` struct tag is clearly invalid (non
   UTF-8) instead of silently ignoring validation failures.
 
