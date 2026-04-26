@@ -9,56 +9,71 @@ import (
 
 func TestBadDataFixtures(t *testing.T) {
 	tests := []struct {
-		name        string
-		openError   string
-		verifyError string
-		lookupIP    string
-		lookupError string
-		decodeError string
+		name             string
+		openError        string
+		verifyError      string
+		lookupIP         string
+		lookupError      string
+		decodeError      string
+		iterateCount     int
+		iterateError     string
+		iterateDecodeErr string
 	}{
 		{
-			name:        "libmaxminddb/libmaxminddb-corrupt-search-tree.mmdb",
-			verifyError: "description - Expected: non-empty map",
+			name:         "libmaxminddb/libmaxminddb-corrupt-search-tree.mmdb",
+			verifyError:  "description - Expected: non-empty map",
+			iterateCount: 2,
 		},
 		{
-			name:        "libmaxminddb/libmaxminddb-deep-array-nesting.mmdb",
-			verifyError: "description - Expected: non-empty map",
-			lookupIP:    "1.1.1.1",
-			decodeError: "exceeded maximum data structure depth",
+			name:             "libmaxminddb/libmaxminddb-deep-array-nesting.mmdb",
+			verifyError:      "description - Expected: non-empty map",
+			lookupIP:         "1.1.1.1",
+			decodeError:      "exceeded maximum data structure depth",
+			iterateCount:     2,
+			iterateDecodeErr: "exceeded maximum data structure depth",
 		},
 		{
-			name:        "libmaxminddb/libmaxminddb-deep-nesting.mmdb",
-			verifyError: "description - Expected: non-empty map",
-			lookupIP:    "1.1.1.1",
-			decodeError: "exceeded maximum data structure depth",
+			name:             "libmaxminddb/libmaxminddb-deep-nesting.mmdb",
+			verifyError:      "description - Expected: non-empty map",
+			lookupIP:         "1.1.1.1",
+			decodeError:      "exceeded maximum data structure depth",
+			iterateCount:     2,
+			iterateDecodeErr: "exceeded maximum data structure depth",
 		},
 		{
-			name:        "libmaxminddb/libmaxminddb-empty-array-last-in-metadata.mmdb",
-			verifyError: "description - Expected: non-empty map",
+			name:         "libmaxminddb/libmaxminddb-empty-array-last-in-metadata.mmdb",
+			verifyError:  "description - Expected: non-empty map",
+			iterateCount: 2,
 		},
 		{
-			name:        "libmaxminddb/libmaxminddb-empty-map-last-in-metadata.mmdb",
-			verifyError: "description - Expected: non-empty map",
+			name:         "libmaxminddb/libmaxminddb-empty-map-last-in-metadata.mmdb",
+			verifyError:  "description - Expected: non-empty map",
+			iterateCount: 2,
 		},
 		{
 			name:      "libmaxminddb/libmaxminddb-offset-integer-overflow.mmdb",
 			openError: "unexpected end of database",
 		},
 		{
-			name:        "libmaxminddb/libmaxminddb-oversized-array.mmdb",
-			verifyError: "description - Expected: non-empty map",
-			lookupIP:    "1.1.1.1",
-			decodeError: "unexpected end of database",
+			name:             "libmaxminddb/libmaxminddb-oversized-array.mmdb",
+			verifyError:      "description - Expected: non-empty map",
+			lookupIP:         "1.1.1.1",
+			decodeError:      "unexpected end of database",
+			iterateCount:     1,
+			iterateDecodeErr: "unexpected end of database",
 		},
 		{
-			name:        "libmaxminddb/libmaxminddb-oversized-map.mmdb",
-			verifyError: "description - Expected: non-empty map",
-			lookupIP:    "1.1.1.1",
-			decodeError: "unexpected end of database",
+			name:             "libmaxminddb/libmaxminddb-oversized-map.mmdb",
+			verifyError:      "description - Expected: non-empty map",
+			lookupIP:         "1.1.1.1",
+			decodeError:      "unexpected end of database",
+			iterateCount:     1,
+			iterateDecodeErr: "unexpected end of database",
 		},
 		{
-			name:        "libmaxminddb/libmaxminddb-uint64-max-epoch.mmdb",
-			verifyError: "description - Expected: non-empty map",
+			name:         "libmaxminddb/libmaxminddb-uint64-max-epoch.mmdb",
+			verifyError:  "description - Expected: non-empty map",
+			iterateCount: 2,
 		},
 		{
 			name:      "maxminddb-golang/cyclic-data-structure.mmdb",
@@ -89,11 +104,13 @@ func TestBadDataFixtures(t *testing.T) {
 			openError: "cannot unmarshal [] ([]uint8) into type []string",
 		},
 		{
-			name:        "maxminddb-python/bad-unicode-in-map-key.mmdb",
-			verifyError: "search tree is corrupt",
-			lookupIP:    "0.0.0.0",
-			lookupError: "search tree is corrupt",
-			decodeError: "search tree is corrupt",
+			name:         "maxminddb-python/bad-unicode-in-map-key.mmdb",
+			verifyError:  "search tree is corrupt",
+			lookupIP:     "0.0.0.0",
+			lookupError:  "search tree is corrupt",
+			decodeError:  "search tree is corrupt",
+			iterateCount: 1,
+			iterateError: "search tree is corrupt",
 		},
 	}
 
@@ -106,7 +123,9 @@ func TestBadDataFixtures(t *testing.T) {
 			}
 
 			require.NoError(t, err)
-			defer reader.Close()
+			t.Cleanup(func() {
+				require.NoError(t, reader.Close())
+			})
 
 			if tt.verifyError != "" {
 				require.ErrorContains(t, reader.Verify(), tt.verifyError)
@@ -126,10 +145,48 @@ func TestBadDataFixtures(t *testing.T) {
 			var value any
 			if tt.decodeError != "" {
 				require.ErrorContains(t, result.Decode(&value), tt.decodeError)
+			} else {
+				require.NoError(t, result.Decode(&value))
+			}
+
+			if tt.iterateCount == 0 {
 				return
 			}
 
-			require.NoError(t, result.Decode(&value))
+			count := 0
+			sawIterError := false
+			sawIterDecodeError := false
+			for iterResult := range reader.Networks(IncludeNetworksWithoutData()) {
+				count++
+				if tt.iterateError != "" && iterResult.Err() != nil {
+					require.ErrorContains(t, iterResult.Err(), tt.iterateError)
+					sawIterError = true
+					break
+				}
+
+				require.NoError(t, iterResult.Err())
+
+				var iterValue any
+				if tt.iterateDecodeErr != "" {
+					err = iterResult.Decode(&iterValue)
+					if err != nil {
+						require.ErrorContains(t, err, tt.iterateDecodeErr)
+						sawIterDecodeError = true
+						break
+					}
+					continue
+				}
+
+				require.NoError(t, iterResult.Decode(&iterValue))
+			}
+
+			require.Equal(t, tt.iterateCount, count)
+			if tt.iterateError != "" {
+				require.True(t, sawIterError)
+			}
+			if tt.iterateDecodeErr != "" {
+				require.True(t, sawIterDecodeError)
+			}
 		})
 	}
 }

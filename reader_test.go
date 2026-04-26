@@ -712,25 +712,6 @@ func TestInvalidNodeCountDatabase(t *testing.T) {
 	assert.Equal(t, expected, err)
 }
 
-func TestDecodeDeeplyNestedBadData(t *testing.T) {
-	tests := []string{
-		"libmaxminddb/libmaxminddb-deep-array-nesting.mmdb",
-		"libmaxminddb/libmaxminddb-deep-nesting.mmdb",
-	}
-
-	for _, file := range tests {
-		t.Run(file, func(t *testing.T) {
-			reader, err := Open(badDataFile(file))
-			require.NoError(t, err)
-			defer reader.Close()
-
-			var result any
-			err = reader.Lookup(netip.MustParseAddr("1.1.1.1")).Decode(&result)
-			require.ErrorContains(t, err, "exceeded maximum data structure depth")
-		})
-	}
-}
-
 func TestMissingDatabase(t *testing.T) {
 	reader, err := Open("file-does-not-exist.mmdb")
 	assert.Nil(t, reader, "received reader when doing lookups on DB that doesn't exist")
