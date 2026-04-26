@@ -2,6 +2,8 @@
 
 ## 2.2.0 - TBD
 
+- Fixed verifier search-tree size arithmetic to match the reader's safe
+  multiplication order instead of using an overflow-prone equivalent formula.
 - Fixed unsigned bounds checks in search-tree node reads and traversal so very
   short malformed buffers return errors instead of underflowing the bounds
   calculation.

@@ -344,7 +344,7 @@ func OpenBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
 		}
 	}
 
-	searchTreeSize := metadata.NodeCount * (metadata.RecordSize / 4)
+	searchTreeSize := searchTreeSizeBytes(metadata.NodeCount, metadata.RecordSize)
 	dataSectionStart := searchTreeSize + dataSectionSeparatorSize
 	dataSectionEnd := uint(metadataStart - len(metadataStartMarker))
 	if dataSectionStart > dataSectionEnd {
@@ -370,6 +370,10 @@ func OpenBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
 	}
 
 	return reader, nil
+}
+
+func searchTreeSizeBytes(nodeCount, recordSize uint) uint {
+	return nodeCount * (recordSize / 4)
 }
 
 // Lookup retrieves the database record for ip and returns a Result, which can

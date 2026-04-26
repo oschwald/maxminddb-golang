@@ -78,3 +78,10 @@ func TestVerifyDataSectionSeparatorOutOfBounds(t *testing.T) {
 		assert.ErrorContains(t, err, "unexpected end of database")
 	})
 }
+
+func TestSearchTreeSizeBytesUsesSafeMultiplicationOrder(t *testing.T) {
+	nodeCount := ^uint(0)/16 + 1
+
+	assert.Equal(t, nodeCount*8, searchTreeSizeBytes(nodeCount, 32))
+	assert.NotEqual(t, (nodeCount*32)/4, searchTreeSizeBytes(nodeCount, 32))
+}
