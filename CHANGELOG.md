@@ -2,6 +2,9 @@
 
 ## 2.2.0 - TBD
 
+- Fixed unsigned bounds checks in search-tree node reads and traversal so very
+  short malformed buffers return errors instead of underflowing the bounds
+  calculation.
 - Fixed the reflection decoder so pointer fields are not allocated when
   decoding fails with a type mismatch.
 - Fixed `Result.Prefix()` to use the reader's measured IPv4 subtree depth

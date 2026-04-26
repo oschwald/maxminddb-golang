@@ -472,7 +472,7 @@ func readNodeBySize(buffer []byte, offset, bit, recordSize uint) (uint, error) {
 	switch recordSize {
 	case 24:
 		offset += bit * 3
-		if offset > bufferLen-3 {
+		if !hasBufferRange(bufferLen, offset, 3) {
 			return 0, mmdberrors.NewInvalidDatabaseError(
 				"bounds check failed: insufficient buffer for 24-bit node read",
 			)
@@ -482,7 +482,7 @@ func readNodeBySize(buffer []byte, offset, bit, recordSize uint) (uint, error) {
 			uint(buffer[offset+2]), nil
 	case 28:
 		if bit == 0 {
-			if offset > bufferLen-4 {
+			if !hasBufferRange(bufferLen, offset, 4) {
 				return 0, mmdberrors.NewInvalidDatabaseError(
 					"bounds check failed: insufficient buffer for 28-bit node read",
 				)
@@ -492,7 +492,7 @@ func readNodeBySize(buffer []byte, offset, bit, recordSize uint) (uint, error) {
 				(uint(buffer[offset+1]) << 8) |
 				uint(buffer[offset+2]), nil
 		}
-		if offset > bufferLen-7 {
+		if !hasBufferRange(bufferLen, offset, 7) {
 			return 0, mmdberrors.NewInvalidDatabaseError(
 				"bounds check failed: insufficient buffer for 28-bit node read",
 			)
@@ -503,7 +503,7 @@ func readNodeBySize(buffer []byte, offset, bit, recordSize uint) (uint, error) {
 			uint(buffer[offset+6]), nil
 	case 32:
 		offset += bit * 4
-		if offset > bufferLen-4 {
+		if !hasBufferRange(bufferLen, offset, 4) {
 			return 0, mmdberrors.NewInvalidDatabaseError(
 				"bounds check failed: insufficient buffer for 32-bit node read",
 			)
@@ -525,7 +525,7 @@ func readNodePairBySize(buffer []byte, baseOffset, recordSize uint) (left, right
 	switch recordSize {
 	case 24:
 		// Each child is 3 bytes; total 6 bytes starting at baseOffset
-		if baseOffset > bufferLen-6 {
+		if !hasBufferRange(bufferLen, baseOffset, 6) {
 			return 0, 0, mmdberrors.NewInvalidDatabaseError(
 				"bounds check failed: insufficient buffer for 24-bit node pair read",
 			)
@@ -538,7 +538,7 @@ func readNodePairBySize(buffer []byte, baseOffset, recordSize uint) (left, right
 	case 28:
 		// Left uses high nibble of shared byte, right uses low nibble.
 		// Layout: [A B C S][D E F] where S provides 4 shared bits for each child
-		if baseOffset > bufferLen-7 {
+		if !hasBufferRange(bufferLen, baseOffset, 7) {
 			return 0, 0, mmdberrors.NewInvalidDatabaseError(
 				"bounds check failed: insufficient buffer for 28-bit node pair read",
 			)
@@ -557,7 +557,7 @@ func readNodePairBySize(buffer []byte, baseOffset, recordSize uint) (left, right
 		return left, right, nil
 	case 32:
 		// Each child is 4 bytes; total 8 bytes
-		if baseOffset > bufferLen-8 {
+		if !hasBufferRange(bufferLen, baseOffset, 8) {
 			return 0, 0, mmdberrors.NewInvalidDatabaseError(
 				"bounds check failed: insufficient buffer for 32-bit node pair read",
 			)
@@ -613,7 +613,7 @@ func (r *Reader) traverseTree24(ip netip.Addr, node uint, stopBit int) (uint, in
 		baseOffset := node * 6
 		offset := baseOffset + bit*3
 
-		if offset > bufferLen-3 {
+		if !hasBufferRange(bufferLen, offset, 3) {
 			return 0, 0, mmdberrors.NewInvalidDatabaseError(
 				"bounds check failed during tree traversal",
 			)
@@ -646,7 +646,8 @@ func (r *Reader) traverseTree28(ip netip.Addr, node uint, stopBit int) (uint, in
 		baseOffset := node * 7
 		offset := baseOffset + bit*4
 
-		if baseOffset > bufferLen-4 || offset > bufferLen-3 {
+		if !hasBufferRange(bufferLen, baseOffset, 4) ||
+			!hasBufferRange(bufferLen, offset, 3) {
 			return 0, 0, mmdberrors.NewInvalidDatabaseError(
 				"bounds check failed during tree traversal",
 			)
@@ -685,7 +686,7 @@ func (r *Reader) traverseTree32(ip netip.Addr, node uint, stopBit int) (uint, in
 		baseOffset := node * 8
 		offset := baseOffset + bit*4
 
-		if offset > bufferLen-4 {
+		if !hasBufferRange(bufferLen, offset, 4) {
 			return 0, 0, mmdberrors.NewInvalidDatabaseError(
 				"bounds check failed during tree traversal",
 			)
@@ -698,6 +699,10 @@ func (r *Reader) traverseTree32(ip netip.Addr, node uint, stopBit int) (uint, in
 	}
 
 	return node, i, nil
+}
+
+func hasBufferRange(bufferLen, offset, size uint) bool {
+	return size <= bufferLen && offset <= bufferLen-size
 }
 
 func (r *Reader) resolveDataPointer(pointer uint) (uintptr, error) {
