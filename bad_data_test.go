@@ -1,6 +1,7 @@
 package maxminddb
 
 import (
+	"math/bits"
 	"net/netip"
 	"testing"
 
@@ -116,6 +117,15 @@ func TestBadDataFixtures(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Skip uint64-max-epoch test on 32-bit architectures: the test fails as
+			// BuildEpoch is defined as a uint type (ie. 32 bits), leading to error:
+			// cannot unmarshal 18446744073709551615 (uint64) into type uint
+			if bits.UintSize == 32 {
+				if tt.name == "libmaxminddb/libmaxminddb-uint64-max-epoch.mmdb" {
+					t.Skip("Skipping on 32-bit architectures")
+				}
+			}
+
 			reader, err := Open(badDataFile(tt.name))
 			if tt.openError != "" {
 				require.ErrorContains(t, err, tt.openError)
