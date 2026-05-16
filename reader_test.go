@@ -911,71 +911,100 @@ func BenchmarkLookupNetwork(b *testing.B) {
 	require.NoError(b, db.Close(), "error on close")
 }
 
-type fullCity struct {
-	City struct {
-		GeoNameID uint              `maxminddb:"geoname_id"`
-		Names     map[string]string `maxminddb:"names"`
-	} `maxminddb:"city"`
-	Continent struct {
-		Code      string            `maxminddb:"code"`
-		GeoNameID uint              `maxminddb:"geoname_id"`
-		Names     map[string]string `maxminddb:"names"`
-	} `maxminddb:"continent"`
-	Country struct {
-		GeoNameID         uint              `maxminddb:"geoname_id"`
-		IsInEuropeanUnion bool              `maxminddb:"is_in_european_union"`
-		IsoCode           string            `maxminddb:"iso_code"`
-		Names             map[string]string `maxminddb:"names"`
-	} `maxminddb:"country"`
-	Location struct {
-		AccuracyRadius uint16  `maxminddb:"accuracy_radius"`
-		Latitude       float64 `maxminddb:"latitude"`
-		Longitude      float64 `maxminddb:"longitude"`
-		MetroCode      uint    `maxminddb:"metro_code"`
-		TimeZone       string  `maxminddb:"time_zone"`
-	} `maxminddb:"location"`
-	Postal struct {
-		Code string `maxminddb:"code"`
-	} `maxminddb:"postal"`
-	RegisteredCountry struct {
-		GeoNameID         uint              `maxminddb:"geoname_id"`
-		IsInEuropeanUnion bool              `maxminddb:"is_in_european_union"`
-		IsoCode           string            `maxminddb:"iso_code"`
-		Names             map[string]string `maxminddb:"names"`
-	} `maxminddb:"registered_country"`
-	RepresentedCountry struct {
-		GeoNameID         uint              `maxminddb:"geoname_id"`
-		IsInEuropeanUnion bool              `maxminddb:"is_in_european_union"`
-		IsoCode           string            `maxminddb:"iso_code"`
-		Names             map[string]string `maxminddb:"names"`
-		Type              string            `maxminddb:"type"`
-	} `maxminddb:"represented_country"`
-	Subdivisions []struct {
-		GeoNameID uint              `maxminddb:"geoname_id"`
-		IsoCode   string            `maxminddb:"iso_code"`
-		Names     map[string]string `maxminddb:"names"`
-	} `maxminddb:"subdivisions"`
-	Traits struct {
-		IsAnonymousProxy    bool `maxminddb:"is_anonymous_proxy"`
-		IsSatelliteProvider bool `maxminddb:"is_satellite_provider"`
-	} `maxminddb:"traits"`
+type benchmarkNames struct {
+	German              string `maxminddb:"de"`
+	English             string `maxminddb:"en"`
+	Spanish             string `maxminddb:"es"`
+	French              string `maxminddb:"fr"`
+	Japanese            string `maxminddb:"ja"`
+	BrazilianPortuguese string `maxminddb:"pt-BR"`
+	Russian             string `maxminddb:"ru"`
+	SimplifiedChinese   string `maxminddb:"zh-CN"`
 }
 
+type benchmarkContinent struct {
+	Names     benchmarkNames `maxminddb:"names"`
+	Code      string         `maxminddb:"code"`
+	GeoNameID uint           `maxminddb:"geoname_id"`
+}
+
+type benchmarkLocation struct {
+	Latitude       *float64 `maxminddb:"latitude"`
+	Longitude      *float64 `maxminddb:"longitude"`
+	TimeZone       string   `maxminddb:"time_zone"`
+	MetroCode      uint     `maxminddb:"metro_code"`
+	AccuracyRadius uint16   `maxminddb:"accuracy_radius"`
+}
+
+type benchmarkRepresentedCountry struct {
+	Names             benchmarkNames `maxminddb:"names"`
+	ISOCode           string         `maxminddb:"iso_code"`
+	Type              string         `maxminddb:"type"`
+	GeoNameID         uint           `maxminddb:"geoname_id"`
+	IsInEuropeanUnion bool           `maxminddb:"is_in_european_union"`
+}
+
+type benchmarkCityRecord struct {
+	Names     benchmarkNames `maxminddb:"names"`
+	GeoNameID uint           `maxminddb:"geoname_id"`
+}
+
+type benchmarkCityPostal struct {
+	Code string `maxminddb:"code"`
+}
+
+type benchmarkCitySubdivision struct {
+	Names     benchmarkNames `maxminddb:"names"`
+	ISOCode   string         `maxminddb:"iso_code"`
+	GeoNameID uint           `maxminddb:"geoname_id"`
+}
+
+type benchmarkCountryRecord struct {
+	Names             benchmarkNames `maxminddb:"names"`
+	ISOCode           string         `maxminddb:"iso_code"`
+	GeoNameID         uint           `maxminddb:"geoname_id"`
+	IsInEuropeanUnion bool           `maxminddb:"is_in_european_union"`
+}
+
+type benchmarkCityTraits struct {
+	IPAddress netip.Addr
+	Network   netip.Prefix
+	IsAnycast bool `maxminddb:"is_anycast"`
+}
+
+type benchmarkCity struct {
+	Traits             benchmarkCityTraits         `maxminddb:"traits"`
+	Postal             benchmarkCityPostal         `maxminddb:"postal"`
+	Continent          benchmarkContinent          `maxminddb:"continent"`
+	City               benchmarkCityRecord         `maxminddb:"city"`
+	Subdivisions       []benchmarkCitySubdivision  `maxminddb:"subdivisions"`
+	RepresentedCountry benchmarkRepresentedCountry `maxminddb:"represented_country"`
+	Country            benchmarkCountryRecord      `maxminddb:"country"`
+	RegisteredCountry  benchmarkCountryRecord      `maxminddb:"registered_country"`
+	Location           benchmarkLocation           `maxminddb:"location"`
+}
+
+// benchmarkCity mirrors geoip2-golang's City result shape, and the city
+// lookup benchmarks below also populate Traits.IPAddress and Traits.Network to
+// match geoip2.Reader.City's post-decode work.
 func BenchmarkCityLookup(b *testing.B) {
 	db, err := Open("GeoLite2-City.mmdb")
 	require.NoError(b, err)
 
 	//nolint:gosec // this is a test
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	var result fullCity
+	var result benchmarkCity
 
 	s := make(net.IP, 4)
 	for b.Loop() {
 		ip := randomIPv4Address(r, s)
-		err = db.Lookup(ip).Decode(&result)
+		lookupResult := db.Lookup(ip)
+		err = lookupResult.Decode(&result)
 		if err != nil {
 			b.Error(err)
 		}
+		result.Traits.IPAddress = ip
+		result.Traits.Network = lookupResult.Prefix()
 	}
 	require.NoError(b, db.Close(), "error on close")
 }
@@ -1073,15 +1102,18 @@ func BenchmarkCityLookupConcurrent(b *testing.B) {
 						//nolint:gosec // this is a test
 						r := rand.New(rand.NewSource(time.Now().UnixNano()))
 						s := make(net.IP, 4)
-						var result fullCity
+						var result benchmarkCity
 
 						for range lookupsPerGoroutine {
 							ip := randomIPv4Address(r, s)
-							err := db.Lookup(ip).Decode(&result)
+							lookupResult := db.Lookup(ip)
+							err := lookupResult.Decode(&result)
 							if err != nil {
 								b.Error(err)
 								return
 							}
+							result.Traits.IPAddress = ip
+							result.Traits.Network = lookupResult.Prefix()
 							// Access string fields to exercise the cache
 							_ = result.City.Names
 							_ = result.Country.Names
