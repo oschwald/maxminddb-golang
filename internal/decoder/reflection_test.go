@@ -83,6 +83,82 @@ func TestNegativeInt32DoesNotDecodeIntoUint(t *testing.T) {
 	assert.Contains(t, err.Error(), "cannot unmarshal -1 (int32) into type uint64")
 }
 
+// TestReflectUintOverflowFallback exercises the platform-width guard in
+// tryFastDecodeTyped's reflect.Uint case: when the DB encodes a uint64
+// value that does not fit in the platform's uint, the fast path must
+// return false so the slow path can decide (succeed on 64-bit; report an
+// overflow error on 32-bit). The fast path silently truncating would
+// regress callers that rely on the slow path's overflow check.
+func TestReflectUintOverflowFallback(t *testing.T) {
+	type record struct {
+		N uint `maxminddb:"n"`
+	}
+
+	// Map {n: 0x1_0000_0000} — 33-bit value, fits in uint64 but overflows uint32.
+	data := []byte{
+		0xe1,      // map size 1
+		0x41, 'n', // key "n"
+		0x05, 0x02, // ctrl: extended, size=5; kind = uint64
+		0x01, 0x00, 0x00, 0x00, 0x00, // big-endian 0x100000000
+	}
+
+	d := New(data)
+	var result record
+	err := d.Decode(0, &result)
+
+	const want uint64 = 1 << 32
+	if unsafe.Sizeof(uint(0)) >= 8 {
+		require.NoError(t, err)
+		require.Equal(t, want, uint64(result.N))
+	} else {
+		require.Error(t, err, "32-bit platforms must surface the overflow")
+		require.ErrorContains(t, err, "cannot unmarshal")
+	}
+}
+
+// TestReflectUintFromMultipleSourceKinds covers the three KindUint*
+// cases that tryFastDecodeTyped's reflect.Uint branch accepts for a
+// plain `uint` field. KindUint64 is already exercised by the overflow
+// test above; this fills in KindUint16 and KindUint32 so a copy-paste
+// error (wrong decoder, shift, or SetUint conversion) in either branch
+// would surface.
+func TestReflectUintFromMultipleSourceKinds(t *testing.T) {
+	type record struct {
+		N uint `maxminddb:"n"`
+	}
+
+	cases := []struct {
+		name string
+		data []byte
+		want uint
+	}{
+		{
+			name: "KindUint16",
+			data: []byte{0xe1, 0x41, 'n', 0xa1, 0x2a}, // map{n: uint16(42)}
+			want: 42,
+		},
+		{
+			name: "KindUint32",
+			data: []byte{0xe1, 0x41, 'n', 0xc1, 0x2a}, // map{n: uint32(42)}
+			want: 42,
+		},
+		{
+			name: "KindUint64",
+			data: []byte{0xe1, 0x41, 'n', 0x01, 0x02, 0x2a}, // map{n: uint64(42)}
+			want: 42,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := New(tc.data)
+			var result record
+			require.NoError(t, d.Decode(0, &result))
+			require.Equal(t, tc.want, result.N)
+		})
+	}
+}
+
 func TestFastDecodePointerFieldDoesNotAllocateOnTypeError(t *testing.T) {
 	inputBytes, err := hex.DecodeString("e14173c101")
 	require.NoError(t, err)

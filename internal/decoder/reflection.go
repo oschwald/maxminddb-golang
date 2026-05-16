@@ -1247,6 +1247,7 @@ func isFastDecodeType(t reflect.Type) bool {
 	switch t.Kind() {
 	case reflect.String,
 		reflect.Bool,
+		reflect.Uint,
 		reflect.Uint16,
 		reflect.Uint32,
 		reflect.Uint64,
@@ -1314,6 +1315,8 @@ func (av addressableValue) indirect(mayAlloc bool) addressableValue {
 // in the dispatchFast case) re-decoding from the same offset via the
 // slow path, which re-encounters the underlying error and propagates it
 // with proper context. The fast path itself never logs or wraps.
+//
+//nolint:gocyclo // fairly readable and this is optimized code.
 func (d *ReflectionDecoder) tryFastDecodeTyped(
 	offset uint,
 	result addressableValue,
@@ -1333,6 +1336,30 @@ func (d *ReflectionDecoder) tryFastDecodeTyped(
 				return 0, false
 			}
 			result.SetString(value)
+			return finalOffset, true
+		}
+	case reflect.Uint:
+		switch typeNum {
+		case KindUint16:
+			value, finalOffset, err := d.decodeUint16(size, newOffset)
+			if err != nil {
+				return 0, false
+			}
+			result.SetUint(uint64(value))
+			return finalOffset, true
+		case KindUint32:
+			value, finalOffset, err := d.decodeUint32(size, newOffset)
+			if err != nil {
+				return 0, false
+			}
+			result.SetUint(uint64(value))
+			return finalOffset, true
+		case KindUint64:
+			value, finalOffset, err := d.decodeUint64(size, newOffset)
+			if err != nil || uint64(uint(value)) != value {
+				return 0, false
+			}
+			result.SetUint(value)
 			return finalOffset, true
 		}
 	case reflect.Uint32:
