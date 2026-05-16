@@ -66,7 +66,7 @@ func (d *ReflectionDecoder) Decode(offset uint, v any) error {
 	}
 
 	rv := reflect.ValueOf(v)
-	if rv.Kind() != reflect.Ptr || rv.IsNil() {
+	if rv.Kind() != reflect.Pointer || rv.IsNil() {
 		return errors.New("result param must be a pointer")
 	}
 
@@ -98,7 +98,7 @@ func (d *ReflectionDecoder) DecodePath(
 	v any,
 ) error {
 	result := reflect.ValueOf(v)
-	if result.Kind() != reflect.Ptr || result.IsNil() {
+	if result.Kind() != reflect.Pointer || result.IsNil() {
 		return errors.New("result param must be a pointer")
 	}
 
@@ -297,13 +297,13 @@ func (d *ReflectionDecoder) decodeValueImpl(
 		// usefully addressable.
 		if result.Kind() == reflect.Interface && !result.IsNil() {
 			e := result.Elem()
-			if e.Kind() == reflect.Ptr && !e.IsNil() {
+			if e.Kind() == reflect.Pointer && !e.IsNil() {
 				result = addressableValue{e, result.forcedAddr}
 				continue
 			}
 		}
 
-		if result.Kind() != reflect.Ptr {
+		if result.Kind() != reflect.Pointer {
 			break
 		}
 
@@ -966,7 +966,7 @@ func getEmbeddedStructType(fieldType reflect.Type) reflect.Type {
 	if fieldType.Kind() == reflect.Struct {
 		return fieldType
 	}
-	if fieldType.Kind() == reflect.Ptr && fieldType.Elem().Kind() == reflect.Struct {
+	if fieldType.Kind() == reflect.Pointer && fieldType.Elem().Kind() == reflect.Struct {
 		return fieldType.Elem()
 	}
 	return nil
@@ -1253,7 +1253,7 @@ func isFastDecodeType(t reflect.Type) bool {
 		reflect.Uint64,
 		reflect.Float64:
 		return true
-	case reflect.Ptr:
+	case reflect.Pointer:
 		return isFastDecodeType(t.Elem())
 	default:
 		return false
@@ -1297,7 +1297,7 @@ func (av addressableValue) fieldByIndex(
 
 // indirect handles pointer dereferencing and initialization.
 func (av addressableValue) indirect(mayAlloc bool) addressableValue {
-	if av.Kind() == reflect.Ptr {
+	if av.Kind() == reflect.Pointer {
 		if av.IsNil() {
 			if !mayAlloc || !av.CanSet() {
 				return addressableValue{} // Return invalid value
@@ -1407,7 +1407,7 @@ func (d *ReflectionDecoder) tryFastDecodeTyped(
 			result.SetFloat(value)
 			return finalOffset, true
 		}
-	case reflect.Ptr:
+	case reflect.Pointer:
 		// Handle pointer to fast types
 		if result.IsNil() {
 			elem := reflect.New(expectedType.Elem()).Elem()
