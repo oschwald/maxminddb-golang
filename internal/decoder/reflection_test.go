@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"unsafe"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -132,6 +133,208 @@ func TestSlice(t *testing.T) {
 		"020443466f6f43e4baba": []any{"Foo", "人"},
 	}
 	validateDecoding(t, slice)
+}
+
+func TestDecodeSliceClearsReusedElements(t *testing.T) {
+	type item struct {
+		Name  string `maxminddb:"name"`
+		Extra string `maxminddb:"extra"`
+	}
+	type record struct {
+		Items []item `maxminddb:"items"`
+	}
+
+	firstData := []byte{
+		0xe1,
+		0x45, 'i', 't', 'e', 'm', 's',
+		0x01, 0x04,
+		0xe2,
+		0x44, 'n', 'a', 'm', 'e',
+		0x43, 'o', 'l', 'd',
+		0x45, 'e', 'x', 't', 'r', 'a',
+		0x45, 's', 't', 'a', 'l', 'e',
+	}
+	secondData := []byte{
+		0xe1,
+		0x45, 'i', 't', 'e', 'm', 's',
+		0x01, 0x04,
+		0xe1,
+		0x44, 'n', 'a', 'm', 'e',
+		0x43, 'n', 'e', 'w',
+	}
+
+	var result record
+	firstDecoder := New(firstData)
+	require.NoError(t, firstDecoder.Decode(0, &result))
+	require.Equal(t, []item{{Name: "old", Extra: "stale"}}, result.Items)
+
+	secondDecoder := New(secondData)
+	require.NoError(t, secondDecoder.Decode(0, &result))
+	require.Equal(t, []item{{Name: "new"}}, result.Items)
+}
+
+// TestDecodeSliceClearsTailReferences exercises the second Clear in
+// decodeSlice (the tail clear when the new slice is shorter than the
+// previous one). When the element type holds reference fields like maps,
+// failing to clear the tail would leak those references via the reused
+// backing array, defeating the GC.
+func TestDecodeSliceClearsTailReferences(t *testing.T) {
+	type item struct {
+		Name string            `maxminddb:"name"`
+		Tags map[string]string `maxminddb:"tags"`
+	}
+	type record struct {
+		Items []item `maxminddb:"items"`
+	}
+
+	// Two elements, each carrying a tags map.
+	firstData := []byte{
+		0xe1,
+		0x45, 'i', 't', 'e', 'm', 's',
+		0x02, 0x04,
+		0xe2,
+		0x44, 'n', 'a', 'm', 'e',
+		0x43, 'o', 'n', 'e',
+		0x44, 't', 'a', 'g', 's',
+		0xe1,
+		0x41, 'a', 0x41, 'b',
+		0xe2,
+		0x44, 'n', 'a', 'm', 'e',
+		0x43, 't', 'w', 'o',
+		0x44, 't', 'a', 'g', 's',
+		0xe1,
+		0x41, 'c', 0x41, 'd',
+	}
+	// One element, no tags.
+	secondData := []byte{
+		0xe1,
+		0x45, 'i', 't', 'e', 'm', 's',
+		0x01, 0x04,
+		0xe1,
+		0x44, 'n', 'a', 'm', 'e',
+		0x43, 'n', 'e', 'w',
+	}
+
+	var result record
+	firstDecoder := New(firstData)
+	require.NoError(t, firstDecoder.Decode(0, &result))
+	require.Len(t, result.Items, 2)
+	require.Equal(t, map[string]string{"a": "b"}, result.Items[0].Tags)
+	require.Equal(t, map[string]string{"c": "d"}, result.Items[1].Tags)
+
+	capBefore := cap(result.Items)
+	require.GreaterOrEqual(t, capBefore, 2,
+		"setup requires cap >= 2 so the second decode reuses the backing array")
+
+	secondDecoder := New(secondData)
+	require.NoError(t, secondDecoder.Decode(0, &result))
+	require.Equal(t, []item{{Name: "new"}}, result.Items)
+
+	full := result.Items[:capBefore]
+	require.Nil(t, full[1].Tags,
+		"hidden tail element's map reference must be cleared (GC)")
+	require.Empty(t, full[1].Name,
+		"hidden tail element's string field must be cleared")
+}
+
+// TestDecodeSliceClearsTailPointers is the pointer-element analog of
+// TestDecodeSliceClearsTailReferences. For []*T the slice element IS the
+// GC root, so the tail-clear path at reflection.go:797-813 is what makes
+// the previously-held element reclaimable. A regression that only cleared
+// [0:sliceLen] would leave the *T at the hidden index pointing at the
+// old object — invisible to a value-element test but caught here.
+func TestDecodeSliceClearsTailPointers(t *testing.T) {
+	type item struct {
+		Name string `maxminddb:"name"`
+	}
+	type record struct {
+		Items []*item `maxminddb:"items"`
+	}
+
+	// Two-element slice: [{Name:"one"}, {Name:"two"}].
+	firstData := []byte{
+		0xe1,
+		0x45, 'i', 't', 'e', 'm', 's',
+		0x02, 0x04,
+		0xe1,
+		0x44, 'n', 'a', 'm', 'e',
+		0x43, 'o', 'n', 'e',
+		0xe1,
+		0x44, 'n', 'a', 'm', 'e',
+		0x43, 't', 'w', 'o',
+	}
+	// One-element slice: [{Name:"new"}].
+	secondData := []byte{
+		0xe1,
+		0x45, 'i', 't', 'e', 'm', 's',
+		0x01, 0x04,
+		0xe1,
+		0x44, 'n', 'a', 'm', 'e',
+		0x43, 'n', 'e', 'w',
+	}
+
+	var result record
+	firstDecoder := New(firstData)
+	require.NoError(t, firstDecoder.Decode(0, &result))
+	require.Len(t, result.Items, 2)
+	require.NotNil(t, result.Items[0])
+	require.NotNil(t, result.Items[1])
+	require.Equal(t, "one", result.Items[0].Name)
+	require.Equal(t, "two", result.Items[1].Name)
+
+	capBefore := cap(result.Items)
+	require.GreaterOrEqual(t, capBefore, 2,
+		"setup requires cap >= 2 so the second decode reuses the backing array")
+
+	secondDecoder := New(secondData)
+	require.NoError(t, secondDecoder.Decode(0, &result))
+	require.Len(t, result.Items, 1)
+	require.NotNil(t, result.Items[0])
+	require.Equal(t, "new", result.Items[0].Name)
+
+	full := result.Items[:capBefore]
+	require.Nil(t, full[1],
+		"hidden tail's *item pointer must be cleared so the previously-held element is GC-eligible")
+}
+
+// TestDecodeSliceReusesBackingArray confirms the perf invariant of the
+// reuse path: a second decode into the same destination must reuse the
+// existing backing array rather than allocate fresh. The sibling
+// TestDecodeSliceClears* tests cover the safety properties of reuse;
+// this test guards against a regression that would silently allocate.
+func TestDecodeSliceReusesBackingArray(t *testing.T) {
+	type record struct {
+		Items []string `maxminddb:"items"`
+	}
+
+	// Map {items: ["aa", "bb", "cc"]}
+	data := []byte{
+		0xe1,
+		0x45, 'i', 't', 'e', 'm', 's',
+		0x03, 0x04,
+		0x42, 'a', 'a',
+		0x42, 'b', 'b',
+		0x42, 'c', 'c',
+	}
+
+	var result record
+	first := New(data)
+	require.NoError(t, first.Decode(0, &result))
+	require.Equal(t, []string{"aa", "bb", "cc"}, result.Items)
+
+	//nolint:gosec // test only
+	firstData := unsafe.SliceData(result.Items)
+	firstCap := cap(result.Items)
+
+	second := New(data)
+	require.NoError(t, second.Decode(0, &result))
+	require.Equal(t, []string{"aa", "bb", "cc"}, result.Items)
+	require.Equal(t, firstCap, cap(result.Items),
+		"capacity should not change on identical second decode")
+	require.Same(t, firstData,
+		//nolint:gosec // test only
+		unsafe.SliceData(result.Items),
+		"second decode must reuse the existing backing array")
 }
 
 var testStrings = makeTestStrings()

@@ -773,12 +773,26 @@ func (d *ReflectionDecoder) decodeSlice(
 	result addressableValue,
 	depth int,
 ) (uint, error) {
-	result.Set(reflect.MakeSlice(result.Type(), int(size), int(size)))
+	sliceLen := int(size)
+	if result.IsNil() || result.Cap() < sliceLen {
+		result.Set(reflect.MakeSlice(result.Type(), sliceLen, sliceLen))
+	} else {
+		// Reuse the caller's backing array. Two clears are needed: the first
+		// zeroes [0:sliceLen] so element fields not present in the new data
+		// (e.g., omitted struct keys) don't carry forward; the second zeroes
+		// (sliceLen:oldLen] so the now-hidden tail drops any pointer-like
+		// references it held, letting the GC reclaim them.
+		oldLen := result.Len()
+		result.SetLen(sliceLen)
+		result.Clear()
+		if oldLen > sliceLen {
+			result.Slice(sliceLen, oldLen).Clear()
+		}
+	}
+
 	for i := range size {
 		var err error
-		// Use slice element directly to avoid allocation
-		elemVal := result.Index(int(i))
-		elemValue := addressableValue{Value: elemVal, forcedAddr: false}
+		elemValue := addressableValue{Value: result.Index(int(i))}
 		offset, err = d.decodeValue(offset, elemValue, depth)
 		if err != nil {
 			return 0, d.wrapErrorWithSliceIndex(err, int(i))
