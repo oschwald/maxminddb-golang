@@ -2,6 +2,7 @@
 
 ## 2.3.0
 
+- This module now targets Go 1.25+.
 - Reduced reflection decoding time and heap allocations on the hot path. A
   city-lookup benchmark decoding a geoip2-style result runs about 15% faster
   and allocates about 39% fewer bytes per lookup compared to 2.2.0.
