@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -233,18 +234,21 @@ func wrapErrorWithPath(err error, prepend func(*mmdberrors.PathBuilder)) error {
 }
 
 func (d *ReflectionDecoder) decode(offset uint, result reflect.Value, depth int) (uint, error) {
-	// Convert to addressableValue and delegate to internal method
-	// Use fast path for already addressable values to avoid allocation
-	if result.CanAddr() {
-		av := addressableValue{Value: result, forcedAddr: false}
-		return d.decodeValue(offset, av, depth)
+	// Skip makeAddressable's boxing copy whenever result is already addressable.
+	// The common Decode(&v) entry passes a non-addressable pointer, but its
+	// Elem() is addressable, so we can decode through it directly. Callers that
+	// already supplied an addressable Value (e.g., a struct field) take the
+	// CanAddr branch. Only non-addressable, non-pointer values need
+	// makeAddressable, which allocates.
+	if result.Kind() == reflect.Pointer && !result.IsNil() {
+		return d.decodeValue(offset, addressableValue{Value: result.Elem()}, depth)
 	}
-	av := makeAddressable(result)
-	return d.decodeValue(offset, av, depth)
+	if result.CanAddr() {
+		return d.decodeValue(offset, addressableValue{Value: result}, depth)
+	}
+	return d.decodeValue(offset, makeAddressable(result), depth)
 }
 
-// decodeValue is the internal decode method that works with addressableValue
-// for consistent optimization throughout the decoder.
 func (d *ReflectionDecoder) decodeValue(
 	offset uint,
 	result addressableValue,
@@ -262,8 +266,8 @@ func (d *ReflectionDecoder) decodeValue(
 			return
 		}
 
-		for i := len(allocatedPointers) - 1; i >= 0; i-- {
-			allocatedPointers[i].SetZero()
+		for _, pointer := range slices.Backward(allocatedPointers) {
+			pointer.SetZero()
 		}
 	}()
 
@@ -515,7 +519,7 @@ func (d *ReflectionDecoder) unmarshalMap(
 		if result.NumMethod() == 0 {
 			// Create map directly without makeAddressable wrapper
 			mapVal := reflect.ValueOf(make(map[string]any, size))
-			rv := addressableValue{Value: mapVal, forcedAddr: false}
+			rv := addressableValue{Value: mapVal}
 			newOffset, err := d.decodeMap(size, offset, rv, depth)
 			result.Set(rv.Value)
 			return newOffset, err
@@ -566,7 +570,7 @@ func (d *ReflectionDecoder) unmarshalSlice(
 			a := []any{}
 			// Create slice directly without makeAddressable wrapper
 			sliceVal := reflect.ValueOf(&a).Elem()
-			rv := addressableValue{Value: sliceVal, forcedAddr: false}
+			rv := addressableValue{Value: sliceVal}
 			newOffset, err := d.decodeSlice(size, offset, rv, depth)
 			result.Set(rv.Value)
 			return newOffset, err
@@ -734,12 +738,12 @@ func (d *ReflectionDecoder) decodeMap(
 
 	// Pre-allocated values for efficient reuse
 	keyVal := reflect.New(mapType.Key()).Elem()
-	keyValue := addressableValue{Value: keyVal, forcedAddr: false}
+	keyValue := addressableValue{Value: keyVal}
 	elemType := mapType.Elem()
 	var elemValue addressableValue
 	// Pre-allocate element value to reduce allocations
 	elemVal := reflect.New(elemType).Elem()
-	elemValue = addressableValue{Value: elemVal, forcedAddr: false}
+	elemValue = addressableValue{Value: elemVal}
 	for range size {
 		var err error
 
@@ -1133,7 +1137,7 @@ type addressableValue struct {
 // If the value is not addressable, it wraps it to make it addressable.
 func newAddressableValue(v reflect.Value) addressableValue {
 	if v.CanAddr() {
-		return addressableValue{Value: v, forcedAddr: false}
+		return addressableValue{Value: v}
 	}
 	// Make non-addressable values addressable by boxing them
 	addressable := reflect.New(v.Type()).Elem()
@@ -1146,7 +1150,7 @@ func newAddressableValue(v reflect.Value) addressableValue {
 func makeAddressable(v reflect.Value) addressableValue {
 	// Fast path for already addressable values
 	if v.CanAddr() {
-		return addressableValue{Value: v, forcedAddr: false}
+		return addressableValue{Value: v}
 	}
 	return newAddressableValue(v)
 }
@@ -1162,7 +1166,6 @@ func isFastDecodeType(t reflect.Type) bool {
 		reflect.Float64:
 		return true
 	case reflect.Ptr:
-		// Pointer to fast types are also fast
 		return isFastDecodeType(t.Elem())
 	default:
 		return false
@@ -1202,12 +1205,17 @@ func (av addressableValue) indirect(mayAlloc bool) addressableValue {
 			}
 			av.Set(reflect.New(av.Type().Elem()))
 		}
-		av = addressableValue{av.Elem(), false}
+		av = addressableValue{Value: av.Elem()}
 	}
 	return av
 }
 
-// tryFastDecodeTyped attempts to decode using pre-computed type information.
+// tryFastDecodeTyped returns (newOffset, true) on success and (0, false)
+// on any failure: a malformed buffer, a DB-type/Go-kind mismatch, or an
+// inner decode error. Error surfacing relies on the caller (decodeStruct
+// at the isFastType branch) re-decoding from the same offset via the
+// slow path, which re-encounters the underlying error and propagates it
+// with proper context. The fast path itself never logs or wraps.
 func (d *ReflectionDecoder) tryFastDecodeTyped(
 	offset uint,
 	result addressableValue,
@@ -1280,7 +1288,7 @@ func (d *ReflectionDecoder) tryFastDecodeTyped(
 			elem := reflect.New(expectedType.Elem()).Elem()
 			finalOffset, ok := d.tryFastDecodeTyped(
 				offset,
-				addressableValue{elem, false},
+				addressableValue{Value: elem},
 				expectedType.Elem(),
 			)
 			if !ok {
@@ -1291,7 +1299,7 @@ func (d *ReflectionDecoder) tryFastDecodeTyped(
 		}
 		return d.tryFastDecodeTyped(
 			offset,
-			addressableValue{result.Elem(), false},
+			addressableValue{Value: result.Elem()},
 			expectedType.Elem(),
 		)
 	default:

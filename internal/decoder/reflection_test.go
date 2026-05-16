@@ -97,6 +97,19 @@ func TestFastDecodePointerFieldDoesNotAllocateOnTypeError(t *testing.T) {
 	assert.Contains(t, err.Error(), "cannot unmarshal 1 (uint64) into type string")
 }
 
+func TestDecodeAllocatesTopLevelPointerTarget(t *testing.T) {
+	inputBytes, err := hex.DecodeString("43466f6f")
+	require.NoError(t, err)
+
+	d := New(inputBytes)
+
+	var result *string
+	err = d.Decode(0, &result)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, "Foo", *result)
+}
+
 func TestMap(t *testing.T) {
 	maps := map[string]any{
 		"e0":                             map[string]any{},
