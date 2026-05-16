@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -110,6 +111,52 @@ func TestDecodeCtrlDataTruncated(t *testing.T) {
 			require.Error(t, err)
 		})
 	}
+}
+
+// TestDecodeKeyFastPathBoundary covers the 28/29-character boundary
+// between decodeKey's inline fast path (size < 29) and its slow path
+// (size >= 29). An off-by-one in the fast-path size check would either
+// pull a stale byte from the buffer (slow path size confused with fast
+// path data) or read past the end on a truncated input.
+func TestDecodeKeyFastPathBoundary(t *testing.T) {
+	tests := []struct {
+		name string
+		size int
+	}{
+		{name: "size 0 (fast-path min)", size: 0},
+		{name: "size 28 (fast-path max)", size: 28},
+		{name: "size 29 (slow-path min)", size: 29},
+		{name: "size 30 (slow-path)", size: 30},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			key := strings.Repeat("a", tt.size)
+			var buf []byte
+			switch {
+			case tt.size < 29:
+				buf = append(buf, 0x40|byte(tt.size))
+			case tt.size == 29:
+				buf = append(buf, 0x5D, 0x00) // 29 + 0
+			default:
+				buf = append(buf, 0x5D, byte(tt.size-29))
+			}
+			buf = append(buf, key...)
+
+			d := NewDataDecoder(buf)
+			got, newOffset, err := d.decodeKey(0)
+			require.NoError(t, err)
+			require.Equal(t, key, string(got))
+			require.Equal(t, uint(len(buf)), newOffset)
+		})
+	}
+
+	t.Run("size 28 truncated buffer fails", func(t *testing.T) {
+		// Fast path: ctrl says size=28, but buffer holds only the ctrl byte.
+		d := NewDataDecoder([]byte{0x5C})
+		_, _, err := d.decodeKey(0)
+		require.Error(t, err)
+	})
 }
 
 // TestDecodeKeyFollowsPointer verifies that a pointer control byte at the

@@ -402,6 +402,24 @@ func append64(val uint64, b byte) (uint64, byte) {
 // copying the bytes when decoding a struct. Previously, we achieved this by
 // using unsafe.
 func (d *DataDecoder) decodeKey(offset uint) ([]byte, uint, error) {
+	bufferLen := uint(len(d.buffer))
+	if offset >= bufferLen {
+		return nil, 0, mmdberrors.NewOffsetError()
+	}
+
+	ctrlByte := d.buffer[offset]
+	if Kind(ctrlByte>>5) == KindString {
+		size := uint(ctrlByte & 0x1f)
+		if size < 29 {
+			dataOffset := offset + 1
+			newOffset := dataOffset + size
+			if newOffset > bufferLen {
+				return nil, 0, mmdberrors.NewOffsetError()
+			}
+			return d.buffer[dataOffset:newOffset], newOffset, nil
+		}
+	}
+
 	kindNum, size, dataOffset, err := d.decodeCtrlData(offset)
 	if err != nil {
 		return nil, 0, err
@@ -438,7 +456,7 @@ func (d *DataDecoder) decodeKey(offset uint) ([]byte, uint, error) {
 		)
 	}
 	newOffset := dataOffset + size
-	if newOffset > uint(len(d.buffer)) {
+	if newOffset > bufferLen {
 		return nil, 0, mmdberrors.NewOffsetError()
 	}
 	return d.buffer[dataOffset:newOffset], nextOffset, nil
