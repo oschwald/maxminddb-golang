@@ -866,23 +866,26 @@ func (d *ReflectionDecoder) decodeStruct(
 			continue
 		}
 
-		// Fast path for common simple field types
-		if len(fieldInfo.index) == 0 && fieldInfo.isFastType {
-			// Try fast decode path for pre-identified simple types
-			if fastOffset, ok := d.tryFastDecodeTyped(offset, fieldValue, fieldInfo.fieldType); ok {
-				offset = fastOffset
-				continue
+		// Dispatch on the precomputed strategy. The fast-path case has a
+		// runtime guard for embedded fields (len(index) > 0): the
+		// fast-path decoders bypass embedded-pointer initialization,
+		// which is the caller's responsibility on the slow path.
+		switch fieldInfo.dispatch {
+		case dispatchFast:
+			if len(fieldInfo.index) == 0 {
+				if fastOffset, ok := d.tryFastDecodeTyped(
+					offset,
+					fieldValue,
+					fieldInfo.fieldType,
+				); ok {
+					offset = fastOffset
+					continue
+				}
 			}
-		}
-
-		// Interface fields take the checking path because the concrete type
-		// behind the interface isn't known at struct-cache build time, so
-		// mayImplementUnmarshaler can't be precomputed for them.
-		if fieldInfo.mayImplementUnmarshaler ||
-			fieldValue.Kind() == reflect.Interface ||
-			unwrapPtrType(fieldInfo.fieldType).Kind() == reflect.Interface {
+			offset, err = d.decodeValueSkipUnmarshaler(offset, fieldValue, depth)
+		case dispatchUnmarshaler:
 			offset, err = d.decodeValue(offset, fieldValue, depth)
-		} else {
+		default: // dispatchPlain
 			offset, err = d.decodeValueSkipUnmarshaler(offset, fieldValue, depth)
 		}
 		if err != nil {
@@ -892,15 +895,38 @@ func (d *ReflectionDecoder) decodeStruct(
 	return offset, nil
 }
 
+// fieldDispatch encodes the decode strategy for a struct field, computed
+// once at struct-cache build time. Encoding the three-way choice as a
+// single enum (rather than two non-orthogonal booleans) makes the
+// illegal combination "fast path AND Unmarshaler" unrepresentable —
+// previously enforced only by an `&&` in makeStructFields.
+type fieldDispatch uint8
+
+const (
+	// dispatchFast: field type is one of the primitive Go kinds the
+	// fast path supports (string/bool/uint*/float64 or pointer to such)
+	// and its unwrapped type does not implement Unmarshaler. The fast
+	// path is attempted; on type-num mismatch it falls back to
+	// decodeValueSkipUnmarshaler (which is sound: the field type cannot
+	// implement Unmarshaler by construction).
+	dispatchFast fieldDispatch = iota
+	// dispatchUnmarshaler: field's unwrapped type is an interface or
+	// implements Unmarshaler via its pointer receiver. Goes through
+	// decodeValue, which performs the type assertion.
+	dispatchUnmarshaler
+	// dispatchPlain: everything else (structs, slices, maps, named
+	// types without Unmarshaler). Uses decodeValueSkipUnmarshaler.
+	dispatchPlain
+)
+
 type fieldInfo struct {
-	fieldType               reflect.Type
-	name                    string
-	index                   []int
-	index0                  int
-	depth                   int
-	hasTag                  bool
-	isFastType              bool
-	mayImplementUnmarshaler bool
+	fieldType reflect.Type
+	name      string
+	index     []int
+	index0    int
+	depth     int
+	hasTag    bool
+	dispatch  fieldDispatch
 }
 
 type fieldsType struct {
@@ -1055,24 +1081,31 @@ func makeStructFields(rootType reflect.Type) *fieldsType {
 				continue
 			}
 
-			// Add field to collection with optimization hints. isFastType
-			// is gated on !checkUnmarshaler so a named primitive type
-			// whose pointer receiver implements UnmarshalMaxMindDB takes
-			// the slow path (which dispatches to the custom unmarshaler)
-			// rather than the inline fast path (which would assign the
-			// raw decoded value and bypass the unmarshaler). The order of
-			// the && lets Go short-circuit isFastDecodeType when the
-			// unmarshaler check already disqualifies the fast path.
+			// Resolve dispatch strategy once per field. Unmarshaler
+			// possibility takes precedence over fast-path eligibility so
+			// a named primitive type whose pointer receiver implements
+			// UnmarshalMaxMindDB always takes the slow path. The case
+			// order matches that precedence; the switch is exhaustive
+			// because dispatchPlain is the default fallback.
 			fieldType := field.Type
-			mayUnmarshal := mayImplementUnmarshaler(unwrapPtrType(fieldType))
+			unwrappedFieldType := unwrapPtrType(fieldType)
+			var dispatch fieldDispatch
+			switch {
+			case mayImplementUnmarshaler(unwrappedFieldType) ||
+				unwrappedFieldType.Kind() == reflect.Interface:
+				dispatch = dispatchUnmarshaler
+			case isFastDecodeType(fieldType):
+				dispatch = dispatchFast
+			default:
+				dispatch = dispatchPlain
+			}
 			allFields = append(allFields, fieldInfo{
-				index:                   fieldIndex, // Will be reindexed later for optimization
-				name:                    fieldName,
-				hasTag:                  hasTag,
-				depth:                   entry.depth,
-				fieldType:               fieldType,
-				isFastType:              !mayUnmarshal && isFastDecodeType(fieldType),
-				mayImplementUnmarshaler: mayUnmarshal,
+				index:     fieldIndex, // Will be reindexed later for optimization
+				name:      fieldName,
+				hasTag:    hasTag,
+				depth:     entry.depth,
+				fieldType: fieldType,
+				dispatch:  dispatch,
 			})
 		}
 	}
@@ -1278,7 +1311,7 @@ func (av addressableValue) indirect(mayAlloc bool) addressableValue {
 // tryFastDecodeTyped returns (newOffset, true) on success and (0, false)
 // on any failure: a malformed buffer, a DB-type/Go-kind mismatch, or an
 // inner decode error. Error surfacing relies on the caller (decodeStruct
-// at the isFastType branch) re-decoding from the same offset via the
+// in the dispatchFast case) re-decoding from the same offset via the
 // slow path, which re-encounters the underlying error and propagates it
 // with proper context. The fast path itself never logs or wraps.
 func (d *ReflectionDecoder) tryFastDecodeTyped(
