@@ -254,6 +254,26 @@ func (d *ReflectionDecoder) decodeValue(
 	result addressableValue,
 	depth int,
 ) (newOffset uint, retErr error) {
+	return d.decodeValueImpl(offset, result, depth, true)
+}
+
+// decodeValueSkipUnmarshaler is the struct-field fast path: when the
+// destination type was precomputed to not implement Unmarshaler, we skip
+// the reflective type-assert that decodeValue would otherwise perform.
+func (d *ReflectionDecoder) decodeValueSkipUnmarshaler(
+	offset uint,
+	result addressableValue,
+	depth int,
+) (newOffset uint, retErr error) {
+	return d.decodeValueImpl(offset, result, depth, false)
+}
+
+func (d *ReflectionDecoder) decodeValueImpl(
+	offset uint,
+	result addressableValue,
+	depth int,
+	checkUnmarshaler bool,
+) (newOffset uint, retErr error) {
 	if depth > maximumDataStructureDepth {
 		return 0, mmdberrors.NewInvalidDatabaseError(
 			"exceeded maximum data structure depth; database is likely corrupt",
@@ -298,9 +318,11 @@ func (d *ReflectionDecoder) decodeValue(
 		} // dereferenced pointer is always addressable
 	}
 
-	// Skip the reflective type assertion when the destination type cannot
-	// implement Unmarshaler. This is the common case in normal struct decoding.
-	if result.CanAddr() && mayImplementUnmarshaler(result.Type()) {
+	// Try Unmarshaler dispatch only when the type might actually implement
+	// the interface. Struct decoding passes checkUnmarshaler=false when the
+	// per-field precomputation already established the destination cannot
+	// match, avoiding the reflective type assertion entirely.
+	if checkUnmarshaler && result.CanAddr() && mayImplementUnmarshaler(result.Type()) {
 		if unmarshaler, ok := tryTypeAssert(result.Addr()); ok {
 			decoder := NewDecoder(d.DataDecoder, offset)
 			if err := unmarshaler.UnmarshalMaxMindDB(decoder); err != nil {
@@ -853,7 +875,16 @@ func (d *ReflectionDecoder) decodeStruct(
 			}
 		}
 
-		offset, err = d.decodeValue(offset, fieldValue, depth)
+		// Interface fields take the checking path because the concrete type
+		// behind the interface isn't known at struct-cache build time, so
+		// mayImplementUnmarshaler can't be precomputed for them.
+		if fieldInfo.mayImplementUnmarshaler ||
+			fieldValue.Kind() == reflect.Interface ||
+			unwrapPtrType(fieldInfo.fieldType).Kind() == reflect.Interface {
+			offset, err = d.decodeValue(offset, fieldValue, depth)
+		} else {
+			offset, err = d.decodeValueSkipUnmarshaler(offset, fieldValue, depth)
+		}
 		if err != nil {
 			return 0, d.wrapErrorWithMapKey(err, string(key))
 		}
@@ -862,13 +893,14 @@ func (d *ReflectionDecoder) decodeStruct(
 }
 
 type fieldInfo struct {
-	fieldType  reflect.Type
-	name       string
-	index      []int
-	index0     int
-	depth      int
-	hasTag     bool
-	isFastType bool
+	fieldType               reflect.Type
+	name                    string
+	index                   []int
+	index0                  int
+	depth                   int
+	hasTag                  bool
+	isFastType              bool
+	mayImplementUnmarshaler bool
 }
 
 type fieldsType struct {
@@ -1023,16 +1055,24 @@ func makeStructFields(rootType reflect.Type) *fieldsType {
 				continue
 			}
 
-			// Add field to collection with optimization hints
+			// Add field to collection with optimization hints. isFastType
+			// is gated on !checkUnmarshaler so a named primitive type
+			// whose pointer receiver implements UnmarshalMaxMindDB takes
+			// the slow path (which dispatches to the custom unmarshaler)
+			// rather than the inline fast path (which would assign the
+			// raw decoded value and bypass the unmarshaler). The order of
+			// the && lets Go short-circuit isFastDecodeType when the
+			// unmarshaler check already disqualifies the fast path.
 			fieldType := field.Type
-			isFast := isFastDecodeType(fieldType)
+			mayUnmarshal := mayImplementUnmarshaler(unwrapPtrType(fieldType))
 			allFields = append(allFields, fieldInfo{
-				index:      fieldIndex, // Will be reindexed later for optimization
-				name:       fieldName,
-				hasTag:     hasTag,
-				depth:      entry.depth,
-				fieldType:  fieldType,
-				isFastType: isFast,
+				index:                   fieldIndex, // Will be reindexed later for optimization
+				name:                    fieldName,
+				hasTag:                  hasTag,
+				depth:                   entry.depth,
+				fieldType:               fieldType,
+				isFastType:              !mayUnmarshal && isFastDecodeType(fieldType),
+				mayImplementUnmarshaler: mayUnmarshal,
 			})
 		}
 	}
@@ -1184,6 +1224,17 @@ func isFastDecodeType(t reflect.Type) bool {
 	default:
 		return false
 	}
+}
+
+// unwrapPtrType strips all pointer indirection from t and returns the
+// underlying element type. Used to find the addressable receiver type that
+// mayImplementUnmarshaler should check, since decoding allocates and
+// dereferences as many *T layers as the field declares.
+func unwrapPtrType(t reflect.Type) reflect.Type {
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	return t
 }
 
 // fieldByIndex efficiently accesses a field by its index path,
