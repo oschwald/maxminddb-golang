@@ -691,6 +691,214 @@ func TestIpv6inIpv4(t *testing.T) {
 	require.NoError(t, reader.Close(), "error on close")
 }
 
+// TestLookupIPv4VsIPv6Mixed guards the specialized IPv4 tree walks in
+// traverseTree24, traverseTree28, and traverseTree32 against drift
+// from the generic IPv6 walk. For each address we look up the IPv4
+// form (which hits the inline fast path) and the IPv4-mapped IPv6
+// form ::ffff:a.b.c.d (which goes through the generic walk) and
+// require them to reach the same leaf and decode to the same record.
+// A divergence would catch off-by-ones in the bit-extraction, the
+// remainingBits>32 clamp, or the merged bounds check in any
+// record-size variant.
+func TestLookupIPv4VsIPv6Mixed(t *testing.T) {
+	dbFiles := []string{
+		"MaxMind-DB-test-mixed-24.mmdb",
+		"MaxMind-DB-test-mixed-28.mmdb",
+		"MaxMind-DB-test-mixed-32.mmdb",
+	}
+
+	// Addresses spanning the range present in the test databases
+	// (1.1.1.0 through 1.1.1.32). A few outside-range probes confirm
+	// the not-found case stays consistent too.
+	addrs := []string{
+		"1.1.1.1",
+		"1.1.1.2",
+		"1.1.1.3",
+		"1.1.1.4",
+		"1.1.1.16",
+		"1.1.1.32",
+		"1.1.1.128",
+		"8.8.8.8",
+		"255.255.255.255",
+	}
+
+	for _, dbFile := range dbFiles {
+		t.Run(dbFile, func(t *testing.T) {
+			reader, err := Open(testFile(dbFile))
+			require.NoError(t, err)
+			defer func() { require.NoError(t, reader.Close()) }()
+
+			for _, s := range addrs {
+				t.Run(s, func(t *testing.T) {
+					v4 := netip.MustParseAddr(s)
+					v6 := netip.MustParseAddr("::ffff:" + s)
+					require.True(t, v4.Is4())
+					require.False(t, v6.Is4(),
+						"::ffff: form must not be Is4()")
+
+					r4 := reader.Lookup(v4)
+					r6 := reader.Lookup(v6)
+					require.NoError(t, r4.Err())
+					require.NoError(t, r6.Err())
+					require.Equal(t, r4.Found(), r6.Found(),
+						"IPv4 fast path and IPv6 generic walk disagree on Found")
+					require.Equal(t, r4.Offset(), r6.Offset(),
+						"IPv4 fast path and IPv6 generic walk reached different data records")
+
+					// Prefix() returns different shapes — IPv4 address space
+					// for r4 vs IPv4-mapped IPv6 space for r6 — so direct
+					// equality fails. After converting r6 to IPv4 form, the
+					// network must match. This catches drift in the fast
+					// path's depth bookkeeping that Offset()/Decode() miss.
+					p4, p6 := r4.Prefix(), r6.Prefix()
+					require.Equal(t, p4.Bits()+reader.ipv4StartBitDepth, p6.Bits(),
+						"IPv4 fast-path depth must align with IPv6 walk")
+					require.Equal(t, p4.Addr(), p6.Addr().Unmap(),
+						"IPv4 fast-path prefix address must match unmapped IPv6 prefix address")
+
+					var rec4, rec6 any
+					require.NoError(t, r4.Decode(&rec4))
+					require.NoError(t, r6.Decode(&rec6))
+					require.Equal(t, rec4, rec6,
+						"IPv4 fast path and IPv6 generic walk reached different leaves")
+				})
+			}
+		})
+	}
+}
+
+// TestLookupIPv4OnlyDB exercises the IPv4 specialized walks against
+// IPv4-only databases (ipv4StartBitDepth=96, ipv4Start=0). The mixed-DB
+// parity test guards traversal drift via the IPv4-mapped IPv6 walk, but
+// IPv4-only DBs have no IPv6 form to compare against. This test instead
+// asserts cross-record-size consistency: looking up the same IP in
+// size-24, size-28, and size-32 DBs must yield the same Found, Prefix,
+// and decoded record — any of the three fast paths returning a wrong
+// depth or wrong node would diverge.
+func TestLookupIPv4OnlyDB(t *testing.T) {
+	dbFiles := []string{
+		"MaxMind-DB-test-ipv4-24.mmdb",
+		"MaxMind-DB-test-ipv4-28.mmdb",
+		"MaxMind-DB-test-ipv4-32.mmdb",
+	}
+	readers := make([]*Reader, len(dbFiles))
+	for i, dbFile := range dbFiles {
+		r, err := Open(testFile(dbFile))
+		require.NoError(t, err)
+		readers[i] = r
+	}
+	t.Cleanup(func() {
+		for _, r := range readers {
+			require.NoError(t, r.Close())
+		}
+	})
+
+	addrs := []string{
+		"1.1.1.1",
+		"1.1.1.2",
+		"1.1.1.32",
+		"1.1.1.128",
+		"8.8.8.8",
+		"255.255.255.255",
+	}
+
+	for _, s := range addrs {
+		t.Run(s, func(t *testing.T) {
+			ip := netip.MustParseAddr(s)
+			require.True(t, ip.Is4())
+
+			results := make([]Result, len(readers))
+			for i, r := range readers {
+				results[i] = r.Lookup(ip)
+				require.NoError(t, results[i].Err())
+
+				p := results[i].Prefix()
+				require.True(t, p.Addr().Is4(),
+					"%s: IPv4 lookup must produce an IPv4-shaped prefix", dbFiles[i])
+				require.LessOrEqual(t, p.Bits(), 32,
+					"%s: IPv4 prefix bits must fit in [0,32]", dbFiles[i])
+			}
+
+			// Cross-record-size consistency: the same IP must land at
+			// the same leaf in all three databases.
+			for i := 1; i < len(results); i++ {
+				require.Equal(t, results[0].Found(), results[i].Found(),
+					"%s vs %s disagree on Found", dbFiles[0], dbFiles[i])
+				require.Equal(t, results[0].Prefix(), results[i].Prefix(),
+					"%s vs %s disagree on Prefix", dbFiles[0], dbFiles[i])
+
+				if !results[0].Found() {
+					continue
+				}
+				var rec0, recI any
+				require.NoError(t, results[0].Decode(&rec0))
+				require.NoError(t, results[i].Decode(&recI))
+				require.Equal(t, rec0, recI,
+					"%s vs %s disagree on decoded record", dbFiles[0], dbFiles[i])
+			}
+		})
+	}
+}
+
+// TestTraverseIPv4TreeBoundsCheck isolates the bounds-check error path
+// added to the specialized IPv4 walks at reader.go:625-629, 699-703,
+// 786-790. The generic IPv6 walk has its own bounds checks elsewhere;
+// without a focused test, a regression in the IPv4 fast-path checks
+// (e.g. a `<=` flipped to `<` in hasBufferRange, or a wrong record
+// size) would not be caught by TestVerifyOnBrokenDatabases (which
+// covers only 24-record-size at the verifier level, not lookup).
+//
+// Approach: construct a Reader with an empty buffer and a non-zero
+// NodeCount, then call each traverseTreeNN directly with an IPv4
+// address. The fast path enters its loop, attempts to read the
+// first node's bytes, and must surface the bounds-check error.
+func TestTraverseIPv4TreeBoundsCheck(t *testing.T) {
+	cases := []struct {
+		name       string
+		recordSize uint
+		traverse   func(*Reader) error
+	}{
+		{
+			name:       "tree24",
+			recordSize: 24,
+			traverse: func(r *Reader) error {
+				_, _, err := r.traverseTree24(netip.MustParseAddr("1.2.3.4"), 0, 128)
+				return err
+			},
+		},
+		{
+			name:       "tree28",
+			recordSize: 28,
+			traverse: func(r *Reader) error {
+				_, _, err := r.traverseTree28(netip.MustParseAddr("1.2.3.4"), 0, 128)
+				return err
+			},
+		},
+		{
+			name:       "tree32",
+			recordSize: 32,
+			traverse: func(r *Reader) error {
+				_, _, err := r.traverseTree32(netip.MustParseAddr("1.2.3.4"), 0, 128)
+				return err
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &Reader{
+				buffer:            []byte{}, // empty: any node read overruns
+				Metadata:          Metadata{NodeCount: 1, RecordSize: tc.recordSize},
+				ipv4StartBitDepth: 96,
+				ipv4Start:         0,
+			}
+			err := tc.traverse(r)
+			require.Error(t, err)
+			require.ErrorContains(t, err, "bounds check failed during tree traversal")
+		})
+	}
+}
+
 func TestBrokenDoubleDatabase(t *testing.T) {
 	reader, err := Open(testFile("GeoIP2-City-Test-Broken-Double-Format.mmdb"))
 	require.NoError(t, err, "unexpected error while opening database: %v", err)
@@ -911,71 +1119,100 @@ func BenchmarkLookupNetwork(b *testing.B) {
 	require.NoError(b, db.Close(), "error on close")
 }
 
-type fullCity struct {
-	City struct {
-		GeoNameID uint              `maxminddb:"geoname_id"`
-		Names     map[string]string `maxminddb:"names"`
-	} `maxminddb:"city"`
-	Continent struct {
-		Code      string            `maxminddb:"code"`
-		GeoNameID uint              `maxminddb:"geoname_id"`
-		Names     map[string]string `maxminddb:"names"`
-	} `maxminddb:"continent"`
-	Country struct {
-		GeoNameID         uint              `maxminddb:"geoname_id"`
-		IsInEuropeanUnion bool              `maxminddb:"is_in_european_union"`
-		IsoCode           string            `maxminddb:"iso_code"`
-		Names             map[string]string `maxminddb:"names"`
-	} `maxminddb:"country"`
-	Location struct {
-		AccuracyRadius uint16  `maxminddb:"accuracy_radius"`
-		Latitude       float64 `maxminddb:"latitude"`
-		Longitude      float64 `maxminddb:"longitude"`
-		MetroCode      uint    `maxminddb:"metro_code"`
-		TimeZone       string  `maxminddb:"time_zone"`
-	} `maxminddb:"location"`
-	Postal struct {
-		Code string `maxminddb:"code"`
-	} `maxminddb:"postal"`
-	RegisteredCountry struct {
-		GeoNameID         uint              `maxminddb:"geoname_id"`
-		IsInEuropeanUnion bool              `maxminddb:"is_in_european_union"`
-		IsoCode           string            `maxminddb:"iso_code"`
-		Names             map[string]string `maxminddb:"names"`
-	} `maxminddb:"registered_country"`
-	RepresentedCountry struct {
-		GeoNameID         uint              `maxminddb:"geoname_id"`
-		IsInEuropeanUnion bool              `maxminddb:"is_in_european_union"`
-		IsoCode           string            `maxminddb:"iso_code"`
-		Names             map[string]string `maxminddb:"names"`
-		Type              string            `maxminddb:"type"`
-	} `maxminddb:"represented_country"`
-	Subdivisions []struct {
-		GeoNameID uint              `maxminddb:"geoname_id"`
-		IsoCode   string            `maxminddb:"iso_code"`
-		Names     map[string]string `maxminddb:"names"`
-	} `maxminddb:"subdivisions"`
-	Traits struct {
-		IsAnonymousProxy    bool `maxminddb:"is_anonymous_proxy"`
-		IsSatelliteProvider bool `maxminddb:"is_satellite_provider"`
-	} `maxminddb:"traits"`
+type benchmarkNames struct {
+	German              string `maxminddb:"de"`
+	English             string `maxminddb:"en"`
+	Spanish             string `maxminddb:"es"`
+	French              string `maxminddb:"fr"`
+	Japanese            string `maxminddb:"ja"`
+	BrazilianPortuguese string `maxminddb:"pt-BR"`
+	Russian             string `maxminddb:"ru"`
+	SimplifiedChinese   string `maxminddb:"zh-CN"`
 }
 
+type benchmarkContinent struct {
+	Names     benchmarkNames `maxminddb:"names"`
+	Code      string         `maxminddb:"code"`
+	GeoNameID uint           `maxminddb:"geoname_id"`
+}
+
+type benchmarkLocation struct {
+	Latitude       *float64 `maxminddb:"latitude"`
+	Longitude      *float64 `maxminddb:"longitude"`
+	TimeZone       string   `maxminddb:"time_zone"`
+	MetroCode      uint     `maxminddb:"metro_code"`
+	AccuracyRadius uint16   `maxminddb:"accuracy_radius"`
+}
+
+type benchmarkRepresentedCountry struct {
+	Names             benchmarkNames `maxminddb:"names"`
+	ISOCode           string         `maxminddb:"iso_code"`
+	Type              string         `maxminddb:"type"`
+	GeoNameID         uint           `maxminddb:"geoname_id"`
+	IsInEuropeanUnion bool           `maxminddb:"is_in_european_union"`
+}
+
+type benchmarkCityRecord struct {
+	Names     benchmarkNames `maxminddb:"names"`
+	GeoNameID uint           `maxminddb:"geoname_id"`
+}
+
+type benchmarkCityPostal struct {
+	Code string `maxminddb:"code"`
+}
+
+type benchmarkCitySubdivision struct {
+	Names     benchmarkNames `maxminddb:"names"`
+	ISOCode   string         `maxminddb:"iso_code"`
+	GeoNameID uint           `maxminddb:"geoname_id"`
+}
+
+type benchmarkCountryRecord struct {
+	Names             benchmarkNames `maxminddb:"names"`
+	ISOCode           string         `maxminddb:"iso_code"`
+	GeoNameID         uint           `maxminddb:"geoname_id"`
+	IsInEuropeanUnion bool           `maxminddb:"is_in_european_union"`
+}
+
+type benchmarkCityTraits struct {
+	IPAddress netip.Addr
+	Network   netip.Prefix
+	IsAnycast bool `maxminddb:"is_anycast"`
+}
+
+type benchmarkCity struct {
+	Traits             benchmarkCityTraits         `maxminddb:"traits"`
+	Postal             benchmarkCityPostal         `maxminddb:"postal"`
+	Continent          benchmarkContinent          `maxminddb:"continent"`
+	City               benchmarkCityRecord         `maxminddb:"city"`
+	Subdivisions       []benchmarkCitySubdivision  `maxminddb:"subdivisions"`
+	RepresentedCountry benchmarkRepresentedCountry `maxminddb:"represented_country"`
+	Country            benchmarkCountryRecord      `maxminddb:"country"`
+	RegisteredCountry  benchmarkCountryRecord      `maxminddb:"registered_country"`
+	Location           benchmarkLocation           `maxminddb:"location"`
+}
+
+// benchmarkCity mirrors geoip2-golang's City result shape, and the city
+// lookup benchmarks below also populate Traits.IPAddress and Traits.Network to
+// match geoip2.Reader.City's post-decode work.
 func BenchmarkCityLookup(b *testing.B) {
 	db, err := Open("GeoLite2-City.mmdb")
 	require.NoError(b, err)
 
 	//nolint:gosec // this is a test
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	var result fullCity
+	var result benchmarkCity
 
 	s := make(net.IP, 4)
 	for b.Loop() {
 		ip := randomIPv4Address(r, s)
-		err = db.Lookup(ip).Decode(&result)
+		lookupResult := db.Lookup(ip)
+		err = lookupResult.Decode(&result)
 		if err != nil {
 			b.Error(err)
 		}
+		result.Traits.IPAddress = ip
+		result.Traits.Network = lookupResult.Prefix()
 	}
 	require.NoError(b, db.Close(), "error on close")
 }
@@ -1073,15 +1310,18 @@ func BenchmarkCityLookupConcurrent(b *testing.B) {
 						//nolint:gosec // this is a test
 						r := rand.New(rand.NewSource(time.Now().UnixNano()))
 						s := make(net.IP, 4)
-						var result fullCity
+						var result benchmarkCity
 
 						for range lookupsPerGoroutine {
 							ip := randomIPv4Address(r, s)
-							err := db.Lookup(ip).Decode(&result)
+							lookupResult := db.Lookup(ip)
+							err := lookupResult.Decode(&result)
 							if err != nil {
 								b.Error(err)
 								return
 							}
+							result.Traits.IPAddress = ip
+							result.Traits.Network = lookupResult.Prefix()
 							// Access string fields to exercise the cache
 							_ = result.City.Names
 							_ = result.Country.Names

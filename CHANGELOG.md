@@ -1,5 +1,20 @@
 # Changes
 
+## 2.3.0
+
+- This module now targets Go 1.25+.
+- Reduced reflection decoding time and heap allocations on the hot path. A
+  city-lookup benchmark decoding a geoip2-style result runs about 15% faster
+  and allocates about 39% fewer bytes per lookup compared to 2.2.0.
+- Specialized the IPv4 search-tree walk for 24-, 28-, and 32-bit record
+  sizes to skip the IPv6 prefix when looking up IPv4 addresses.
+- Decoding into a non-nil slice with sufficient capacity now reuses the
+  caller's backing array instead of allocating a fresh slice, matching
+  `encoding/json` semantics. Callers that share slice headers across
+  `Decode` calls should be aware that the backing memory is now mutated.
+- Reduced contention under concurrent lookups by switching the internal string
+  cache to a lock-free design.
+
 ## 2.2.0 - 2026-04-26
 
 - Improved reflection decoding performance by skipping `Unmarshaler` checks for

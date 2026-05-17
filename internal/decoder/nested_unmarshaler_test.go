@@ -300,3 +300,333 @@ func TestCustomUnmarshalerWithIterator(t *testing.T) {
 	assert.Equal(t, "-74.0", result.Location.Values["lng"])
 	assert.Equal(t, "US", result.Country)
 }
+
+type testInterfaceUnmarshaler struct {
+	Value  string
+	custom bool
+}
+
+func (u *testInterfaceUnmarshaler) UnmarshalMaxMindDB(d *Decoder) error {
+	u.custom = true
+	value, err := d.ReadString()
+	if err != nil {
+		return err
+	}
+	u.Value = "interface:" + value
+	return nil
+}
+
+func TestPreinitializedInterfaceFieldUsesUnmarshaler(t *testing.T) {
+	type Record struct {
+		Field any `maxminddb:"field"`
+	}
+
+	data := []byte{
+		0xe1,
+		0x45, 'f', 'i', 'e', 'l', 'd',
+		0x44, 't', 'e', 's', 't',
+	}
+
+	inner := &testInterfaceUnmarshaler{}
+	result := Record{Field: inner}
+	d := New(data)
+	require.NoError(t, d.Decode(0, &result))
+	assert.Same(t, inner, result.Field)
+	assert.True(t, inner.custom)
+	assert.Equal(t, "interface:test", inner.Value)
+}
+
+// markedString and friends below are named primitive types implementing
+// UnmarshalMaxMindDB with a transform whose output is distinguishable
+// from the raw decoded value. If the fast path in tryFastDecodeTyped
+// bypasses the unmarshaler, the field decodes to the raw value; if the
+// slow path runs, it decodes to the transformed value.
+
+type markedString string
+
+func (m *markedString) UnmarshalMaxMindDB(d *Decoder) error {
+	s, err := d.ReadString()
+	if err != nil {
+		return err
+	}
+	*m = markedString("X:" + s)
+	return nil
+}
+
+type markedBool bool
+
+func (m *markedBool) UnmarshalMaxMindDB(d *Decoder) error {
+	b, err := d.ReadBool()
+	if err != nil {
+		return err
+	}
+	*m = markedBool(!b)
+	return nil
+}
+
+type markedUint uint
+
+func (m *markedUint) UnmarshalMaxMindDB(d *Decoder) error {
+	n, err := d.ReadUint64()
+	if err != nil {
+		return err
+	}
+	*m = markedUint(n) + 1000
+	return nil
+}
+
+type markedUint16 uint16
+
+func (m *markedUint16) UnmarshalMaxMindDB(d *Decoder) error {
+	n, err := d.ReadUint16()
+	if err != nil {
+		return err
+	}
+	*m = markedUint16(n) + 1000
+	return nil
+}
+
+type markedUint32 uint32
+
+func (m *markedUint32) UnmarshalMaxMindDB(d *Decoder) error {
+	n, err := d.ReadUint32()
+	if err != nil {
+		return err
+	}
+	*m = markedUint32(n) + 1000
+	return nil
+}
+
+type markedUint64 uint64
+
+func (m *markedUint64) UnmarshalMaxMindDB(d *Decoder) error {
+	n, err := d.ReadUint64()
+	if err != nil {
+		return err
+	}
+	*m = markedUint64(n) + 1000
+	return nil
+}
+
+type markedFloat64 float64
+
+func (m *markedFloat64) UnmarshalMaxMindDB(d *Decoder) error {
+	f, err := d.ReadFloat64()
+	if err != nil {
+		return err
+	}
+	*m = markedFloat64(-f)
+	return nil
+}
+
+// TestFastPathPreservesUnmarshalerForNamedTypes guards every fast-path
+// kind against a regression where decodeStruct's isFastType
+// short-circuit runs before the checkUnmarshaler branch and silently
+// bypasses UnmarshalMaxMindDB on named primitive fields. The hazard
+// applies to String, Bool, Uint, Uint16/32/64, and Float64 — and to
+// pointers to each (isFastDecodeType recurses through Pointer).
+func TestFastPathPreservesUnmarshalerForNamedTypes(t *testing.T) {
+	mapPrefix := []byte{0xe1, 0x41, 'v'} // map size 1, key "v"
+	wrap := func(value ...byte) []byte {
+		return append(append([]byte{}, mapPrefix...), value...)
+	}
+
+	cases := []struct {
+		name       string
+		data       []byte
+		runValue   func(t *testing.T, data []byte)
+		runPointer func(t *testing.T, data []byte)
+	}{
+		{
+			name: "string",
+			data: wrap(0x43, 'f', 'o', 'o'),
+			runValue: func(t *testing.T, data []byte) {
+				type record struct {
+					V markedString `maxminddb:"v"`
+				}
+				var r record
+				d := New(data)
+				require.NoError(t, d.Decode(0, &r))
+				require.Equal(t, markedString("X:foo"), r.V)
+			},
+			runPointer: func(t *testing.T, data []byte) {
+				type record struct {
+					V *markedString `maxminddb:"v"`
+				}
+				var r record
+				d := New(data)
+				require.NoError(t, d.Decode(0, &r))
+				require.NotNil(t, r.V)
+				require.Equal(t, markedString("X:foo"), *r.V)
+			},
+		},
+		{
+			name: "bool",
+			// extended (high=0), size=1; kind byte 7 means Kind(7+7)=14=Bool; size=1 -> true
+			data: wrap(0x01, 0x07),
+			runValue: func(t *testing.T, data []byte) {
+				type record struct {
+					V markedBool `maxminddb:"v"`
+				}
+				var r record
+				d := New(data)
+				require.NoError(t, d.Decode(0, &r))
+				require.Equal(t, markedBool(false), r.V)
+			},
+			runPointer: func(t *testing.T, data []byte) {
+				type record struct {
+					V *markedBool `maxminddb:"v"`
+				}
+				var r record
+				d := New(data)
+				require.NoError(t, d.Decode(0, &r))
+				require.NotNil(t, r.V)
+				require.Equal(t, markedBool(false), *r.V)
+			},
+		},
+		{
+			name: "uint",
+			// extended, size=1; kind byte 2 -> Kind(9)=Uint64; value 42
+			data: wrap(0x01, 0x02, 0x2a),
+			runValue: func(t *testing.T, data []byte) {
+				type record struct {
+					V markedUint `maxminddb:"v"`
+				}
+				var r record
+				d := New(data)
+				require.NoError(t, d.Decode(0, &r))
+				require.Equal(t, markedUint(1042), r.V)
+			},
+			runPointer: func(t *testing.T, data []byte) {
+				type record struct {
+					V *markedUint `maxminddb:"v"`
+				}
+				var r record
+				d := New(data)
+				require.NoError(t, d.Decode(0, &r))
+				require.NotNil(t, r.V)
+				require.Equal(t, markedUint(1042), *r.V)
+			},
+		},
+		{
+			name: "uint16",
+			data: wrap(0xa1, 0x2a), // KindUint16, size=1, value 42
+			runValue: func(t *testing.T, data []byte) {
+				type record struct {
+					V markedUint16 `maxminddb:"v"`
+				}
+				var r record
+				d := New(data)
+				require.NoError(t, d.Decode(0, &r))
+				require.Equal(t, markedUint16(1042), r.V)
+			},
+			runPointer: func(t *testing.T, data []byte) {
+				type record struct {
+					V *markedUint16 `maxminddb:"v"`
+				}
+				var r record
+				d := New(data)
+				require.NoError(t, d.Decode(0, &r))
+				require.NotNil(t, r.V)
+				require.Equal(t, markedUint16(1042), *r.V)
+			},
+		},
+		{
+			name: "uint32",
+			data: wrap(0xc1, 0x2a), // KindUint32, size=1, value 42
+			runValue: func(t *testing.T, data []byte) {
+				type record struct {
+					V markedUint32 `maxminddb:"v"`
+				}
+				var r record
+				d := New(data)
+				require.NoError(t, d.Decode(0, &r))
+				require.Equal(t, markedUint32(1042), r.V)
+			},
+			runPointer: func(t *testing.T, data []byte) {
+				type record struct {
+					V *markedUint32 `maxminddb:"v"`
+				}
+				var r record
+				d := New(data)
+				require.NoError(t, d.Decode(0, &r))
+				require.NotNil(t, r.V)
+				require.Equal(t, markedUint32(1042), *r.V)
+			},
+		},
+		{
+			name: "uint64",
+			data: wrap(0x01, 0x02, 0x2a), // extended Uint64, size=1, value 42
+			runValue: func(t *testing.T, data []byte) {
+				type record struct {
+					V markedUint64 `maxminddb:"v"`
+				}
+				var r record
+				d := New(data)
+				require.NoError(t, d.Decode(0, &r))
+				require.Equal(t, markedUint64(1042), r.V)
+			},
+			runPointer: func(t *testing.T, data []byte) {
+				type record struct {
+					V *markedUint64 `maxminddb:"v"`
+				}
+				var r record
+				d := New(data)
+				require.NoError(t, d.Decode(0, &r))
+				require.NotNil(t, r.V)
+				require.Equal(t, markedUint64(1042), *r.V)
+			},
+		},
+		{
+			name: "float64",
+			// KindFloat64 (high=3), size=8; IEEE 754 of 3.14159265359
+			data: wrap(0x68, 0x40, 0x09, 0x21, 0xfb, 0x54, 0x44, 0x2e, 0xea),
+			runValue: func(t *testing.T, data []byte) {
+				type record struct {
+					V markedFloat64 `maxminddb:"v"`
+				}
+				var r record
+				d := New(data)
+				require.NoError(t, d.Decode(0, &r))
+				require.InDelta(t, -3.14159265359, float64(r.V), 1e-9)
+			},
+			runPointer: func(t *testing.T, data []byte) {
+				type record struct {
+					V *markedFloat64 `maxminddb:"v"`
+				}
+				var r record
+				d := New(data)
+				require.NoError(t, d.Decode(0, &r))
+				require.NotNil(t, r.V)
+				require.InDelta(t, -3.14159265359, float64(*r.V), 1e-9)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name+"/value", func(t *testing.T) { tc.runValue(t, tc.data) })
+		t.Run(tc.name+"/pointer", func(t *testing.T) { tc.runPointer(t, tc.data) })
+	}
+}
+
+func TestPreinitializedPointerToInterfaceFieldUsesUnmarshaler(t *testing.T) {
+	type Record struct {
+		Field *any `maxminddb:"field"`
+	}
+
+	data := []byte{
+		0xe1,
+		0x45, 'f', 'i', 'e', 'l', 'd',
+		0x44, 't', 'e', 's', 't',
+	}
+
+	inner := &testInterfaceUnmarshaler{}
+	holder := any(inner)
+	result := Record{Field: &holder}
+	d := New(data)
+	require.NoError(t, d.Decode(0, &result))
+	require.NotNil(t, result.Field)
+	assert.Same(t, inner, (*result.Field).(*testInterfaceUnmarshaler))
+	assert.True(t, inner.custom)
+	assert.Equal(t, "interface:test", inner.Value)
+}
