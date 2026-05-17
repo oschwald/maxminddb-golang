@@ -1,6 +1,6 @@
 # Changes
 
-## 2.3.0
+## 2.3.0 - 2026-05-17
 
 - This module now targets Go 1.25+.
 - Reduced reflection decoding time and heap allocations on the hot path. A
