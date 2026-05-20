@@ -599,6 +599,16 @@ func (r *Reader) traverseTree(ip netip.Addr, node uint, stopBit int) (uint, int,
 }
 
 func (r *Reader) traverseTree24(ip netip.Addr, node uint, stopBit int) (uint, int, error) {
+	// Verify upfront that the buffer covers every possible record offset, so
+	// the inner loops can omit per-iteration hasBufferRange calls and rely on
+	// Go's implicit slice bounds checks (which can't be hit because of this
+	// guard). OpenBytes/Open already enforces this condition, so the check is
+	// only reachable when a Reader is constructed directly (e.g. by tests);
+	// do not remove it as "redundant" — it is the precondition that makes the
+	// inner loops safe.
+	if uint(len(r.buffer)) < r.Metadata.NodeCount*6 {
+		return 0, 0, mmdberrors.NewInvalidDatabaseError("bounds check failed during tree traversal")
+	}
 	i := 0
 	if ip.Is4() {
 		i = r.ipv4StartBitDepth
@@ -610,7 +620,6 @@ func (r *Reader) traverseTree24(ip netip.Addr, node uint, stopBit int) (uint, in
 
 		nodeCount := r.Metadata.NodeCount
 		buffer := r.buffer
-		bufferLen := uint(len(buffer))
 		ip4 := ip.As4()
 		ipBits := uint32(ip4[0])<<24 |
 			uint32(ip4[1])<<16 |
@@ -625,12 +634,6 @@ func (r *Reader) traverseTree24(ip netip.Addr, node uint, stopBit int) (uint, in
 			ipBits <<= 1
 			offset := baseOffset + bit*3
 
-			if !hasBufferRange(bufferLen, baseOffset, 6) {
-				return 0, 0, mmdberrors.NewInvalidDatabaseError(
-					"bounds check failed during tree traversal",
-				)
-			}
-
 			node = (uint(buffer[offset]) << 16) |
 				(uint(buffer[offset+1]) << 8) |
 				uint(buffer[offset+2])
@@ -640,7 +643,6 @@ func (r *Reader) traverseTree24(ip netip.Addr, node uint, stopBit int) (uint, in
 	}
 	nodeCount := r.Metadata.NodeCount
 	buffer := r.buffer
-	bufferLen := uint(len(buffer))
 	ip16 := ip.As16()
 
 	for ; i < stopBit && node < nodeCount; i++ {
@@ -651,12 +653,6 @@ func (r *Reader) traverseTree24(ip netip.Addr, node uint, stopBit int) (uint, in
 		baseOffset := node * 6
 		offset := baseOffset + bit*3
 
-		if !hasBufferRange(bufferLen, offset, 3) {
-			return 0, 0, mmdberrors.NewInvalidDatabaseError(
-				"bounds check failed during tree traversal",
-			)
-		}
-
 		node = (uint(buffer[offset]) << 16) |
 			(uint(buffer[offset+1]) << 8) |
 			uint(buffer[offset+2])
@@ -666,6 +662,16 @@ func (r *Reader) traverseTree24(ip netip.Addr, node uint, stopBit int) (uint, in
 }
 
 func (r *Reader) traverseTree28(ip netip.Addr, node uint, stopBit int) (uint, int, error) {
+	// Verify upfront that the buffer covers every possible record offset, so
+	// the inner loops can omit per-iteration hasBufferRange calls and rely on
+	// Go's implicit slice bounds checks (which can't be hit because of this
+	// guard). OpenBytes/Open already enforces this condition, so the check is
+	// only reachable when a Reader is constructed directly (e.g. by tests);
+	// do not remove it as "redundant" — it is the precondition that makes the
+	// inner loops safe.
+	if uint(len(r.buffer)) < r.Metadata.NodeCount*7 {
+		return 0, 0, mmdberrors.NewInvalidDatabaseError("bounds check failed during tree traversal")
+	}
 	i := 0
 	if ip.Is4() {
 		// Fast path: skip the IPv6 prefix bits by jumping directly to the
@@ -682,7 +688,6 @@ func (r *Reader) traverseTree28(ip netip.Addr, node uint, stopBit int) (uint, in
 
 		nodeCount := r.Metadata.NodeCount
 		buffer := r.buffer
-		bufferLen := uint(len(buffer))
 		ip4 := ip.As4()
 		ipBits := uint32(ip4[0])<<24 |
 			uint32(ip4[1])<<16 |
@@ -704,12 +709,6 @@ func (r *Reader) traverseTree28(ip netip.Addr, node uint, stopBit int) (uint, in
 			ipBits <<= 1
 			offset := baseOffset + bit*4
 
-			if !hasBufferRange(bufferLen, baseOffset, 7) {
-				return 0, 0, mmdberrors.NewInvalidDatabaseError(
-					"bounds check failed during tree traversal",
-				)
-			}
-
 			// shift = 20 (bit=0) or 24 (bit=1): position the shared nibble's
 			// high or low 4 bits into the top of the assembled 28-bit node.
 			sharedByte := uint(buffer[baseOffset+3])
@@ -727,7 +726,6 @@ func (r *Reader) traverseTree28(ip netip.Addr, node uint, stopBit int) (uint, in
 	}
 	nodeCount := r.Metadata.NodeCount
 	buffer := r.buffer
-	bufferLen := uint(len(buffer))
 	ip16 := ip.As16()
 
 	for ; i < stopBit && node < nodeCount; i++ {
@@ -737,13 +735,6 @@ func (r *Reader) traverseTree28(ip netip.Addr, node uint, stopBit int) (uint, in
 
 		baseOffset := node * 7
 		offset := baseOffset + bit*4
-
-		if !hasBufferRange(bufferLen, baseOffset, 4) ||
-			!hasBufferRange(bufferLen, offset, 3) {
-			return 0, 0, mmdberrors.NewInvalidDatabaseError(
-				"bounds check failed during tree traversal",
-			)
-		}
 
 		sharedByte := uint(buffer[baseOffset+3])
 		mask := uint(0xF0 >> (bit * 4))
@@ -760,6 +751,16 @@ func (r *Reader) traverseTree28(ip netip.Addr, node uint, stopBit int) (uint, in
 }
 
 func (r *Reader) traverseTree32(ip netip.Addr, node uint, stopBit int) (uint, int, error) {
+	// Verify upfront that the buffer covers every possible record offset, so
+	// the inner loops can omit per-iteration hasBufferRange calls and rely on
+	// Go's implicit slice bounds checks (which can't be hit because of this
+	// guard). OpenBytes/Open already enforces this condition, so the check is
+	// only reachable when a Reader is constructed directly (e.g. by tests);
+	// do not remove it as "redundant" — it is the precondition that makes the
+	// inner loops safe.
+	if uint(len(r.buffer)) < r.Metadata.NodeCount*8 {
+		return 0, 0, mmdberrors.NewInvalidDatabaseError("bounds check failed during tree traversal")
+	}
 	i := 0
 	if ip.Is4() {
 		i = r.ipv4StartBitDepth
@@ -771,7 +772,6 @@ func (r *Reader) traverseTree32(ip netip.Addr, node uint, stopBit int) (uint, in
 
 		nodeCount := r.Metadata.NodeCount
 		buffer := r.buffer
-		bufferLen := uint(len(buffer))
 		ip4 := ip.As4()
 		ipBits := uint32(ip4[0])<<24 |
 			uint32(ip4[1])<<16 |
@@ -786,12 +786,6 @@ func (r *Reader) traverseTree32(ip netip.Addr, node uint, stopBit int) (uint, in
 			ipBits <<= 1
 			offset := baseOffset + bit*4
 
-			if !hasBufferRange(bufferLen, baseOffset, 8) {
-				return 0, 0, mmdberrors.NewInvalidDatabaseError(
-					"bounds check failed during tree traversal",
-				)
-			}
-
 			node = (uint(buffer[offset]) << 24) |
 				(uint(buffer[offset+1]) << 16) |
 				(uint(buffer[offset+2]) << 8) |
@@ -802,7 +796,6 @@ func (r *Reader) traverseTree32(ip netip.Addr, node uint, stopBit int) (uint, in
 	}
 	nodeCount := r.Metadata.NodeCount
 	buffer := r.buffer
-	bufferLen := uint(len(buffer))
 	ip16 := ip.As16()
 
 	for ; i < stopBit && node < nodeCount; i++ {
@@ -812,12 +805,6 @@ func (r *Reader) traverseTree32(ip netip.Addr, node uint, stopBit int) (uint, in
 
 		baseOffset := node * 8
 		offset := baseOffset + bit*4
-
-		if !hasBufferRange(bufferLen, offset, 4) {
-			return 0, 0, mmdberrors.NewInvalidDatabaseError(
-				"bounds check failed during tree traversal",
-			)
-		}
 
 		node = (uint(buffer[offset]) << 24) |
 			(uint(buffer[offset+1]) << 16) |
