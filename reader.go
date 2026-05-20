@@ -106,6 +106,7 @@ package maxminddb
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -645,17 +646,28 @@ func (r *Reader) traverseTree24(ip netip.Addr, node uint, stopBit int) (uint, in
 	buffer := r.buffer
 	ip16 := ip.As16()
 
-	for ; i < stopBit && node < nodeCount; i++ {
-		byteIdx := i >> 3
-		bitPos := 7 - (i & 7)
-		bit := (uint(ip16[byteIdx]) >> bitPos) & 1
+	for i < stopBit && node < nodeCount {
+		// Extract bits in 32-bit chunks to reduce shift/mask operations in the
+		// inner loop.
+		chunk := i >> 5
+		ipBits := binary.BigEndian.Uint32(ip16[chunk*4:])
 
-		baseOffset := node * 6
-		offset := baseOffset + bit*3
+		offsetInChunk := i & 31
+		ipBits <<= offsetInChunk
 
-		node = (uint(buffer[offset]) << 16) |
-			(uint(buffer[offset+1]) << 8) |
-			uint(buffer[offset+2])
+		bitsToProcess := min(32-offsetInChunk, stopBit-i)
+		for j := 0; j < bitsToProcess && node < nodeCount; j++ {
+			bit := uint((ipBits >> 31) & 1)
+			ipBits <<= 1
+
+			baseOffset := node * 6
+			offset := baseOffset + bit*3
+
+			node = (uint(buffer[offset]) << 16) |
+				(uint(buffer[offset+1]) << 8) |
+				uint(buffer[offset+2])
+			i++
+		}
 	}
 
 	return node, i, nil
@@ -728,23 +740,34 @@ func (r *Reader) traverseTree28(ip netip.Addr, node uint, stopBit int) (uint, in
 	buffer := r.buffer
 	ip16 := ip.As16()
 
-	for ; i < stopBit && node < nodeCount; i++ {
-		byteIdx := i >> 3
-		bitPos := 7 - (i & 7)
-		bit := (uint(ip16[byteIdx]) >> bitPos) & 1
+	for i < stopBit && node < nodeCount {
+		// Extract bits in 32-bit chunks to reduce shift/mask operations in the
+		// inner loop.
+		chunk := i >> 5
+		ipBits := binary.BigEndian.Uint32(ip16[chunk*4:])
 
-		baseOffset := node * 7
-		offset := baseOffset + bit*4
+		offsetInChunk := i & 31
+		ipBits <<= offsetInChunk
 
-		sharedByte := uint(buffer[baseOffset+3])
-		mask := uint(0xF0 >> (bit * 4))
-		shift := 20 + bit*4
-		nibble := ((sharedByte & mask) << shift)
+		bitsToProcess := min(32-offsetInChunk, stopBit-i)
+		for j := 0; j < bitsToProcess && node < nodeCount; j++ {
+			bit := uint((ipBits >> 31) & 1)
+			ipBits <<= 1
 
-		node = nibble |
-			(uint(buffer[offset]) << 16) |
-			(uint(buffer[offset+1]) << 8) |
-			uint(buffer[offset+2])
+			baseOffset := node * 7
+			offset := baseOffset + bit*4
+
+			sharedByte := uint(buffer[baseOffset+3])
+			mask := uint(0xF0 >> (bit * 4))
+			shift := 20 + bit*4
+			nibble := ((sharedByte & mask) << shift)
+
+			node = nibble |
+				(uint(buffer[offset]) << 16) |
+				(uint(buffer[offset+1]) << 8) |
+				uint(buffer[offset+2])
+			i++
+		}
 	}
 
 	return node, i, nil
@@ -798,18 +821,29 @@ func (r *Reader) traverseTree32(ip netip.Addr, node uint, stopBit int) (uint, in
 	buffer := r.buffer
 	ip16 := ip.As16()
 
-	for ; i < stopBit && node < nodeCount; i++ {
-		byteIdx := i >> 3
-		bitPos := 7 - (i & 7)
-		bit := (uint(ip16[byteIdx]) >> bitPos) & 1
+	for i < stopBit && node < nodeCount {
+		// Extract bits in 32-bit chunks to reduce shift/mask operations in the
+		// inner loop.
+		chunk := i >> 5
+		ipBits := binary.BigEndian.Uint32(ip16[chunk*4:])
 
-		baseOffset := node * 8
-		offset := baseOffset + bit*4
+		offsetInChunk := i & 31
+		ipBits <<= offsetInChunk
 
-		node = (uint(buffer[offset]) << 24) |
-			(uint(buffer[offset+1]) << 16) |
-			(uint(buffer[offset+2]) << 8) |
-			uint(buffer[offset+3])
+		bitsToProcess := min(32-offsetInChunk, stopBit-i)
+		for j := 0; j < bitsToProcess && node < nodeCount; j++ {
+			bit := uint((ipBits >> 31) & 1)
+			ipBits <<= 1
+
+			baseOffset := node * 8
+			offset := baseOffset + bit*4
+
+			node = (uint(buffer[offset]) << 24) |
+				(uint(buffer[offset+1]) << 16) |
+				(uint(buffer[offset+2]) << 8) |
+				uint(buffer[offset+3])
+			i++
+		}
 	}
 
 	return node, i, nil
