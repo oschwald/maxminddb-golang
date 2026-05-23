@@ -311,9 +311,9 @@ func (r *Reader) Close() error {
 // OpenBytes takes a byte slice corresponding to a MaxMind DB file and any
 // options. It returns a Reader structure or an error.
 func OpenBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
-	opts := &readerOptions{}
+	var opts readerOptions
 	for _, option := range options {
-		option(opts)
+		option(&opts)
 	}
 
 	metadataStart := bytes.LastIndex(buffer, metadataStartMarker)
