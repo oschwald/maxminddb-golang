@@ -105,9 +105,9 @@ func (r *Reader) NetworksWithin(prefix netip.Prefix, options ...NetworksOption) 
 			return
 		}
 
-		n := &networkOptions{}
+		var n networkOptions
 		for _, option := range options {
-			option(n)
+			option(&n)
 		}
 
 		ip := prefix.Addr()
