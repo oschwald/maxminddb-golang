@@ -1220,26 +1220,17 @@ type addressableValue struct {
 	forcedAddr bool
 }
 
-// newAddressableValue creates an addressable value wrapper.
-// If the value is not addressable, it wraps it to make it addressable.
-func newAddressableValue(v reflect.Value) addressableValue {
+// makeAddressable converts a reflect.Value to addressableValue, short-circuiting
+// the reflect.New allocation when the value is already addressable. Non-addressable
+// values are boxed via reflect.New so a pointer can be taken for downstream code
+// that requires it.
+func makeAddressable(v reflect.Value) addressableValue {
 	if v.CanAddr() {
 		return addressableValue{Value: v}
 	}
-	// Make non-addressable values addressable by boxing them
 	addressable := reflect.New(v.Type()).Elem()
 	addressable.Set(v)
 	return addressableValue{Value: addressable, forcedAddr: true}
-}
-
-// makeAddressable efficiently converts a reflect.Value to addressableValue
-// with minimal allocations when possible.
-func makeAddressable(v reflect.Value) addressableValue {
-	// Fast path for already addressable values
-	if v.CanAddr() {
-		return addressableValue{Value: v}
-	}
-	return newAddressableValue(v)
 }
 
 // isFastDecodeType determines if a field type can use optimized decode paths.
