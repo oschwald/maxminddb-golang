@@ -496,6 +496,43 @@ func TestPeekKindWithPointer(t *testing.T) {
 	require.Equal(t, KindString, actualType)
 }
 
+func TestOffsetReturnsValueStart(t *testing.T) {
+	tests := map[string]struct {
+		buffer         []byte
+		offset         uint
+		expectedOffset uint
+	}{
+		"direct value": {
+			buffer:         []byte{0x44, 't', 'e', 's', 't'},
+			offset:         0,
+			expectedOffset: 0,
+		},
+		"pointer": {
+			buffer: []byte{
+				0x20, 0x05,
+				0x00, 0x00, 0x00,
+				0x44, 't', 'e', 's', 't',
+			},
+			offset:         0,
+			expectedOffset: 5,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			dd := NewDataDecoder(tt.buffer)
+			offset := NewDecoder(dd, tt.offset).Offset()
+
+			require.Equal(t, tt.expectedOffset, offset)
+
+			decoder := NewDecoder(dd, offset)
+			value, err := decoder.ReadString()
+			require.NoError(t, err)
+			require.Equal(t, "test", value)
+		})
+	}
+}
+
 // ExampleDecoder_PeekKind demonstrates how to use PeekKind for
 // look-ahead parsing without consuming values.
 func ExampleDecoder_PeekKind() {
