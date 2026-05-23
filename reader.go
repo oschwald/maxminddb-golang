@@ -793,10 +793,9 @@ func (r *Reader) resolveDataPointer(pointer uint) (uintptr, error) {
 		return 0, mmdberrors.NewInvalidDatabaseError("the MaxMind DB file's search tree is corrupt")
 	}
 
-	resolved := uintptr(pointer - minPointer)
-	if resolved < uintptr(r.dataSectionSize) {
-		return resolved, nil
+	resolved := pointer - minPointer
+	if resolved >= r.dataSectionSize {
+		return 0, mmdberrors.NewInvalidDatabaseError("the MaxMind DB file's search tree is corrupt")
 	}
-
-	return 0, mmdberrors.NewInvalidDatabaseError("the MaxMind DB file's search tree is corrupt")
+	return uintptr(resolved), nil
 }
