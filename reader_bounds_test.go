@@ -7,32 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestReadNodeBySizeRejectsShortBuffers(t *testing.T) {
-	tests := []struct {
-		name       string
-		buffer     []byte
-		recordSize uint
-		bit        uint
-	}{
-		{name: "24-bit", buffer: []byte{0x01, 0x02}, recordSize: 24},
-		{name: "28-bit left", buffer: []byte{0x01, 0x02, 0x03}, recordSize: 28},
-		{
-			name:       "28-bit right",
-			buffer:     []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06},
-			recordSize: 28,
-			bit:        1,
-		},
-		{name: "32-bit", buffer: []byte{0x01, 0x02, 0x03}, recordSize: 32},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := readNodeBySize(tt.buffer, 0, tt.bit, tt.recordSize)
-			require.ErrorContains(t, err, "bounds check failed")
-		})
-	}
-}
-
 func TestReadNodePairBySizeRejectsShortBuffers(t *testing.T) {
 	tests := []struct {
 		name       string

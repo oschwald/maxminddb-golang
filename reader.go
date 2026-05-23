@@ -424,16 +424,9 @@ func (r *Reader) setIPv4Start() error {
 		return nil
 	}
 
-	nodeCount := r.Metadata.NodeCount
-
-	node := uint(0)
-	i := 0
-	for ; i < 96 && node < nodeCount; i++ {
-		var err error
-		node, err = readNodeBySize(r.buffer, node*r.nodeOffsetMult, 0, r.Metadata.RecordSize)
-		if err != nil {
-			return err
-		}
+	node, i, err := r.traverseTree(zeroIP, 0, 96)
+	if err != nil {
+		return err
 	}
 	r.ipv4Start = node
 	r.ipv4StartBitDepth = i
@@ -469,57 +462,6 @@ func (r *Reader) lookupPointer(ip netip.Addr) (uint, int, error) {
 	}
 
 	return 0, prefixLength, mmdberrors.NewInvalidDatabaseError("invalid node in search tree")
-}
-
-// readNodeBySize reads a node value from the buffer based on record size and bit.
-func readNodeBySize(buffer []byte, offset, bit, recordSize uint) (uint, error) {
-	bufferLen := uint(len(buffer))
-	switch recordSize {
-	case 24:
-		offset += bit * 3
-		if !hasBufferRange(bufferLen, offset, 3) {
-			return 0, mmdberrors.NewInvalidDatabaseError(
-				"bounds check failed: insufficient buffer for 24-bit node read",
-			)
-		}
-		return (uint(buffer[offset]) << 16) |
-			(uint(buffer[offset+1]) << 8) |
-			uint(buffer[offset+2]), nil
-	case 28:
-		if bit == 0 {
-			if !hasBufferRange(bufferLen, offset, 4) {
-				return 0, mmdberrors.NewInvalidDatabaseError(
-					"bounds check failed: insufficient buffer for 28-bit node read",
-				)
-			}
-			return ((uint(buffer[offset+3]) & 0xF0) << 20) |
-				(uint(buffer[offset]) << 16) |
-				(uint(buffer[offset+1]) << 8) |
-				uint(buffer[offset+2]), nil
-		}
-		if !hasBufferRange(bufferLen, offset, 7) {
-			return 0, mmdberrors.NewInvalidDatabaseError(
-				"bounds check failed: insufficient buffer for 28-bit node read",
-			)
-		}
-		return ((uint(buffer[offset+3]) & 0x0F) << 24) |
-			(uint(buffer[offset+4]) << 16) |
-			(uint(buffer[offset+5]) << 8) |
-			uint(buffer[offset+6]), nil
-	case 32:
-		offset += bit * 4
-		if !hasBufferRange(bufferLen, offset, 4) {
-			return 0, mmdberrors.NewInvalidDatabaseError(
-				"bounds check failed: insufficient buffer for 32-bit node read",
-			)
-		}
-		return (uint(buffer[offset]) << 24) |
-			(uint(buffer[offset+1]) << 16) |
-			(uint(buffer[offset+2]) << 8) |
-			uint(buffer[offset+3]), nil
-	default:
-		return 0, mmdberrors.NewInvalidDatabaseError("unsupported record size")
-	}
 }
 
 // readNodePairBySize reads both left (bit=0) and right (bit=1) child pointers

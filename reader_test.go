@@ -691,6 +691,35 @@ func TestIpv6inIpv4(t *testing.T) {
 	require.NoError(t, reader.Close(), "error on close")
 }
 
+// TestSetIPv4StartKnownValues asserts the exact ipv4Start and
+// ipv4StartBitDepth setIPv4Start computes for the standard mixed
+// databases. The parity tests below only compare IPv4-fast-path vs
+// IPv6-generic-walk results, so a regression that produced a wrong
+// (but internally consistent) ipv4Start would still pass parity. This
+// test pins the known-correct values directly.
+func TestSetIPv4StartKnownValues(t *testing.T) {
+	tests := []struct {
+		dbFile            string
+		ipv4Start         uint
+		ipv4StartBitDepth int
+	}{
+		{"MaxMind-DB-test-mixed-24.mmdb", 96, 96},
+		{"MaxMind-DB-test-mixed-28.mmdb", 96, 96},
+		{"MaxMind-DB-test-mixed-32.mmdb", 96, 96},
+	}
+	for _, tt := range tests {
+		t.Run(tt.dbFile, func(t *testing.T) {
+			r, err := Open(testFile(tt.dbFile))
+			require.NoError(t, err)
+			defer func() { require.NoError(t, r.Close()) }()
+			require.Equal(t, tt.ipv4Start, r.ipv4Start,
+				"setIPv4Start computed wrong ipv4Start")
+			require.Equal(t, tt.ipv4StartBitDepth, r.ipv4StartBitDepth,
+				"setIPv4Start computed wrong ipv4StartBitDepth")
+		})
+	}
+}
+
 // TestLookupIPv4VsIPv6Mixed guards the specialized IPv4 tree walks in
 // traverseTree24, traverseTree28, and traverseTree32 against drift
 // from the generic IPv6 walk. For each address we look up the IPv4
