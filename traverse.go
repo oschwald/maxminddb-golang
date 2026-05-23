@@ -268,9 +268,7 @@ func isInIPv4Subtree(ip netip.Addr) bool {
 // We store IPv4 addresses at ::/96 for unclear reasons.
 func v4ToV16(ip netip.Addr) netip.Addr {
 	b4 := ip.As4()
-	var b16 [16]byte
-	copy(b16[12:], b4[:])
-	return netip.AddrFrom16(b16)
+	return netip.AddrFrom16([16]byte{12: b4[0], 13: b4[1], 14: b4[2], 15: b4[3]})
 }
 
 // Converts an IPv4 address embedded in IPv6 to IPv4.
