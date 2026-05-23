@@ -453,11 +453,12 @@ func (r *Reader) lookupPointer(ip netip.Addr) (uint, int, error) {
 	}
 
 	nodeCount := r.Metadata.NodeCount
+	if node > nodeCount {
+		return node, prefixLength, nil
+	}
 	if node == nodeCount {
 		// Record is empty
 		return 0, prefixLength, nil
-	} else if node > nodeCount {
-		return node, prefixLength, nil
 	}
 
 	return 0, prefixLength, mmdberrors.NewInvalidDatabaseError("invalid node in search tree")
