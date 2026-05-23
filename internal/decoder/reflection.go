@@ -280,14 +280,28 @@ func (d *ReflectionDecoder) decodeValueImpl(
 		)
 	}
 
-	var allocatedPointers []reflect.Value
+	var allocated1, allocated2 reflect.Value
+	var allocatedMore []reflect.Value
+	allocatedCount := 0
+
 	defer func() {
 		if retErr == nil {
 			return
 		}
-
-		for _, pointer := range slices.Backward(allocatedPointers) {
-			pointer.SetZero()
+		switch allocatedCount {
+		case 0:
+			// no-op
+		case 1:
+			allocated1.SetZero()
+		case 2:
+			allocated2.SetZero()
+			allocated1.SetZero()
+		default:
+			for _, pointer := range slices.Backward(allocatedMore) {
+				pointer.SetZero()
+			}
+			allocated2.SetZero()
+			allocated1.SetZero()
 		}
 	}()
 
@@ -309,7 +323,15 @@ func (d *ReflectionDecoder) decodeValueImpl(
 
 		if result.IsNil() {
 			result.Set(reflect.New(result.Type().Elem()))
-			allocatedPointers = append(allocatedPointers, result.Value)
+			switch allocatedCount {
+			case 0:
+				allocated1 = result.Value
+			case 1:
+				allocated2 = result.Value
+			default:
+				allocatedMore = append(allocatedMore, result.Value)
+			}
+			allocatedCount++
 		}
 
 		result = addressableValue{
