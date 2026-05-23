@@ -622,10 +622,7 @@ func (r *Reader) traverseTree24(ip netip.Addr, node uint, stopBit int) (uint, in
 		nodeCount := r.Metadata.NodeCount
 		buffer := r.buffer
 		ip4 := ip.As4()
-		ipBits := uint32(ip4[0])<<24 |
-			uint32(ip4[1])<<16 |
-			uint32(ip4[2])<<8 |
-			uint32(ip4[3])
+		ipBits := binary.BigEndian.Uint32(ip4[:])
 		remainingBits := min(stopBit-i, 32)
 
 		j := 0
@@ -701,10 +698,7 @@ func (r *Reader) traverseTree28(ip netip.Addr, node uint, stopBit int) (uint, in
 		nodeCount := r.Metadata.NodeCount
 		buffer := r.buffer
 		ip4 := ip.As4()
-		ipBits := uint32(ip4[0])<<24 |
-			uint32(ip4[1])<<16 |
-			uint32(ip4[2])<<8 |
-			uint32(ip4[3])
+		ipBits := binary.BigEndian.Uint32(ip4[:])
 		// stopBit comes from the shared traverseTree signature (max 128),
 		// but ipBits only holds 32 bits, so clamp before iterating.
 		remainingBits := min(stopBit-i, 32)
@@ -796,10 +790,7 @@ func (r *Reader) traverseTree32(ip netip.Addr, node uint, stopBit int) (uint, in
 		nodeCount := r.Metadata.NodeCount
 		buffer := r.buffer
 		ip4 := ip.As4()
-		ipBits := uint32(ip4[0])<<24 |
-			uint32(ip4[1])<<16 |
-			uint32(ip4[2])<<8 |
-			uint32(ip4[3])
+		ipBits := binary.BigEndian.Uint32(ip4[:])
 		remainingBits := min(stopBit-i, 32)
 
 		j := 0
