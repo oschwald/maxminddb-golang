@@ -276,6 +276,5 @@ func v4ToV16(ip netip.Addr) netip.Addr {
 // Converts an IPv4 address embedded in IPv6 to IPv4.
 func v6ToV4(ip netip.Addr) netip.Addr {
 	b := ip.As16()
-	v, _ := netip.AddrFromSlice(b[12:])
-	return v
+	return netip.AddrFrom4([4]byte(b[12:]))
 }
