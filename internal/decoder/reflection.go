@@ -323,7 +323,7 @@ func (d *ReflectionDecoder) decodeValueImpl(
 	// per-field precomputation already established the destination cannot
 	// match, avoiding the reflective type assertion entirely.
 	if checkUnmarshaler && result.CanAddr() && mayImplementUnmarshaler(result.Type()) {
-		if unmarshaler, ok := tryTypeAssert(result.Addr()); ok {
+		if unmarshaler, ok := reflect.TypeAssert[Unmarshaler](result.Addr()); ok {
 			decoder := NewDecoder(d.DataDecoder, offset)
 			if err := unmarshaler.UnmarshalMaxMindDB(decoder); err != nil {
 				return 0, err
