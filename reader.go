@@ -351,9 +351,8 @@ func OpenBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
 	if dataSectionStart > dataSectionEnd {
 		return nil, mmdberrors.NewInvalidDatabaseError("the MaxMind DB contains invalid metadata")
 	}
-	d := decoder.New(
-		buffer[searchTreeSize+dataSectionSeparatorSize : metadataStart-len(metadataStartMarker)],
-	)
+	dataSection := buffer[dataSectionStart:dataSectionEnd]
+	d := decoder.New(dataSection)
 
 	reader := &Reader{
 		buffer:          buffer,
