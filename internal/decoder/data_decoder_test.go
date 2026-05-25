@@ -179,3 +179,91 @@ func TestDecodeKeyFollowsPointer(t *testing.T) {
 	require.Equal(t, uint(2), nextOffset,
 		"nextOffset should point past the pointer bytes, not past the pointed-to string")
 }
+
+// TestDecodePointerKeyFastPointerSizes exercises decodePointerKeyFast for
+// pointer sizes 2 and 4. Size 1 is covered by TestDecodeKeyFollowsPointer;
+// size 3 requires a >526KB buffer (pointerBase3 offset) and is exercised
+// indirectly by the existing real-database lookup tests. A copy-paste error
+// in any pointer-size branch — wrong base added, wrong shift, or wrong
+// payload-byte count consumed — would change decoded keys or break
+// nextOffset.
+func TestDecodePointerKeyFastPointerSizes(t *testing.T) {
+	t.Run("pointer size 2", func(t *testing.T) {
+		// ctrl 0x28: KindPointer, pointerSize-1=1 (so size=2), prefix=0.
+		// payload [0x00, 0x05] -> raw=5, plus pointerBase2 (2048) -> 2053.
+		// Buffer is 2053 + 4 bytes, with the target "key" placed at 2053.
+		buf := make([]byte, 2057)
+		buf[0] = 0x28
+		buf[1] = 0x00
+		buf[2] = 0x05
+		buf[2053] = 0x43
+		copy(buf[2054:], "key")
+
+		d := NewDataDecoder(buf)
+		got, nextOffset, err := d.decodeKey(0)
+		require.NoError(t, err)
+		require.Equal(t, "key", string(got))
+		require.Equal(t, uint(3), nextOffset,
+			"nextOffset must point past the 1-byte ctrl + 2-byte payload")
+	})
+
+	t.Run("pointer size 4", func(t *testing.T) {
+		// ctrl 0x38: KindPointer, pointerSize-1=3 (so size=4), prefix unused.
+		// payload [0x00, 0x00, 0x00, 0x09] -> raw=9, no base added -> 9.
+		buf := []byte{
+			0x38, 0x00, 0x00, 0x00, 0x09,
+			0x00, 0x00, 0x00, 0x00,
+			0x43, 'k', 'e', 'y',
+		}
+		d := NewDataDecoder(buf)
+		got, nextOffset, err := d.decodeKey(0)
+		require.NoError(t, err)
+		require.Equal(t, "key", string(got))
+		require.Equal(t, uint(5), nextOffset,
+			"nextOffset must point past the 1-byte ctrl + 4-byte payload")
+	})
+}
+
+// TestDecodePointerKeyFastNonStringTarget verifies that a pointer to a
+// non-KindString target bails out of the fast path. A regression that
+// accepted any pointer-target kind would return bogus key bytes (e.g.
+// pointing at a map or uint ctrl byte's payload), silently corrupting
+// struct decoding. The slow path also rejects this, but with a specific
+// "unexpected type when decoding string" error.
+func TestDecodePointerKeyFastNonStringTarget(t *testing.T) {
+	// Pointer at offset 0 -> offset 5. At offset 5 we put ctrl 0xC0
+	// (KindUint16, size 0). The fast path must not accept this.
+	buf := []byte{
+		0x20, 0x05,
+		0x00, 0x00, 0x00,
+		0xC0,
+	}
+	d := NewDataDecoder(buf)
+	_, _, err := d.decodeKey(0)
+	require.Error(t, err, "non-string pointer target must be rejected")
+	require.Contains(t, err.Error(), "unexpected type when decoding string")
+}
+
+// TestDecodePointerKeyFastExtendedSize verifies that a pointer targeting a
+// string whose size requires the extended encoding (size byte >= 29) is
+// handled correctly via the slow-path fall-through. A regression that
+// accepted the raw `pointedSize` byte as the string length would either
+// truncate the key (reading only 29 bytes instead of the full string) or
+// read past the buffer.
+func TestDecodePointerKeyFastExtendedSize(t *testing.T) {
+	// 30-byte key triggers the extended size encoding: ctrl 0x5D, extra
+	// byte (size - 29) = 0x01, then 30 payload bytes.
+	key := strings.Repeat("k", 30)
+	// Layout: [pointer ctrl][pointer payload][padding][target ctrl][extra
+	// size byte][key bytes...]. Pointer payload 0x05 -> target at offset 5.
+	buf := make([]byte, 0, 7+len(key))
+	buf = append(buf, 0x20, 0x05, 0x00, 0x00, 0x00, 0x5D, 0x01)
+	buf = append(buf, key...)
+
+	d := NewDataDecoder(buf)
+	got, nextOffset, err := d.decodeKey(0)
+	require.NoError(t, err)
+	require.Equal(t, key, string(got))
+	require.Equal(t, uint(2), nextOffset,
+		"nextOffset must point past the pointer bytes regardless of fast/slow path")
+}

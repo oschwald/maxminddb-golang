@@ -280,14 +280,28 @@ func (d *ReflectionDecoder) decodeValueImpl(
 		)
 	}
 
-	var allocatedPointers []reflect.Value
+	var allocated1, allocated2 reflect.Value
+	var allocatedMore []reflect.Value
+	allocatedCount := 0
+
 	defer func() {
 		if retErr == nil {
 			return
 		}
-
-		for _, pointer := range slices.Backward(allocatedPointers) {
-			pointer.SetZero()
+		switch allocatedCount {
+		case 0:
+			// no-op
+		case 1:
+			allocated1.SetZero()
+		case 2:
+			allocated2.SetZero()
+			allocated1.SetZero()
+		default:
+			for _, pointer := range slices.Backward(allocatedMore) {
+				pointer.SetZero()
+			}
+			allocated2.SetZero()
+			allocated1.SetZero()
 		}
 	}()
 
@@ -309,7 +323,15 @@ func (d *ReflectionDecoder) decodeValueImpl(
 
 		if result.IsNil() {
 			result.Set(reflect.New(result.Type().Elem()))
-			allocatedPointers = append(allocatedPointers, result.Value)
+			switch allocatedCount {
+			case 0:
+				allocated1 = result.Value
+			case 1:
+				allocated2 = result.Value
+			default:
+				allocatedMore = append(allocatedMore, result.Value)
+			}
+			allocatedCount++
 		}
 
 		result = addressableValue{
@@ -323,7 +345,7 @@ func (d *ReflectionDecoder) decodeValueImpl(
 	// per-field precomputation already established the destination cannot
 	// match, avoiding the reflective type assertion entirely.
 	if checkUnmarshaler && result.CanAddr() && mayImplementUnmarshaler(result.Type()) {
-		if unmarshaler, ok := tryTypeAssert(result.Addr()); ok {
+		if unmarshaler, ok := reflect.TypeAssert[Unmarshaler](result.Addr()); ok {
 			decoder := NewDecoder(d.DataDecoder, offset)
 			if err := unmarshaler.UnmarshalMaxMindDB(decoder); err != nil {
 				return 0, err
@@ -1220,26 +1242,17 @@ type addressableValue struct {
 	forcedAddr bool
 }
 
-// newAddressableValue creates an addressable value wrapper.
-// If the value is not addressable, it wraps it to make it addressable.
-func newAddressableValue(v reflect.Value) addressableValue {
+// makeAddressable converts a reflect.Value to addressableValue, short-circuiting
+// the reflect.New allocation when the value is already addressable. Non-addressable
+// values are boxed via reflect.New so a pointer can be taken for downstream code
+// that requires it.
+func makeAddressable(v reflect.Value) addressableValue {
 	if v.CanAddr() {
 		return addressableValue{Value: v}
 	}
-	// Make non-addressable values addressable by boxing them
 	addressable := reflect.New(v.Type()).Elem()
 	addressable.Set(v)
 	return addressableValue{Value: addressable, forcedAddr: true}
-}
-
-// makeAddressable efficiently converts a reflect.Value to addressableValue
-// with minimal allocations when possible.
-func makeAddressable(v reflect.Value) addressableValue {
-	// Fast path for already addressable values
-	if v.CanAddr() {
-		return addressableValue{Value: v}
-	}
-	return newAddressableValue(v)
 }
 
 // isFastDecodeType determines if a field type can use optimized decode paths.

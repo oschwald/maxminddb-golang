@@ -691,6 +691,35 @@ func TestIpv6inIpv4(t *testing.T) {
 	require.NoError(t, reader.Close(), "error on close")
 }
 
+// TestSetIPv4StartKnownValues asserts the exact ipv4Start and
+// ipv4StartBitDepth setIPv4Start computes for the standard mixed
+// databases. The parity tests below only compare IPv4-fast-path vs
+// IPv6-generic-walk results, so a regression that produced a wrong
+// (but internally consistent) ipv4Start would still pass parity. This
+// test pins the known-correct values directly.
+func TestSetIPv4StartKnownValues(t *testing.T) {
+	tests := []struct {
+		dbFile            string
+		ipv4Start         uint
+		ipv4StartBitDepth int
+	}{
+		{"MaxMind-DB-test-mixed-24.mmdb", 96, 96},
+		{"MaxMind-DB-test-mixed-28.mmdb", 96, 96},
+		{"MaxMind-DB-test-mixed-32.mmdb", 96, 96},
+	}
+	for _, tt := range tests {
+		t.Run(tt.dbFile, func(t *testing.T) {
+			r, err := Open(testFile(tt.dbFile))
+			require.NoError(t, err)
+			defer func() { require.NoError(t, r.Close()) }()
+			require.Equal(t, tt.ipv4Start, r.ipv4Start,
+				"setIPv4Start computed wrong ipv4Start")
+			require.Equal(t, tt.ipv4StartBitDepth, r.ipv4StartBitDepth,
+				"setIPv4Start computed wrong ipv4StartBitDepth")
+		})
+	}
+}
+
 // TestLookupIPv4VsIPv6Mixed guards the specialized IPv4 tree walks in
 // traverseTree24, traverseTree28, and traverseTree32 against drift
 // from the generic IPv6 walk. For each address we look up the IPv4
@@ -1584,4 +1613,119 @@ func TestNetworksWithinInvalidPrefix(t *testing.T) {
 	}
 
 	assert.True(t, foundError, "Expected error when using invalid prefix")
+}
+
+type benchmarkNamesPointers struct {
+	German              *string `maxminddb:"de"`
+	English             *string `maxminddb:"en"`
+	Spanish             *string `maxminddb:"es"`
+	French              *string `maxminddb:"fr"`
+	Japanese            *string `maxminddb:"ja"`
+	BrazilianPortuguese *string `maxminddb:"pt-BR"`
+	Russian             *string `maxminddb:"ru"`
+	SimplifiedChinese   *string `maxminddb:"zh-CN"`
+}
+
+type benchmarkContinentPointers struct {
+	Names     *benchmarkNamesPointers `maxminddb:"names"`
+	Code      *string                 `maxminddb:"code"`
+	GeoNameID *uint                   `maxminddb:"geoname_id"`
+}
+
+type benchmarkCityRecordPointers struct {
+	Names     *benchmarkNamesPointers `maxminddb:"names"`
+	GeoNameID *uint                   `maxminddb:"geoname_id"`
+}
+
+type benchmarkCityPostalPointers struct {
+	Code *string `maxminddb:"code"`
+}
+
+type benchmarkCitySubdivisionPointers struct {
+	Names     *benchmarkNamesPointers `maxminddb:"names"`
+	ISOCode   *string                 `maxminddb:"iso_code"`
+	GeoNameID *uint                   `maxminddb:"geoname_id"`
+}
+
+type benchmarkCountryRecordPointers struct {
+	Names             *benchmarkNamesPointers `maxminddb:"names"`
+	ISOCode           *string                 `maxminddb:"iso_code"`
+	GeoNameID         *uint                   `maxminddb:"geoname_id"`
+	IsInEuropeanUnion *bool                   `maxminddb:"is_in_european_union"`
+}
+
+type benchmarkLocationPointers struct {
+	Latitude       *float64 `maxminddb:"latitude"`
+	Longitude      *float64 `maxminddb:"longitude"`
+	TimeZone       *string  `maxminddb:"time_zone"`
+	MetroCode      *uint    `maxminddb:"metro_code"`
+	AccuracyRadius *uint16  `maxminddb:"accuracy_radius"`
+}
+
+type benchmarkCityTraitsPointers struct {
+	IPAddress *netip.Addr
+	Network   *netip.Prefix
+	IsAnycast *bool `maxminddb:"is_anycast"`
+}
+
+type benchmarkCityWithPointers struct {
+	Traits             *benchmarkCityTraitsPointers        `maxminddb:"traits"`
+	Postal             *benchmarkCityPostalPointers        `maxminddb:"postal"`
+	Continent          *benchmarkContinentPointers         `maxminddb:"continent"`
+	City               *benchmarkCityRecordPointers        `maxminddb:"city"`
+	Subdivisions       []*benchmarkCitySubdivisionPointers `maxminddb:"subdivisions"`
+	RepresentedCountry *benchmarkCountryRecordPointers     `maxminddb:"represented_country"`
+	Country            *benchmarkCountryRecordPointers     `maxminddb:"country"`
+	RegisteredCountry  *benchmarkCountryRecordPointers     `maxminddb:"registered_country"`
+	Location           *benchmarkLocationPointers          `maxminddb:"location"`
+}
+
+func BenchmarkCityLookupWithPointers(b *testing.B) {
+	db, err := Open("GeoLite2-City.mmdb")
+	require.NoError(b, err)
+
+	//nolint:gosec // this is a test
+	r := rand.New(rand.NewSource(0))
+	var result benchmarkCityWithPointers
+
+	s := make(net.IP, 4)
+	for b.Loop() {
+		ip := randomIPv4Address(r, s)
+		lookupResult := db.Lookup(ip)
+		err = lookupResult.Decode(&result)
+		if err != nil {
+			b.Error(err)
+		}
+	}
+	require.NoError(b, db.Close(), "error on close")
+}
+
+func randomIPv6Address(r *rand.Rand, ip []byte) netip.Addr {
+	for i := 0; i < 16; i += 4 {
+		num := r.Uint32()
+		ip[i] = byte(num >> 24)
+		ip[i+1] = byte(num >> 16)
+		ip[i+2] = byte(num >> 8)
+		ip[i+3] = byte(num)
+	}
+	v, _ := netip.AddrFromSlice(ip)
+	return v
+}
+
+func BenchmarkCityLookupOnlyIPv6(b *testing.B) {
+	db, err := Open("GeoLite2-City.mmdb")
+	require.NoError(b, err)
+
+	//nolint:gosec // this is a test
+	r := rand.New(rand.NewSource(0))
+
+	s := make(net.IP, 16)
+	for b.Loop() {
+		ip := randomIPv6Address(r, s)
+		result := db.Lookup(ip)
+		if err := result.Err(); err != nil {
+			b.Error(err)
+		}
+	}
+	require.NoError(b, db.Close(), "error on close")
 }

@@ -320,31 +320,13 @@ func (d *Decoder) SkipValue() error {
 // PeekKind returns the kind of the current value without consuming it.
 // This allows for look-ahead parsing similar to jsontext.Decoder.PeekKind().
 func (d *Decoder) PeekKind() (Kind, error) {
-	kindNum, _, _, err := d.d.decodeCtrlData(d.offset)
+	//nolint:dogsled // only the resolved kind matters here
+	kindNum, _, _, _, err := d.resolveCtrlData(
+		d.offset,
+	)
 	if err != nil {
 		return 0, d.wrapError(err)
 	}
-
-	// Follow pointers to get the actual kind
-	if kindNum == KindPointer {
-		// We need to follow the pointer to get the real kind
-		dataOffset := d.offset
-		for {
-			var size uint
-			kindNum, size, dataOffset, err = d.d.decodeCtrlData(dataOffset)
-			if err != nil {
-				return 0, d.wrapError(err)
-			}
-			if kindNum != KindPointer {
-				break
-			}
-			dataOffset, _, err = d.d.decodePointer(size, dataOffset)
-			if err != nil {
-				return 0, d.wrapError(err)
-			}
-		}
-	}
-
 	return kindNum, nil
 }
 
@@ -354,7 +336,9 @@ func (d *Decoder) PeekKind() (Kind, error) {
 // that multiple pointers to the same data return the same offset, which
 // is important for caching purposes.
 func (d *Decoder) Offset() uint {
-	// Follow pointer chain to get resolved data location
+	// This intentionally does not use resolveCtrlData: Offset must return the
+	// resolved value's control-byte offset, not the post-control-byte payload
+	// offset used by read methods.
 	dataOffset := d.offset
 	for {
 		kindNum, size, ctrlEndOffset, err := d.d.decodeCtrlData(dataOffset)
@@ -369,6 +353,7 @@ func (d *Decoder) Offset() uint {
 			// Return this offset, which is where the data's control bytes start
 			break
 		}
+
 		// Follow the pointer to get the target offset
 		dataOffset, _, err = d.d.decodePointer(size, ctrlEndOffset)
 		if err != nil {
@@ -399,31 +384,51 @@ func unexpectedKindErr(expectedKind, actualKind Kind) error {
 }
 
 func (d *Decoder) decodeCtrlDataAndFollow(expectedKind Kind) (uint, uint, error) {
-	dataOffset := d.offset
+	kindNum, size, dataOffset, nextOffset, err := d.resolveCtrlData(d.offset)
+	if err != nil {
+		return 0, 0, err // Don't wrap here, let caller wrap
+	}
+	if nextOffset != 0 {
+		d.setNextOffset(nextOffset)
+	}
+	if kindNum != expectedKind {
+		return 0, 0, unexpectedKindErr(expectedKind, kindNum)
+	}
+	return size, dataOffset, nil
+}
+
+// resolveCtrlData follows any pointer chain starting at offset and returns the
+// control data for the final non-pointer value. Unlike decodeCtrlData, which
+// reads exactly one control record, this helper also reports the first pointer's
+// end offset so callers can preserve the decoder's sequential "next value"
+// position after resolving indirections.
+//
+// nextOffset is 0 when offset already pointed at a non-pointer value (no
+// indirection was followed). Callers must check this before calling
+// setNextOffset; passing 0 would clobber the sequential position. A genuine
+// pointer-end offset is always >= 2 because a pointer occupies a control byte
+// plus at least one payload byte.
+func (d *Decoder) resolveCtrlData(
+	offset uint,
+) (kind Kind, size, dataOffset, nextOffset uint, err error) {
+	dataOffset = offset
 	for {
-		var kindNum Kind
-		var size uint
-		var err error
-		kindNum, size, dataOffset, err = d.d.decodeCtrlData(dataOffset)
+		kind, size, dataOffset, err = d.d.decodeCtrlData(dataOffset)
 		if err != nil {
-			return 0, 0, err // Don't wrap here, let caller wrap
+			return 0, 0, 0, 0, err
+		}
+		if kind != KindPointer {
+			return kind, size, dataOffset, nextOffset, nil
 		}
 
-		if kindNum == KindPointer {
-			var nextOffset uint
-			dataOffset, nextOffset, err = d.d.decodePointer(size, dataOffset)
-			if err != nil {
-				return 0, 0, err // Don't wrap here, let caller wrap
-			}
-			d.setNextOffset(nextOffset)
-			continue
+		var pointerEndOffset uint
+		dataOffset, pointerEndOffset, err = d.d.decodePointer(size, dataOffset)
+		if err != nil {
+			return 0, 0, 0, 0, err
 		}
-
-		if kindNum != expectedKind {
-			return 0, 0, unexpectedKindErr(expectedKind, kindNum)
+		if nextOffset == 0 {
+			nextOffset = pointerEndOffset
 		}
-
-		return size, dataOffset, nil
 	}
 }
 

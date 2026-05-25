@@ -572,3 +572,41 @@ func BenchmarkSkipEmptyValues(b *testing.B) {
 		}
 	})
 }
+
+// TestV4ToV16RoundTrip exercises v4ToV16 and v6ToV4 directly. They are
+// only covered indirectly via lookup parity tests, which would not catch
+// a regression that swapped byte indices but still produced a
+// self-consistent address.
+func TestV4ToV16RoundTrip(t *testing.T) {
+	tests := []string{
+		"0.0.0.0",
+		"1.2.3.4",
+		"127.0.0.1",
+		"192.168.1.1",
+		"255.255.255.255",
+	}
+	for _, s := range tests {
+		t.Run(s, func(t *testing.T) {
+			v4 := netip.MustParseAddr(s)
+			require.True(t, v4.Is4())
+
+			v16 := v4ToV16(v4)
+			require.False(t, v16.Is4(),
+				"v4ToV16 must produce a 16-byte address, not an Is4 form")
+
+			// The IPv4 octets must land in the last four bytes; everything
+			// else must be zero (::/96 mapping per v4ToV16's comment).
+			b := v16.As16()
+			require.Equal(t, v4.As4(), [4]byte(b[12:]),
+				"v4ToV16 must place IPv4 octets at bytes 12-15")
+			for i := range 12 {
+				require.Zero(t, b[i],
+					"v4ToV16 prefix byte %d must be zero", i)
+			}
+
+			// Round-trip back via v6ToV4 must yield the original address.
+			require.Equal(t, v4, v6ToV4(v16),
+				"v6ToV4(v4ToV16(x)) must equal x")
+		})
+	}
+}
