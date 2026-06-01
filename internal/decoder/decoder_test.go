@@ -596,3 +596,12 @@ func TestDecoderOptions(t *testing.T) {
 	decoder2 := NewDecoder(dd, 0)
 	require.NotNil(t, decoder2)
 }
+
+func TestPointerToPointerChain(t *testing.T) {
+	// Offset 0 points to offset 2. Offset 2 points to offset 4. Offset 4 is string "abc".
+	// Hex representation: "2002200443616263"
+	decoder := newDecoderFromHex(t, "2002200443616263")
+	_, err := decoder.ReadString()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "pointer-to-pointer chain detected")
+}
