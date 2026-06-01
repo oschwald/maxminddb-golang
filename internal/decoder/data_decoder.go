@@ -550,9 +550,10 @@ func (d *DataDecoder) nextValueOffset(offset, numberToSkip uint) (uint, error) {
 			// A pointer value is represented by its pointer token only.
 			// To skip it, just move past the pointer bytes; do NOT follow
 			// the pointer target here.
-			_, ptrEndOffset, err2 := d.decodePointer(size, newOffset)
-			if err2 != nil {
-				return 0, err2
+			pointerSize := ((size >> 3) & 0x3) + 1
+			ptrEndOffset := newOffset + pointerSize
+			if ptrEndOffset > uint(len(d.buffer)) {
+				return 0, mmdberrors.NewOffsetError()
 			}
 			newOffset = ptrEndOffset
 		case KindMap:
