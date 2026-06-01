@@ -132,3 +132,39 @@ func TestFieldCaching(t *testing.T) {
 		assert.NotNil(t, fields1.namedFields[name], "Field info should not be nil: "+name)
 	}
 }
+
+func TestPointerStructFieldCaching(t *testing.T) {
+	type inner struct {
+		En string `maxminddb:"en"`
+	}
+
+	type outer struct {
+		Inner *inner `maxminddb:"inner"`
+	}
+
+	fields := makeStructFields(reflect.TypeFor[outer]())
+	require.Contains(t, fields.namedFields, "inner")
+	require.NotNil(t, fields.namedFields["inner"].structFields)
+
+	// Test data: {"inner": {"en": "Foo"}}
+	testData := "e145696e6e6572e142656e43466f6f"
+	testBytes, err := hex.DecodeString(testData)
+	require.NoError(t, err)
+
+	var target outer
+	decoder := New(testBytes)
+	require.NoError(t, decoder.Decode(0, &target))
+	require.NotNil(t, target.Inner)
+	assert.Equal(t, "Foo", target.Inner.En)
+}
+
+func TestRecursivePointerStructFieldCaching(t *testing.T) {
+	type node struct {
+		Next *node  `maxminddb:"next"`
+		Name string `maxminddb:"name"`
+	}
+
+	fields := makeStructFields(reflect.TypeFor[node]())
+	require.Contains(t, fields.namedFields, "next")
+	assert.Nil(t, fields.namedFields["next"].structFields)
+}
