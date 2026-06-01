@@ -852,6 +852,16 @@ func (d *ReflectionDecoder) decodeStruct(
 	depth int,
 ) (uint, error) {
 	fields := cachedFields(result.Value)
+	return d.decodeStructWithFields(size, offset, result, depth, fields)
+}
+
+func (d *ReflectionDecoder) decodeStructWithFields(
+	size uint,
+	offset uint,
+	result addressableValue,
+	depth int,
+	fields *fieldsType,
+) (uint, error) {
 	if fields.validationErr != nil {
 		return 0, fields.validationErr
 	}
@@ -908,6 +918,18 @@ func (d *ReflectionDecoder) decodeStruct(
 		case dispatchUnmarshaler:
 			offset, err = d.decodeValue(offset, fieldValue, depth)
 		default: // dispatchPlain
+			if fieldInfo.structFields != nil {
+				var ok bool
+				offset, ok, err = d.tryDecodeStructWithFields(
+					offset,
+					fieldValue,
+					depth,
+					fieldInfo.structFields,
+				)
+				if ok {
+					break
+				}
+			}
 			offset, err = d.decodeValueSkipUnmarshaler(offset, fieldValue, depth)
 		}
 		if err != nil {
@@ -915,6 +937,46 @@ func (d *ReflectionDecoder) decodeStruct(
 		}
 	}
 	return offset, nil
+}
+
+func (d *ReflectionDecoder) tryDecodeStructWithFields(
+	offset uint,
+	result addressableValue,
+	depth int,
+	fields *fieldsType,
+) (newOffset uint, ok bool, err error) {
+	typeNum, size, dataOffset, err := d.decodeCtrlData(offset)
+	if err != nil {
+		return 0, true, err
+	}
+
+	switch typeNum {
+	case KindMap:
+		newOffset, err = d.decodeStructWithFields(size, dataOffset, result, depth+1, fields)
+		return newOffset, true, err
+	case KindPointer:
+		pointer, pointerEndOffset, err := d.decodePointer(size, dataOffset)
+		if err != nil {
+			return 0, true, err
+		}
+		typeNum, size, dataOffset, err = d.decodeCtrlData(pointer)
+		if err != nil {
+			return 0, true, err
+		}
+		if typeNum == KindPointer {
+			return 0, true, mmdberrors.NewInvalidDatabaseError(
+				"invalid pointer to pointer at offset %d",
+				pointer,
+			)
+		}
+		if typeNum != KindMap {
+			return 0, false, nil
+		}
+		_, err = d.decodeStructWithFields(size, dataOffset, result, depth+2, fields)
+		return pointerEndOffset, true, err
+	default:
+		return 0, false, nil
+	}
 }
 
 // fieldDispatch encodes the decode strategy for a struct field, computed
@@ -942,13 +1004,14 @@ const (
 )
 
 type fieldInfo struct {
-	fieldType reflect.Type
-	name      string
-	index     []int
-	index0    int
-	depth     int
-	hasTag    bool
-	dispatch  fieldDispatch
+	fieldType    reflect.Type
+	structFields *fieldsType
+	name         string
+	index        []int
+	index0       int
+	depth        int
+	hasTag       bool
+	dispatch     fieldDispatch
 }
 
 type fieldsType struct {
@@ -1038,8 +1101,10 @@ func mayImplementUnmarshaler(t reflect.Type) bool {
 }
 
 func cachedFields(result reflect.Value) *fieldsType {
-	resultType := result.Type()
+	return cachedFieldsForType(result.Type())
+}
 
+func cachedFieldsForType(resultType reflect.Type) *fieldsType {
 	if fields, ok := fieldsMap.Load(resultType); ok {
 		return fields.(*fieldsType)
 	}
@@ -1112,6 +1177,7 @@ func makeStructFields(rootType reflect.Type) *fieldsType {
 			fieldType := field.Type
 			unwrappedFieldType := unwrapPtrType(fieldType)
 			var dispatch fieldDispatch
+			var structFields *fieldsType
 			switch {
 			case mayImplementUnmarshaler(unwrappedFieldType) ||
 				unwrappedFieldType.Kind() == reflect.Interface:
@@ -1120,14 +1186,18 @@ func makeStructFields(rootType reflect.Type) *fieldsType {
 				dispatch = dispatchFast
 			default:
 				dispatch = dispatchPlain
+				if fieldType.Kind() == reflect.Struct && fieldType != bigIntType {
+					structFields = cachedFieldsForType(fieldType)
+				}
 			}
 			allFields = append(allFields, fieldInfo{
-				index:     fieldIndex, // Will be reindexed later for optimization
-				name:      fieldName,
-				hasTag:    hasTag,
-				depth:     entry.depth,
-				fieldType: fieldType,
-				dispatch:  dispatch,
+				index:        fieldIndex, // Will be reindexed later for optimization
+				name:         fieldName,
+				hasTag:       hasTag,
+				depth:        entry.depth,
+				fieldType:    fieldType,
+				structFields: structFields,
+				dispatch:     dispatch,
 			})
 		}
 	}
