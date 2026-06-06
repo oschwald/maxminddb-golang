@@ -969,6 +969,9 @@ func (d *ReflectionDecoder) tryDecodeStructWithFields(
 		if err != nil {
 			return 0, true, err
 		}
+		if err := checkPointerDepth(depth); err != nil {
+			return 0, true, err
+		}
 		typeNum, size, dataOffset, err = d.decodeCtrlData(pointer)
 		if err != nil {
 			return 0, true, err
@@ -1011,6 +1014,9 @@ func (d *ReflectionDecoder) tryDecodePointerStructWithFields(
 		if err != nil {
 			return 0, true, err
 		}
+		if err := checkPointerDepth(depth); err != nil {
+			return 0, true, err
+		}
 		typeNum, size, dataOffset, err = d.decodeCtrlData(pointer)
 		if err != nil {
 			return 0, true, err
@@ -1036,6 +1042,15 @@ func (d *ReflectionDecoder) tryDecodePointerStructWithFields(
 		result,
 		decodeDepth,
 		fields,
+	)
+}
+
+func checkPointerDepth(depth int) error {
+	if depth+1 <= maximumDataStructureDepth {
+		return nil
+	}
+	return mmdberrors.NewInvalidDatabaseError(
+		"exceeded maximum data structure depth; database is likely corrupt",
 	)
 }
 

@@ -168,3 +168,44 @@ func TestRecursivePointerStructFieldCaching(t *testing.T) {
 	require.Contains(t, fields.namedFields, "next")
 	assert.Nil(t, fields.namedFields["next"].structFields)
 }
+
+func TestPointerStructFieldCachingChecksDepth(t *testing.T) {
+	type inner struct {
+		En string `maxminddb:"en"`
+	}
+
+	fields := makeStructFields(reflect.TypeFor[inner]())
+	decoder := New([]byte{
+		0x20, 0x02,
+		0xe0,
+	})
+
+	t.Run("value struct", func(t *testing.T) {
+		var target inner
+		_, ok, err := decoder.tryDecodeStructWithFields(
+			0,
+			addressableValue{Value: reflect.ValueOf(&target).Elem()},
+			maximumDataStructureDepth,
+			fields,
+		)
+
+		require.True(t, ok)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "exceeded maximum data structure depth")
+	})
+
+	t.Run("pointer struct", func(t *testing.T) {
+		var target *inner
+		_, ok, err := decoder.tryDecodePointerStructWithFields(
+			0,
+			addressableValue{Value: reflect.ValueOf(&target).Elem()},
+			maximumDataStructureDepth,
+			fields,
+		)
+
+		require.True(t, ok)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "exceeded maximum data structure depth")
+		assert.Nil(t, target)
+	})
+}
