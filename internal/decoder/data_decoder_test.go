@@ -267,3 +267,21 @@ func TestDecodePointerKeyFastExtendedSize(t *testing.T) {
 	require.Equal(t, uint(2), nextOffset,
 		"nextOffset must point past the pointer bytes regardless of fast/slow path")
 }
+
+func TestNextValueOffsetSkipsPointerTokenOnly(t *testing.T) {
+	// The pointer at offset 0 has a deliberately bogus target. Skipping it
+	// should only move past the pointer token so the following string can be
+	// read; it should not decode or validate the target value.
+	d := NewDataDecoder([]byte{0x20, 0x04, 0x42, 'o', 'k'})
+
+	nextOffset, err := d.nextValueOffset(0, 1)
+	require.NoError(t, err)
+	require.Equal(t, uint(2), nextOffset)
+
+	kind, size, dataOffset, err := d.decodeCtrlData(nextOffset)
+	require.NoError(t, err)
+	require.Equal(t, KindString, kind)
+	got, _, err := d.decodeString(size, dataOffset)
+	require.NoError(t, err)
+	require.Equal(t, "ok", got)
+}

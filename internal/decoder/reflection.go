@@ -852,6 +852,16 @@ func (d *ReflectionDecoder) decodeStruct(
 	depth int,
 ) (uint, error) {
 	fields := cachedFields(result.Value)
+	return d.decodeStructWithFields(size, offset, result, depth, fields)
+}
+
+func (d *ReflectionDecoder) decodeStructWithFields(
+	size uint,
+	offset uint,
+	result addressableValue,
+	depth int,
+	fields *fieldsType,
+) (uint, error) {
 	if fields.validationErr != nil {
 		return 0, fields.validationErr
 	}
@@ -907,6 +917,28 @@ func (d *ReflectionDecoder) decodeStruct(
 			offset, err = d.decodeValueSkipUnmarshaler(offset, fieldValue, depth)
 		case dispatchUnmarshaler:
 			offset, err = d.decodeValue(offset, fieldValue, depth)
+		case dispatchStruct:
+			var ok bool
+			offset, ok, err = d.tryDecodeStructWithFields(
+				offset,
+				fieldValue,
+				depth,
+				fieldInfo.structFields,
+			)
+			if !ok {
+				offset, err = d.decodeValueSkipUnmarshaler(offset, fieldValue, depth)
+			}
+		case dispatchPointerStruct:
+			var ok bool
+			offset, ok, err = d.tryDecodePointerStructWithFields(
+				offset,
+				fieldValue,
+				depth,
+				fieldInfo.structFields,
+			)
+			if !ok {
+				offset, err = d.decodeValueSkipUnmarshaler(offset, fieldValue, depth)
+			}
 		default: // dispatchPlain
 			offset, err = d.decodeValueSkipUnmarshaler(offset, fieldValue, depth)
 		}
@@ -917,11 +949,186 @@ func (d *ReflectionDecoder) decodeStruct(
 	return offset, nil
 }
 
+func (d *ReflectionDecoder) tryDecodeStructWithFields(
+	offset uint,
+	result addressableValue,
+	depth int,
+	fields *fieldsType,
+) (newOffset uint, ok bool, err error) {
+	typeNum, size, dataOffset, err := d.decodeCtrlData(offset)
+	if err != nil {
+		return 0, true, err
+	}
+
+	switch typeNum {
+	case KindMap:
+		if err := checkNestedDepth(depth); err != nil {
+			return 0, true, err
+		}
+		newOffset, err = d.decodeStructWithFields(size, dataOffset, result, depth+1, fields)
+		return newOffset, true, err
+	case KindPointer:
+		pointer, pointerEndOffset, err := d.decodePointer(size, dataOffset)
+		if err != nil {
+			return 0, true, err
+		}
+		if err := checkNestedDepth(depth); err != nil {
+			return 0, true, err
+		}
+		typeNum, size, dataOffset, err = d.decodeCtrlData(pointer)
+		if err != nil {
+			return 0, true, err
+		}
+		if typeNum == KindPointer {
+			return 0, true, mmdberrors.NewInvalidDatabaseError(
+				"invalid pointer to pointer at offset %d",
+				pointer,
+			)
+		}
+		if typeNum != KindMap {
+			return 0, false, nil
+		}
+		_, err = d.decodeStructWithFields(size, dataOffset, result, depth+2, fields)
+		return pointerEndOffset, true, err
+	default:
+		return 0, false, nil
+	}
+}
+
+func (d *ReflectionDecoder) tryDecodePointerStructWithFields(
+	offset uint,
+	result addressableValue,
+	depth int,
+	fields *fieldsType,
+) (newOffset uint, ok bool, err error) {
+	typeNum, size, dataOffset, err := d.decodeCtrlData(offset)
+	if err != nil {
+		return 0, true, err
+	}
+
+	var pointerEndOffset uint
+	decodeDepth := depth + 1
+	switch typeNum {
+	case KindMap:
+		if err := checkNestedDepth(depth); err != nil {
+			return 0, true, err
+		}
+		// Use the map control record we already decoded.
+	case KindPointer:
+		var pointer uint
+		pointer, pointerEndOffset, err = d.decodePointer(size, dataOffset)
+		if err != nil {
+			return 0, true, err
+		}
+		if err := checkNestedDepth(depth); err != nil {
+			return 0, true, err
+		}
+		typeNum, size, dataOffset, err = d.decodeCtrlData(pointer)
+		if err != nil {
+			return 0, true, err
+		}
+		if typeNum == KindPointer {
+			return 0, true, mmdberrors.NewInvalidDatabaseError(
+				"invalid pointer to pointer at offset %d",
+				pointer,
+			)
+		}
+		if typeNum != KindMap {
+			return 0, false, nil
+		}
+		decodeDepth = depth + 2
+	default:
+		return 0, false, nil
+	}
+
+	return d.decodePointerStructWithFields(
+		size,
+		dataOffset,
+		pointerEndOffset,
+		result,
+		decodeDepth,
+		fields,
+	)
+}
+
+func checkNestedDepth(depth int) error {
+	if depth < maximumDataStructureDepth {
+		return nil
+	}
+	return mmdberrors.NewInvalidDatabaseError(
+		"exceeded maximum data structure depth; database is likely corrupt",
+	)
+}
+
+func (d *ReflectionDecoder) decodePointerStructWithFields(
+	size uint,
+	dataOffset uint,
+	pointerEndOffset uint,
+	result addressableValue,
+	decodeDepth int,
+	fields *fieldsType,
+) (newOffset uint, ok bool, err error) {
+	var allocated1, allocated2 reflect.Value
+	var allocatedMore []reflect.Value
+	allocatedCount := 0
+	for result.Kind() == reflect.Pointer {
+		if result.IsNil() {
+			result.Set(reflect.New(result.Type().Elem()))
+			switch allocatedCount {
+			case 0:
+				allocated1 = result.Value
+			case 1:
+				allocated2 = result.Value
+			default:
+				allocatedMore = append(allocatedMore, result.Value)
+			}
+			allocatedCount++
+		}
+		result = addressableValue{Value: result.Elem()}
+	}
+
+	if result.Kind() != reflect.Struct {
+		cleanupAllocatedPointers(allocatedCount, allocated1, allocated2, allocatedMore)
+		return 0, false, nil
+	}
+
+	newOffset, err = d.decodeStructWithFields(size, dataOffset, result, decodeDepth, fields)
+	if err != nil {
+		cleanupAllocatedPointers(allocatedCount, allocated1, allocated2, allocatedMore)
+		return 0, true, err
+	}
+	if pointerEndOffset != 0 {
+		return pointerEndOffset, true, nil
+	}
+	return newOffset, true, nil
+}
+
+func cleanupAllocatedPointers(
+	allocatedCount int,
+	allocated1, allocated2 reflect.Value,
+	allocatedMore []reflect.Value,
+) {
+	switch allocatedCount {
+	case 0:
+		// no-op
+	case 1:
+		allocated1.SetZero()
+	case 2:
+		allocated2.SetZero()
+		allocated1.SetZero()
+	default:
+		for _, pointer := range slices.Backward(allocatedMore) {
+			pointer.SetZero()
+		}
+		allocated2.SetZero()
+		allocated1.SetZero()
+	}
+}
+
 // fieldDispatch encodes the decode strategy for a struct field, computed
 // once at struct-cache build time. Encoding the three-way choice as a
-// single enum (rather than two non-orthogonal booleans) makes the
-// illegal combination "fast path AND Unmarshaler" unrepresentable —
-// previously enforced only by an `&&` in makeStructFields.
+// single enum (rather than non-orthogonal booleans) makes illegal
+// combinations like "fast path AND Unmarshaler" unrepresentable.
 type fieldDispatch uint8
 
 const (
@@ -936,19 +1143,26 @@ const (
 	// implements Unmarshaler via its pointer receiver. Goes through
 	// decodeValue, which performs the type assertion.
 	dispatchUnmarshaler
+	// dispatchStruct: field is a nested struct whose field set is
+	// precomputed and can be decoded without consulting the field cache.
+	dispatchStruct
+	// dispatchPointerStruct: field is a pointer to a nested struct whose
+	// field set is precomputed and whose pointer chain may need allocation.
+	dispatchPointerStruct
 	// dispatchPlain: everything else (structs, slices, maps, named
 	// types without Unmarshaler). Uses decodeValueSkipUnmarshaler.
 	dispatchPlain
 )
 
 type fieldInfo struct {
-	fieldType reflect.Type
-	name      string
-	index     []int
-	index0    int
-	depth     int
-	hasTag    bool
-	dispatch  fieldDispatch
+	fieldType    reflect.Type
+	structFields *fieldsType
+	name         string
+	index        []int
+	index0       int
+	depth        int
+	hasTag       bool
+	dispatch     fieldDispatch
 }
 
 type fieldsType struct {
@@ -1038,20 +1252,46 @@ func mayImplementUnmarshaler(t reflect.Type) bool {
 }
 
 func cachedFields(result reflect.Value) *fieldsType {
-	resultType := result.Type()
+	return cachedFieldsForType(result.Type())
+}
 
+func cachedFieldsForType(resultType reflect.Type) *fieldsType {
+	return cachedFieldsForTypeWithStack(resultType, nil)
+}
+
+func cachedFieldsForTypeWithStack(
+	resultType reflect.Type,
+	stack map[reflect.Type]bool,
+) *fieldsType {
 	if fields, ok := fieldsMap.Load(resultType); ok {
 		return fields.(*fieldsType)
 	}
 
-	fields := makeStructFields(resultType)
-	fieldsMap.Store(resultType, fields)
+	if stack != nil && stack[resultType] {
+		return nil
+	}
 
-	return fields
+	nextStack := make(map[reflect.Type]bool, len(stack)+1)
+	for typ := range stack {
+		nextStack[typ] = true
+	}
+	nextStack[resultType] = true
+
+	fields := makeStructFieldsWithStack(resultType, nextStack)
+	actual, _ := fieldsMap.LoadOrStore(resultType, fields)
+
+	return actual.(*fieldsType)
 }
 
 // makeStructFields implements json/v2 style field precedence rules.
 func makeStructFields(rootType reflect.Type) *fieldsType {
+	return makeStructFieldsWithStack(rootType, map[reflect.Type]bool{rootType: true})
+}
+
+func makeStructFieldsWithStack(
+	rootType reflect.Type,
+	stack map[reflect.Type]bool,
+) *fieldsType {
 	// Breadth-first traversal to collect all fields with depth information
 
 	queue := []queueEntry{{rootType, nil, 0}}
@@ -1112,6 +1352,7 @@ func makeStructFields(rootType reflect.Type) *fieldsType {
 			fieldType := field.Type
 			unwrappedFieldType := unwrapPtrType(fieldType)
 			var dispatch fieldDispatch
+			var structFields *fieldsType
 			switch {
 			case mayImplementUnmarshaler(unwrappedFieldType) ||
 				unwrappedFieldType.Kind() == reflect.Interface:
@@ -1120,14 +1361,25 @@ func makeStructFields(rootType reflect.Type) *fieldsType {
 				dispatch = dispatchFast
 			default:
 				dispatch = dispatchPlain
+				if unwrappedFieldType.Kind() == reflect.Struct &&
+					unwrappedFieldType != bigIntType &&
+					!stack[unwrappedFieldType] {
+					structFields = cachedFieldsForTypeWithStack(unwrappedFieldType, stack)
+					if fieldType.Kind() == reflect.Pointer {
+						dispatch = dispatchPointerStruct
+					} else {
+						dispatch = dispatchStruct
+					}
+				}
 			}
 			allFields = append(allFields, fieldInfo{
-				index:     fieldIndex, // Will be reindexed later for optimization
-				name:      fieldName,
-				hasTag:    hasTag,
-				depth:     entry.depth,
-				fieldType: fieldType,
-				dispatch:  dispatch,
+				index:        fieldIndex, // Will be reindexed later for optimization
+				name:         fieldName,
+				hasTag:       hasTag,
+				depth:        entry.depth,
+				fieldType:    fieldType,
+				structFields: structFields,
+				dispatch:     dispatch,
 			})
 		}
 	}

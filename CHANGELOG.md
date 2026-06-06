@@ -9,6 +9,8 @@
 - Optimized map key decoding by adding a fast path for pointer keys, improving
   general lookup throughput by 2.7% to 6.4%.
 - Optimized tree traversal for IPv6 lookups, resulting in an ~8.8% speedup.
+- Fixed pointer-to-pointer chains in malformed database data so decoder entry
+  points reject them consistently instead of following invalid chains.
 - Reduced memory mapping overhead and system allocations when invoking `OpenBytes`
   and `NetworksWithin`.
 - Cleaned up, simplified, and deduplicated internal decoder and reader structures,

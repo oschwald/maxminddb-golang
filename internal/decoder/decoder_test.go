@@ -501,11 +501,13 @@ func TestOffsetReturnsValueStart(t *testing.T) {
 		buffer         []byte
 		offset         uint
 		expectedOffset uint
+		expectedValue  string
 	}{
 		"direct value": {
 			buffer:         []byte{0x44, 't', 'e', 's', 't'},
 			offset:         0,
 			expectedOffset: 0,
+			expectedValue:  "test",
 		},
 		"pointer": {
 			buffer: []byte{
@@ -515,6 +517,17 @@ func TestOffsetReturnsValueStart(t *testing.T) {
 			},
 			offset:         0,
 			expectedOffset: 5,
+			expectedValue:  "test",
+		},
+		"pointer-to-pointer": {
+			buffer: []byte{
+				0x20, 0x02,
+				0x20, 0x05,
+				0x00,
+				0x44, 't', 'e', 's', 't',
+			},
+			offset:         0,
+			expectedOffset: 0,
 		},
 	}
 
@@ -524,11 +537,14 @@ func TestOffsetReturnsValueStart(t *testing.T) {
 			offset := NewDecoder(dd, tt.offset).Offset()
 
 			require.Equal(t, tt.expectedOffset, offset)
+			if tt.expectedValue == "" {
+				return
+			}
 
 			decoder := NewDecoder(dd, offset)
 			value, err := decoder.ReadString()
 			require.NoError(t, err)
-			require.Equal(t, "test", value)
+			require.Equal(t, tt.expectedValue, value)
 		})
 	}
 }
@@ -595,4 +611,13 @@ func TestDecoderOptions(t *testing.T) {
 	// Test that passing empty options slice works.
 	decoder2 := NewDecoder(dd, 0)
 	require.NotNil(t, decoder2)
+}
+
+func TestPointerToPointerChain(t *testing.T) {
+	// Offset 0 points to offset 2. Offset 2 points to offset 4. Offset 4 is string "abc".
+	// Hex representation: "2002200443616263"
+	decoder := newDecoderFromHex(t, "2002200443616263")
+	_, err := decoder.ReadString()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "pointer-to-pointer chain detected")
 }

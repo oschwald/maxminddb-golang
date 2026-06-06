@@ -132,3 +132,87 @@ func TestFieldCaching(t *testing.T) {
 		assert.NotNil(t, fields1.namedFields[name], "Field info should not be nil: "+name)
 	}
 }
+
+func TestPointerStructFieldCaching(t *testing.T) {
+	type inner struct {
+		En string `maxminddb:"en"`
+	}
+
+	type outer struct {
+		Inner *inner `maxminddb:"inner"`
+	}
+
+	fields := makeStructFields(reflect.TypeFor[outer]())
+	require.Contains(t, fields.namedFields, "inner")
+	require.NotNil(t, fields.namedFields["inner"].structFields)
+
+	// Test data: {"inner": {"en": "Foo"}}
+	testData := "e145696e6e6572e142656e43466f6f"
+	testBytes, err := hex.DecodeString(testData)
+	require.NoError(t, err)
+
+	var target outer
+	decoder := New(testBytes)
+	require.NoError(t, decoder.Decode(0, &target))
+	require.NotNil(t, target.Inner)
+	assert.Equal(t, "Foo", target.Inner.En)
+}
+
+func TestRecursivePointerStructFieldCaching(t *testing.T) {
+	type node struct {
+		Next *node  `maxminddb:"next"`
+		Name string `maxminddb:"name"`
+	}
+
+	fields := makeStructFields(reflect.TypeFor[node]())
+	require.Contains(t, fields.namedFields, "next")
+	assert.Nil(t, fields.namedFields["next"].structFields)
+}
+
+func TestPointerStructFieldCachingChecksDepth(t *testing.T) {
+	type inner struct {
+		En string `maxminddb:"en"`
+	}
+
+	fields := makeStructFields(reflect.TypeFor[inner]())
+	tests := map[string][]byte{
+		"direct map": {0xe0},
+		"pointer": {
+			0x20, 0x02,
+			0xe0,
+		},
+	}
+
+	for name, data := range tests {
+		t.Run(name+"/value struct", func(t *testing.T) {
+			decoder := New(data)
+			var target inner
+			_, ok, err := decoder.tryDecodeStructWithFields(
+				0,
+				addressableValue{Value: reflect.ValueOf(&target).Elem()},
+				maximumDataStructureDepth,
+				fields,
+			)
+
+			require.True(t, ok)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "exceeded maximum data structure depth")
+		})
+
+		t.Run(name+"/pointer struct", func(t *testing.T) {
+			decoder := New(data)
+			var target *inner
+			_, ok, err := decoder.tryDecodePointerStructWithFields(
+				0,
+				addressableValue{Value: reflect.ValueOf(&target).Elem()},
+				maximumDataStructureDepth,
+				fields,
+			)
+
+			require.True(t, ok)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "exceeded maximum data structure depth")
+			assert.Nil(t, target)
+		})
+	}
+}
