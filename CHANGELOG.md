@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 2.4.0 - 2026-06-06
 
 - Reduced reflection decoding time and memory allocations. A city-lookup benchmark
   decoding a geoip2-style result allocates 20% fewer bytes (saving 48 B/op) and
