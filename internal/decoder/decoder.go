@@ -331,39 +331,30 @@ func (d *Decoder) PeekKind() (Kind, error) {
 }
 
 // Offset returns the current offset position in the database.
-// If the current position points to a pointer, this method resolves the
-// pointer chain and returns the offset of the actual data. This ensures
+// If the current position points to a pointer, this method resolves one
+// pointer and returns the offset of the actual data. This ensures
 // that multiple pointers to the same data return the same offset, which
 // is important for caching purposes.
 func (d *Decoder) Offset() uint {
 	// This intentionally does not use resolveCtrlData: Offset must return the
 	// resolved value's control-byte offset, not the post-control-byte payload
 	// offset used by read methods.
-	dataOffset := d.offset
-	for {
-		kindNum, size, ctrlEndOffset, err := d.d.decodeCtrlData(dataOffset)
-		if err != nil {
-			// Return original offset to avoid breaking the public API.
-			// Offset() returns uint (not (uint, error)), so we can't propagate errors.
-			// In practice, errors here are rare and the original offset is still valid.
-			return d.offset
-		}
-		if kindNum != KindPointer {
-			// dataOffset is now pointing at the actual data (not a pointer)
-			// Return this offset, which is where the data's control bytes start
-			break
-		}
-
-		// Follow the pointer to get the target offset
-		dataOffset, _, err = d.d.decodePointer(size, ctrlEndOffset)
-		if err != nil {
-			// Return original offset to avoid breaking the public API.
-			// The caller will encounter the same error when they try to read.
-			return d.offset
-		}
-		// dataOffset is now the pointer target; loop to check if it's also a pointer
+	kindNum, size, ctrlEndOffset, err := d.d.decodeCtrlData(d.offset)
+	if err != nil || kindNum != KindPointer {
+		return d.offset
 	}
-	return dataOffset
+
+	pointer, _, err := d.d.decodePointer(size, ctrlEndOffset)
+	if err != nil {
+		// Return original offset to avoid breaking the public API.
+		// The caller will encounter the same error when they try to read.
+		return d.offset
+	}
+	kindNum, _, _, err = d.d.decodeCtrlData(pointer)
+	if err != nil || kindNum == KindPointer {
+		return d.offset
+	}
+	return pointer
 }
 
 func (d *Decoder) reset(offset uint) {
