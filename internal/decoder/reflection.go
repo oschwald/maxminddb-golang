@@ -962,6 +962,9 @@ func (d *ReflectionDecoder) tryDecodeStructWithFields(
 
 	switch typeNum {
 	case KindMap:
+		if err := checkNestedDepth(depth); err != nil {
+			return 0, true, err
+		}
 		newOffset, err = d.decodeStructWithFields(size, dataOffset, result, depth+1, fields)
 		return newOffset, true, err
 	case KindPointer:
@@ -969,7 +972,7 @@ func (d *ReflectionDecoder) tryDecodeStructWithFields(
 		if err != nil {
 			return 0, true, err
 		}
-		if err := checkPointerDepth(depth); err != nil {
+		if err := checkNestedDepth(depth); err != nil {
 			return 0, true, err
 		}
 		typeNum, size, dataOffset, err = d.decodeCtrlData(pointer)
@@ -1007,6 +1010,9 @@ func (d *ReflectionDecoder) tryDecodePointerStructWithFields(
 	decodeDepth := depth + 1
 	switch typeNum {
 	case KindMap:
+		if err := checkNestedDepth(depth); err != nil {
+			return 0, true, err
+		}
 		// Use the map control record we already decoded.
 	case KindPointer:
 		var pointer uint
@@ -1014,7 +1020,7 @@ func (d *ReflectionDecoder) tryDecodePointerStructWithFields(
 		if err != nil {
 			return 0, true, err
 		}
-		if err := checkPointerDepth(depth); err != nil {
+		if err := checkNestedDepth(depth); err != nil {
 			return 0, true, err
 		}
 		typeNum, size, dataOffset, err = d.decodeCtrlData(pointer)
@@ -1045,8 +1051,8 @@ func (d *ReflectionDecoder) tryDecodePointerStructWithFields(
 	)
 }
 
-func checkPointerDepth(depth int) error {
-	if depth+1 <= maximumDataStructureDepth {
+func checkNestedDepth(depth int) error {
+	if depth < maximumDataStructureDepth {
 		return nil
 	}
 	return mmdberrors.NewInvalidDatabaseError(

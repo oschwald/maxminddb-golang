@@ -175,37 +175,44 @@ func TestPointerStructFieldCachingChecksDepth(t *testing.T) {
 	}
 
 	fields := makeStructFields(reflect.TypeFor[inner]())
-	decoder := New([]byte{
-		0x20, 0x02,
-		0xe0,
-	})
+	tests := map[string][]byte{
+		"direct map": {0xe0},
+		"pointer": {
+			0x20, 0x02,
+			0xe0,
+		},
+	}
 
-	t.Run("value struct", func(t *testing.T) {
-		var target inner
-		_, ok, err := decoder.tryDecodeStructWithFields(
-			0,
-			addressableValue{Value: reflect.ValueOf(&target).Elem()},
-			maximumDataStructureDepth,
-			fields,
-		)
+	for name, data := range tests {
+		t.Run(name+"/value struct", func(t *testing.T) {
+			decoder := New(data)
+			var target inner
+			_, ok, err := decoder.tryDecodeStructWithFields(
+				0,
+				addressableValue{Value: reflect.ValueOf(&target).Elem()},
+				maximumDataStructureDepth,
+				fields,
+			)
 
-		require.True(t, ok)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "exceeded maximum data structure depth")
-	})
+			require.True(t, ok)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "exceeded maximum data structure depth")
+		})
 
-	t.Run("pointer struct", func(t *testing.T) {
-		var target *inner
-		_, ok, err := decoder.tryDecodePointerStructWithFields(
-			0,
-			addressableValue{Value: reflect.ValueOf(&target).Elem()},
-			maximumDataStructureDepth,
-			fields,
-		)
+		t.Run(name+"/pointer struct", func(t *testing.T) {
+			decoder := New(data)
+			var target *inner
+			_, ok, err := decoder.tryDecodePointerStructWithFields(
+				0,
+				addressableValue{Value: reflect.ValueOf(&target).Elem()},
+				maximumDataStructureDepth,
+				fields,
+			)
 
-		require.True(t, ok)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "exceeded maximum data structure depth")
-		assert.Nil(t, target)
-	})
+			require.True(t, ok)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "exceeded maximum data structure depth")
+			assert.Nil(t, target)
+		})
+	}
 }
