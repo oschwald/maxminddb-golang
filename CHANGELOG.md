@@ -6,6 +6,8 @@
   results return closed-database errors instead of reading invalidated data.
 - Fixed `Networks` and `NetworksWithin` with `SkipEmptyValues` so malformed
   pointer cycles return an error instead of looping indefinitely.
+- Fixed top-level `Decode` validation so nil and non-pointer values are rejected
+  consistently before custom `Unmarshaler` dispatch.
 
 ## 2.4.0 - 2026-06-06
 

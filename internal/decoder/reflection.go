@@ -66,15 +66,14 @@ func (d *ReflectionDecoder) IsEmptyValueAt(offset uint) (bool, error) {
 // Decode decodes the data value at offset and stores it in the value
 // pointed at by v.
 func (d *ReflectionDecoder) Decode(offset uint, v any) error {
-	// Check if the type implements Unmarshaler interface without reflection
-	if unmarshaler, ok := v.(Unmarshaler); ok {
-		decoder := NewDecoder(d.DataDecoder, offset)
-		return unmarshaler.UnmarshalMaxMindDB(decoder)
-	}
-
 	rv := reflect.ValueOf(v)
 	if rv.Kind() != reflect.Pointer || rv.IsNil() {
 		return errors.New("result param must be a pointer")
+	}
+
+	if unmarshaler, ok := v.(Unmarshaler); ok {
+		decoder := NewDecoder(d.DataDecoder, offset)
+		return unmarshaler.UnmarshalMaxMindDB(decoder)
 	}
 
 	_, err := d.decode(offset, rv, 0)
