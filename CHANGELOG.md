@@ -1,6 +1,6 @@
 # Changes
 
-## 2.4.1 - TBD
+## 2.4.1 - 2026-06-28
 
 - Fixed `Result.Decode` and `Result.DecodePath` after `Reader.Close` so stale
   results return closed-database errors instead of reading invalidated data.
