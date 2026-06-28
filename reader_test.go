@@ -989,6 +989,30 @@ func TestUsingClosedDatabase(t *testing.T) {
 	assert.Equal(t, "cannot call LookupOffset on a closed database", err.Error())
 }
 
+func TestResultDecodeAfterReaderClose(t *testing.T) {
+	reader, err := Open(testFile("MaxMind-DB-test-decoder.mmdb"))
+	require.NoError(t, err)
+
+	result := reader.Lookup(netip.MustParseAddr("::1.1.1.0"))
+	require.NoError(t, result.Err())
+	require.True(t, result.Found())
+
+	offsetResult := reader.LookupOffset(result.Offset())
+
+	require.NoError(t, reader.Close())
+
+	var record any
+	require.EqualError(t, result.Decode(&record), "cannot call Decode on a closed database")
+	require.EqualError(t, offsetResult.Decode(&record), "cannot call Decode on a closed database")
+
+	var value string
+	require.EqualError(
+		t,
+		result.DecodePath(&value, "utf8_string"),
+		"cannot call DecodePath on a closed database",
+	)
+}
+
 func checkMetadata(t *testing.T, reader *Reader, ipVersion, recordSize uint) {
 	metadata := reader.Metadata
 

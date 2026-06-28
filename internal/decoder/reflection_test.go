@@ -187,6 +187,28 @@ func TestDecodeAllocatesTopLevelPointerTarget(t *testing.T) {
 	assert.Equal(t, "Foo", *result)
 }
 
+func TestIsEmptyValueAtFollowsPointers(t *testing.T) {
+	d := New([]byte{
+		0x20, 0x02, // pointer to offset 2
+		0xe0, // empty map
+	})
+
+	empty, err := d.IsEmptyValueAt(0)
+	require.NoError(t, err)
+	require.True(t, empty)
+}
+
+func TestIsEmptyValueAtRejectsPointerCycle(t *testing.T) {
+	d := New([]byte{
+		0x20, 0x00, // pointer to offset 0
+	})
+
+	empty, err := d.IsEmptyValueAt(0)
+	require.Error(t, err)
+	require.False(t, empty)
+	require.ErrorContains(t, err, "exceeded maximum data structure depth")
+}
+
 func TestMap(t *testing.T) {
 	maps := map[string]any{
 		"e0":                             map[string]any{},
@@ -564,6 +586,20 @@ func TestPointers(t *testing.T) {
 			t.Errorf("Decode for pointer at %d failed", offset)
 		}
 	}
+}
+
+func TestOversizedPointerReturnsError(t *testing.T) {
+	d := New([]byte{
+		0x38,                   // pointer with 4-byte payload
+		0xff, 0xff, 0xff, 0xff, // offset math overflows int on 32-bit
+	})
+
+	var result any
+	var err error
+	require.NotPanics(t, func() {
+		err = d.Decode(0, &result)
+	})
+	require.ErrorContains(t, err, "unexpected end of database")
 }
 
 func testFile(file string) string {

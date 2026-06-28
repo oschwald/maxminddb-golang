@@ -63,6 +63,65 @@ func TestNestedUnmarshaler(t *testing.T) {
 	})
 }
 
+type topLevelValidationUnmarshaler struct {
+	Value string
+}
+
+func (topLevelValidationUnmarshaler) UnmarshalMaxMindDB(*Decoder) error {
+	panic("non-pointer top-level unmarshaler should not be called")
+}
+
+type topLevelPointerUnmarshaler struct {
+	Value string
+}
+
+func (u *topLevelPointerUnmarshaler) UnmarshalMaxMindDB(d *Decoder) error {
+	value, err := d.ReadString()
+	if err != nil {
+		return err
+	}
+	u.Value = "custom:" + value
+	return nil
+}
+
+func TestTopLevelUnmarshalerRequiresNonNilPointer(t *testing.T) {
+	d := New([]byte{0x43, 'F', 'o', 'o'})
+
+	var nilPointer *topLevelPointerUnmarshaler
+	tests := []struct {
+		name  string
+		value any
+	}{
+		{
+			name:  "nil interface",
+			value: nil,
+		},
+		{
+			name:  "non-pointer value receiver unmarshaler",
+			value: topLevelValidationUnmarshaler{},
+		},
+		{
+			name:  "typed nil pointer unmarshaler",
+			value: nilPointer,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := d.Decode(0, tc.value)
+			require.EqualError(t, err, "result param must be a pointer")
+		})
+	}
+}
+
+func TestTopLevelUnmarshalerStillUsesValidPointer(t *testing.T) {
+	d := New([]byte{0x43, 'F', 'o', 'o'})
+
+	var result topLevelPointerUnmarshaler
+	require.NoError(t, d.Decode(0, &result))
+	require.Equal(t, "custom:Foo", result.Value)
+}
+
 // testInnerPointer with UnmarshalMaxMindDB for pointer test.
 type testInnerPointer struct {
 	Value  string
