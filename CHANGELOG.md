@@ -1,5 +1,10 @@
 # Changes
 
+## 2.4.1 - TBD
+
+- Fixed `Result.Decode` and `Result.DecodePath` after `Reader.Close` so stale
+  results return closed-database errors instead of reading invalidated data.
+
 ## 2.4.0 - 2026-06-06
 
 - Reduced reflection decoding time and memory allocations. A city-lookup benchmark

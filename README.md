@@ -222,8 +222,9 @@ regardless of the data provider.
 
 ## Performance Tips
 
-1. **Reuse Reader instances**: The `Reader` is thread-safe and should be reused
-   across goroutines
+1. **Reuse Reader instances**: Lookups, decoding, and iteration are safe to run
+   concurrently. `Close` invalidates outstanding results and should run after
+   readers are done.
 2. **Use specific structs**: Only decode the fields you need rather than using
    `any`
 3. **Implement Unmarshaler**: For high-throughput applications, implement
