@@ -592,7 +592,7 @@ func (d *ReflectionDecoder) unmarshalPointer(
 
 	// Check for pointer-to-pointer by looking at what we're about to decode
 	// This is done efficiently by checking the control byte at the pointer location
-	if len(d.buffer) > int(pointer) {
+	if pointer < uint(len(d.buffer)) {
 		controlByte := d.buffer[pointer]
 		if Kind(controlByte>>5) == KindPointer {
 			return 0, mmdberrors.NewInvalidDatabaseError(

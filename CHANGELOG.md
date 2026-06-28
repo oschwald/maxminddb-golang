@@ -10,6 +10,8 @@
   consistently before custom `Unmarshaler` dispatch.
 - Fixed `ReadMap` and `ReadSlice` iterator cleanup so callers that stop
   iteration early can continue decoding from the correct next value.
+- Fixed an oversized data-pointer bounds check so malformed databases return an
+  offset error instead of risking a panic on 32-bit builds.
 
 ## 2.4.0 - 2026-06-06
 

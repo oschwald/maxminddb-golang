@@ -588,6 +588,20 @@ func TestPointers(t *testing.T) {
 	}
 }
 
+func TestOversizedPointerReturnsError(t *testing.T) {
+	d := New([]byte{
+		0x38,                   // pointer with 4-byte payload
+		0xff, 0xff, 0xff, 0xff, // offset math overflows int on 32-bit
+	})
+
+	var result any
+	var err error
+	require.NotPanics(t, func() {
+		err = d.Decode(0, &result)
+	})
+	require.ErrorContains(t, err, "unexpected end of database")
+}
+
 func testFile(file string) string {
 	return filepath.Join("..", "..", "test-data", "test-data", file)
 }
