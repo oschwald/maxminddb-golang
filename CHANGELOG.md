@@ -4,6 +4,8 @@
 
 - Fixed `Result.Decode` and `Result.DecodePath` after `Reader.Close` so stale
   results return closed-database errors instead of reading invalidated data.
+- Fixed `Networks` and `NetworksWithin` with `SkipEmptyValues` so malformed
+  pointer cycles return an error instead of looping indefinitely.
 
 ## 2.4.0 - 2026-06-06
 

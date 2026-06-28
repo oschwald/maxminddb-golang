@@ -37,6 +37,7 @@ func New(buffer []byte) ReflectionDecoder {
 // Returns true if the value is a map or array with size 0.
 func (d *ReflectionDecoder) IsEmptyValueAt(offset uint) (bool, error) {
 	dataOffset := offset
+	followedPointers := 0
 	for {
 		kindNum, size, newOffset, err := d.decodeCtrlData(dataOffset)
 		if err != nil {
@@ -44,6 +45,12 @@ func (d *ReflectionDecoder) IsEmptyValueAt(offset uint) (bool, error) {
 		}
 
 		if kindNum == KindPointer {
+			if followedPointers >= maximumDataStructureDepth {
+				return false, mmdberrors.NewInvalidDatabaseError(
+					"exceeded maximum data structure depth; database is likely corrupt",
+				)
+			}
+			followedPointers++
 			dataOffset, _, err = d.decodePointer(size, newOffset)
 			if err != nil {
 				return false, err

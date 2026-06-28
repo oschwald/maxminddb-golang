@@ -187,6 +187,28 @@ func TestDecodeAllocatesTopLevelPointerTarget(t *testing.T) {
 	assert.Equal(t, "Foo", *result)
 }
 
+func TestIsEmptyValueAtFollowsPointers(t *testing.T) {
+	d := New([]byte{
+		0x20, 0x02, // pointer to offset 2
+		0xe0, // empty map
+	})
+
+	empty, err := d.IsEmptyValueAt(0)
+	require.NoError(t, err)
+	require.True(t, empty)
+}
+
+func TestIsEmptyValueAtRejectsPointerCycle(t *testing.T) {
+	d := New([]byte{
+		0x20, 0x00, // pointer to offset 0
+	})
+
+	empty, err := d.IsEmptyValueAt(0)
+	require.Error(t, err)
+	require.False(t, empty)
+	require.ErrorContains(t, err, "exceeded maximum data structure depth")
+}
+
 func TestMap(t *testing.T) {
 	maps := map[string]any{
 		"e0":                             map[string]any{},
