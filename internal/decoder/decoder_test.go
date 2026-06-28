@@ -169,6 +169,64 @@ func TestDecodeMap(t *testing.T) {
 	}
 }
 
+func TestReadMapEarlyBreakAfterValueAdvancesPastMap(t *testing.T) {
+	data := []byte{
+		0xe2, // map size 2
+		0x41, 'a',
+		0x43, 'o', 'n', 'e',
+		0x41, 'b',
+		0xe1, // remaining value is a nested map
+		0x41, 'c',
+		0x43, 't', 'w', 'o',
+		0x44, 'd', 'o', 'n', 'e',
+	}
+
+	decoder := NewDecoder(NewDataDecoder(data), 0)
+	mapIter, _, err := decoder.ReadMap()
+	require.NoError(t, err)
+
+	for key, iterErr := range mapIter {
+		require.NoError(t, iterErr)
+		require.Equal(t, "a", string(key))
+
+		value, err := decoder.ReadString()
+		require.NoError(t, err)
+		require.Equal(t, "one", value)
+		break
+	}
+
+	value, err := decoder.ReadString()
+	require.NoError(t, err)
+	require.Equal(t, "done", value)
+}
+
+func TestReadMapEarlyBreakBeforeValueAdvancesPastMap(t *testing.T) {
+	data := []byte{
+		0xe2, // map size 2
+		0x41, 'a',
+		0xe1, // current value is a nested map
+		0x41, 'c',
+		0x43, 't', 'w', 'o',
+		0x41, 'b',
+		0x43, 'o', 'n', 'e',
+		0x44, 'd', 'o', 'n', 'e',
+	}
+
+	decoder := NewDecoder(NewDataDecoder(data), 0)
+	mapIter, _, err := decoder.ReadMap()
+	require.NoError(t, err)
+
+	for key, iterErr := range mapIter {
+		require.NoError(t, iterErr)
+		require.Equal(t, "a", string(key))
+		break
+	}
+
+	value, err := decoder.ReadString()
+	require.NoError(t, err)
+	require.Equal(t, "done", value)
+}
+
 func TestDecodeSlice(t *testing.T) {
 	tests := map[string][]any{
 		"0004":                 {}, // [cite: 55]
@@ -198,6 +256,58 @@ func TestDecodeSlice(t *testing.T) {
 			require.True(t, decoder.hasNextOffset || decoder.offset > 0, "Offset was not advanced")
 		})
 	}
+}
+
+func TestReadSliceEarlyBreakAfterValueAdvancesPastSlice(t *testing.T) {
+	data := []byte{
+		0x02, 0x04, // slice size 2
+		0x43, 'o', 'n', 'e',
+		0xe1, // remaining value is a nested map
+		0x41, 'c',
+		0x43, 't', 'w', 'o',
+		0x44, 'd', 'o', 'n', 'e',
+	}
+
+	decoder := NewDecoder(NewDataDecoder(data), 0)
+	sliceIter, _, err := decoder.ReadSlice()
+	require.NoError(t, err)
+
+	for iterErr := range sliceIter {
+		require.NoError(t, iterErr)
+
+		value, err := decoder.ReadString()
+		require.NoError(t, err)
+		require.Equal(t, "one", value)
+		break
+	}
+
+	value, err := decoder.ReadString()
+	require.NoError(t, err)
+	require.Equal(t, "done", value)
+}
+
+func TestReadSliceEarlyBreakBeforeValueAdvancesPastSlice(t *testing.T) {
+	data := []byte{
+		0x02, 0x04, // slice size 2
+		0xe1, // current value is a nested map
+		0x41, 'c',
+		0x43, 't', 'w', 'o',
+		0x43, 'o', 'n', 'e',
+		0x44, 'd', 'o', 'n', 'e',
+	}
+
+	decoder := NewDecoder(NewDataDecoder(data), 0)
+	sliceIter, _, err := decoder.ReadSlice()
+	require.NoError(t, err)
+
+	for iterErr := range sliceIter {
+		require.NoError(t, iterErr)
+		break
+	}
+
+	value, err := decoder.ReadString()
+	require.NoError(t, err)
+	require.Equal(t, "done", value)
 }
 
 func TestDecodeString(t *testing.T) {

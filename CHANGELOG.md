@@ -8,6 +8,8 @@
   pointer cycles return an error instead of looping indefinitely.
 - Fixed top-level `Decode` validation so nil and non-pointer values are rejected
   consistently before custom `Unmarshaler` dispatch.
+- Fixed `ReadMap` and `ReadSlice` iterator cleanup so callers that stop
+  iteration early can continue decoding from the correct next value.
 
 ## 2.4.0 - 2026-06-06
 
