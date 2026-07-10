@@ -209,6 +209,81 @@ func TestIsEmptyValueAtRejectsPointerCycle(t *testing.T) {
 	require.ErrorContains(t, err, "exceeded maximum data structure depth")
 }
 
+func TestDecodeRejectsOversizedContainersBeforeAllocation(t *testing.T) {
+	invalidMapKeys := make([]byte, 0, 3+512*3)
+	invalidMapKeys = append(invalidMapKeys, 0xfe, 0x00, 0xe3) // map with 512 entries
+	for range 512 {
+		invalidMapKeys = append(invalidMapKeys,
+			0x00, 0x07, // false boolean key
+			0xe0, // empty map value
+		)
+	}
+
+	invalidFloatSizes := make([]byte, 0, 4+1024)
+	invalidFloatSizes = append(invalidFloatSizes, 0x1e, 0x04, 0x02, 0xe3) // slice with 1024 entries
+	for range 1024 {
+		invalidFloatSizes = append(invalidFloatSizes, 0x60) // float64 with size 0
+	}
+
+	invalidPointerTarget := make([]byte, 0, 4+5+1023)
+	invalidPointerTarget = append(invalidPointerTarget,
+		0x1e, 0x04, 0x02, 0xe3, // slice with 1024 entries
+		0x38, 0xff, 0xff, 0xff, 0xff, // pointer outside the buffer
+	)
+	for range 1023 {
+		invalidPointerTarget = append(invalidPointerTarget, 0xe0)
+	}
+
+	tests := []struct {
+		name        string
+		data        []byte
+		out         any
+		expectedErr string
+	}{
+		{
+			name:        "impossible map size",
+			data:        []byte{0xff, 0xff, 0xff, 0xff},
+			out:         new(map[string]any),
+			expectedErr: "unexpected end of database",
+		},
+		{
+			name:        "impossible slice size",
+			data:        []byte{0x1f, 0x04, 0xff, 0xff, 0xff},
+			out:         new([]any),
+			expectedErr: "unexpected end of database",
+		},
+		{
+			name:        "invalid map key types",
+			data:        invalidMapKeys,
+			out:         new(map[string]any),
+			expectedErr: "unexpected map key type",
+		},
+		{
+			name:        "invalid scalar sizes",
+			data:        invalidFloatSizes,
+			out:         new([]any),
+			expectedErr: "invalid Float64 size",
+		},
+		{
+			name:        "invalid pointer target",
+			data:        invalidPointerTarget,
+			out:         new([]any),
+			expectedErr: "unexpected end of database",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := NewWithoutStringCache(tt.data)
+			err := d.Decode(0, tt.out)
+			require.ErrorContains(t, err, tt.expectedErr)
+
+			value := reflect.ValueOf(tt.out).Elem()
+			require.True(t, value.IsNil(), "destination should not be allocated on invalid input")
+		})
+	}
+}
+
 func TestMap(t *testing.T) {
 	maps := map[string]any{
 		"e0":                             map[string]any{},

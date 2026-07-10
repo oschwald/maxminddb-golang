@@ -1,5 +1,12 @@
 # Changes
 
+## Unreleased
+
+- Rejected impossible or malformed large container sizes before allocating
+  destination maps and slices, while reducing preflight overhead for common
+  strings and booleans and avoiding preflight when caller-provided slice
+  capacity already prevents an allocation.
+
 ## 2.4.1 - 2026-06-28
 
 - Fixed `Result.Decode` and `Result.DecodePath` after `Reader.Close` so stale

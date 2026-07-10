@@ -564,9 +564,15 @@ func (d *ReflectionDecoder) unmarshalMap(
 	case reflect.Struct:
 		return d.decodeStruct(size, offset, result, depth)
 	case reflect.Map:
+		if err := d.validateContainerSize(KindMap, size, offset, depth); err != nil {
+			return 0, err
+		}
 		return d.decodeMap(size, offset, result, depth)
 	case reflect.Interface:
 		if result.NumMethod() == 0 {
+			if err := d.validateContainerSize(KindMap, size, offset, depth); err != nil {
+				return 0, err
+			}
 			// Create map directly without makeAddressable wrapper
 			mapVal := reflect.ValueOf(make(map[string]any, size))
 			rv := addressableValue{Value: mapVal}
@@ -614,9 +620,17 @@ func (d *ReflectionDecoder) unmarshalSlice(
 ) (uint, error) {
 	switch result.Kind() {
 	case reflect.Slice:
+		if (result.IsNil() || result.Cap() < int(size)) && size > 0 {
+			if err := d.validateContainerSize(KindSlice, size, offset, depth); err != nil {
+				return 0, err
+			}
+		}
 		return d.decodeSlice(size, offset, result, depth)
 	case reflect.Interface:
 		if result.NumMethod() == 0 {
+			if err := d.validateContainerSize(KindSlice, size, offset, depth); err != nil {
+				return 0, err
+			}
 			a := []any{}
 			// Create slice directly without makeAddressable wrapper
 			sliceVal := reflect.ValueOf(&a).Elem()
@@ -629,6 +643,179 @@ func (d *ReflectionDecoder) unmarshalSlice(
 		// Fall through to error return
 	}
 	return 0, mmdberrors.NewUnmarshalTypeStrError("array", result.Type())
+}
+
+func (d *ReflectionDecoder) validateContainerSize(kind Kind, size, offset uint, depth int) error {
+	bufferLen := uint(len(d.buffer))
+	if offset > bufferLen {
+		return mmdberrors.NewOffsetError()
+	}
+
+	valueCount := size
+	if kind == KindMap {
+		if size > ^uint(0)/2 {
+			return mmdberrors.NewInvalidDatabaseError("container size overflow")
+		}
+		valueCount = size * 2
+	}
+
+	// Every encoded value occupies at least one byte. Reject impossible counts
+	// before using an attacker-controlled size as an allocation hint.
+	if valueCount > bufferLen-offset {
+		return mmdberrors.NewOffsetError()
+	}
+
+	// Large allocations are uncommon in MMDB records. Validate their complete
+	// encoded structure first, while keeping ordinary records single-pass.
+	const preflightValueCount = 1024
+	if valueCount >= preflightValueCount {
+		_, err := d.validateContainerContents(kind, size, offset, depth)
+		return err
+	}
+	return nil
+}
+
+//nolint:nestif // Keeping compact values inline avoids a call for every entry.
+func (d *ReflectionDecoder) validateContainerContents(
+	kind Kind,
+	size uint,
+	offset uint,
+	depth int,
+) (uint, error) {
+	bufferLen := uint(len(d.buffer))
+	for range size {
+		if kind == KindMap {
+			// Map keys are ordinarily directly encoded short strings. Validate
+			// that form inline and leave pointers and extended sizes to the
+			// complete validator below.
+			ctrlByte := byte(0)
+			if offset < bufferLen {
+				ctrlByte = d.buffer[offset]
+			}
+			keySize := uint(ctrlByte & 0x1f)
+			if offset >= bufferLen || Kind(ctrlByte>>5) != KindString || keySize >= 29 ||
+				!hasBufferRange(bufferLen, offset+1, keySize) {
+				var err error
+				offset, err = d.validateValueForAllocation(offset, depth, true)
+				if err != nil {
+					return 0, err
+				}
+			} else {
+				offset += 1 + keySize
+			}
+		}
+
+		// Booleans have a fixed two-byte encoding and no payload. They are
+		// common in large generated containers.
+		if offset+1 < bufferLen && d.buffer[offset] <= 1 && d.buffer[offset+1] == 7 {
+			offset += 2
+			continue
+		}
+
+		var err error
+		offset, err = d.validateValueForAllocation(offset, depth, false)
+		if err != nil {
+			return 0, err
+		}
+	}
+	return offset, nil
+}
+
+func (d *ReflectionDecoder) validateValueForAllocation(
+	offset uint,
+	depth int,
+	requireString bool,
+) (uint, error) {
+	if depth > maximumDataStructureDepth {
+		return 0, mmdberrors.NewInvalidDatabaseError(
+			"exceeded maximum data structure depth; database is likely corrupt",
+		)
+	}
+
+	kind, size, dataOffset, err := d.decodeCtrlData(offset)
+	if err != nil {
+		return 0, err
+	}
+	if kind == KindPointer {
+		pointer, nextOffset, err := d.decodePointer(size, dataOffset)
+		if err != nil {
+			return 0, err
+		}
+		targetKind, _, _, err := d.decodeCtrlData(pointer)
+		if err != nil {
+			return 0, err
+		}
+		if targetKind == KindPointer {
+			return 0, mmdberrors.NewInvalidDatabaseError(
+				"invalid pointer to pointer at offset %d",
+				pointer,
+			)
+		}
+		_, err = d.validateValueForAllocation(pointer, depth+1, requireString)
+		return nextOffset, err
+	}
+
+	if requireString && kind != KindString {
+		return 0, mmdberrors.NewInvalidDatabaseError(
+			"unexpected map key type: %s",
+			kind.String(),
+		)
+	}
+
+	bufferLen := uint(len(d.buffer))
+	switch kind {
+	case KindString, KindBytes:
+		if !hasBufferRange(bufferLen, dataOffset, size) {
+			return 0, mmdberrors.NewOffsetError()
+		}
+		return dataOffset + size, nil
+	case KindFloat64:
+		return validateFixedSize(kind, size, dataOffset, bufferLen, 8)
+	case KindFloat32:
+		return validateFixedSize(kind, size, dataOffset, bufferLen, 4)
+	case KindInt32, KindUint32:
+		return validateMaximumSize(kind, size, dataOffset, bufferLen, 4)
+	case KindUint16:
+		return validateMaximumSize(kind, size, dataOffset, bufferLen, 2)
+	case KindUint64:
+		return validateMaximumSize(kind, size, dataOffset, bufferLen, 8)
+	case KindUint128:
+		return validateMaximumSize(kind, size, dataOffset, bufferLen, 16)
+	case KindBool:
+		if size > 1 {
+			return 0, mmdberrors.NewInvalidDatabaseError("invalid bool size: %d", size)
+		}
+		return dataOffset, nil
+	case KindMap, KindSlice:
+		return d.validateContainerContents(kind, size, dataOffset, depth+1)
+	default:
+		return 0, mmdberrors.NewInvalidDatabaseError("unknown type: %d", kind)
+	}
+}
+
+func validateFixedSize(kind Kind, size, offset, bufferLen, expected uint) (uint, error) {
+	if size != expected {
+		return 0, mmdberrors.NewInvalidDatabaseError(
+			"invalid %s size: %d",
+			kind.String(),
+			size,
+		)
+	}
+	return validateMaximumSize(kind, size, offset, bufferLen, expected)
+}
+
+func validateMaximumSize(kind Kind, size, offset, bufferLen, maximum uint) (uint, error) {
+	if size > maximum {
+		return 0, mmdberrors.NewInvalidDatabaseError(
+			"invalid %s size: %d",
+			kind.String(),
+			size,
+		)
+	}
+	if !hasBufferRange(bufferLen, offset, size) {
+		return 0, mmdberrors.NewOffsetError()
+	}
+	return offset + size, nil
 }
 
 func (d *ReflectionDecoder) unmarshalString(

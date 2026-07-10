@@ -539,6 +539,7 @@ func (d *DataDecoder) decodeKey(offset uint) ([]byte, uint, error) {
 // the one at the offset passed in. The size bits have different meanings for
 // different data types.
 func (d *DataDecoder) nextValueOffset(offset, numberToSkip uint) (uint, error) {
+	bufferLen := uint(len(d.buffer))
 	for numberToSkip > 0 {
 		kindNum, size, newOffset, err := d.decodeCtrlData(offset)
 		if err != nil {
@@ -557,12 +558,21 @@ func (d *DataDecoder) nextValueOffset(offset, numberToSkip uint) (uint, error) {
 			}
 			newOffset = ptrEndOffset
 		case KindMap:
+			if size > (^uint(0)-numberToSkip)/2 {
+				return 0, mmdberrors.NewInvalidDatabaseError("container size overflow")
+			}
 			numberToSkip += 2 * size
 		case KindSlice:
+			if size > ^uint(0)-numberToSkip {
+				return 0, mmdberrors.NewInvalidDatabaseError("container size overflow")
+			}
 			numberToSkip += size
 		case KindBool:
 			// size encodes the boolean; nothing else to skip
 		default:
+			if !hasBufferRange(bufferLen, newOffset, size) {
+				return 0, mmdberrors.NewOffsetError()
+			}
 			newOffset += size
 		}
 
@@ -570,6 +580,10 @@ func (d *DataDecoder) nextValueOffset(offset, numberToSkip uint) (uint, error) {
 		numberToSkip--
 	}
 	return offset, nil
+}
+
+func hasBufferRange(bufferLen, offset, size uint) bool {
+	return size <= bufferLen && offset <= bufferLen-size
 }
 
 func decodeBool(size, offset uint) (bool, uint) {
