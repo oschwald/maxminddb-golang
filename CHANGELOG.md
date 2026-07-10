@@ -6,6 +6,8 @@
   destination maps and slices, while reducing preflight overhead for common
   strings and booleans and avoiding preflight when caller-provided slice
   capacity already prevents an allocation.
+- Kept readers reachable through memory-mapped lookup, decode, and iteration
+  operations so runtime cleanup cannot unmap active data.
 
 ## 2.4.1 - 2026-06-28
 

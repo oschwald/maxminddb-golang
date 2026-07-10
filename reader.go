@@ -384,6 +384,7 @@ func (r *Reader) Lookup(ip netip.Addr) Result {
 	}
 	pointer, prefixLen, err := r.lookupPointer(ip)
 	if err != nil {
+		runtime.KeepAlive(r)
 		return Result{
 			ip:        ip,
 			prefixLen: uint8(prefixLen),
@@ -391,6 +392,7 @@ func (r *Reader) Lookup(ip netip.Addr) Result {
 		}
 	}
 	if pointer == 0 {
+		runtime.KeepAlive(r)
 		return Result{
 			ip:        ip,
 			prefixLen: uint8(prefixLen),
@@ -398,6 +400,7 @@ func (r *Reader) Lookup(ip netip.Addr) Result {
 		}
 	}
 	offset, err := r.resolveDataPointer(pointer)
+	runtime.KeepAlive(r)
 	return Result{
 		reader:    r,
 		ip:        ip,
