@@ -683,9 +683,8 @@ func (r *Reader) traverseTree28(ip netip.Addr, node uint, stopBit int) (uint, in
 			// shift = 20 (bit=0) or 24 (bit=1): position the shared nibble's
 			// high or low 4 bits into the top of the assembled 28-bit node.
 			sharedByte := uint(buffer[baseOffset+3])
-			mask := uint(0xF0 >> (bit * 4))
 			shift := 20 + bit*4
-			nibble := ((sharedByte & mask) << shift)
+			nibble := (sharedByte << shift) & 0x0F000000
 
 			node = nibble |
 				(uint(buffer[offset]) << 16) |
@@ -717,9 +716,8 @@ func (r *Reader) traverseTree28(ip netip.Addr, node uint, stopBit int) (uint, in
 			offset := baseOffset + bit*4
 
 			sharedByte := uint(buffer[baseOffset+3])
-			mask := uint(0xF0 >> (bit * 4))
 			shift := 20 + bit*4
-			nibble := ((sharedByte & mask) << shift)
+			nibble := (sharedByte << shift) & 0x0F000000
 
 			node = nibble |
 				(uint(buffer[offset]) << 16) |

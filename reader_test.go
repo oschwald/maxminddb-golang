@@ -1411,6 +1411,30 @@ func BenchmarkTestDatabaseLookupPointer(b *testing.B) {
 	}
 }
 
+func BenchmarkTestDatabaseCityLookup(b *testing.B) {
+	db, err := Open(testFile("GeoIP2-City-Test.mmdb"))
+	require.NoError(b, err)
+	b.Cleanup(func() { require.NoError(b, db.Close()) })
+
+	var addresses []netip.Addr
+	for result := range db.Networks() {
+		require.NoError(b, result.Err())
+		addresses = append(addresses, result.Prefix().Addr())
+	}
+	require.NotEmpty(b, addresses)
+
+	var result benchmarkCity
+	var i uint
+	b.ResetTimer()
+	for b.Loop() {
+		lookupResult := db.Lookup(addresses[i%uint(len(addresses))])
+		if err := lookupResult.Decode(&result); err != nil {
+			b.Fatal(err)
+		}
+		i++
+	}
+}
+
 func BenchmarkDecodeCountryCodeWithStruct(b *testing.B) {
 	db, err := Open("GeoLite2-City.mmdb")
 	require.NoError(b, err)
