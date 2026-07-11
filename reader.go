@@ -205,8 +205,7 @@ func (m Metadata) BuildTime() time.Time {
 }
 
 type readerOptions struct {
-	// Intentionally empty for now. ReaderOption callbacks are still invoked so
-	// adding options in a future release is non-breaking.
+	disableStringCache bool
 }
 
 // ReaderOption are options for [Open] and [OpenBytes].
@@ -214,6 +213,15 @@ type readerOptions struct {
 // This was added to allow for future options, e.g., for caching, without
 // causing a breaking API change.
 type ReaderOption func(*readerOptions)
+
+// DisableStringCache disables caching of repeatedly decoded strings. This
+// reduces each Reader's fixed memory usage by approximately 64 KiB, but may
+// increase allocations when the same records are decoded repeatedly.
+func DisableStringCache() ReaderOption {
+	return func(options *readerOptions) {
+		options.disableStringCache = true
+	}
+}
 
 // Open takes a string path to a MaxMind DB file and any options. It returns a
 // Reader structure or an error. The database file is opened using a memory
@@ -325,7 +333,7 @@ func OpenBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
 	}
 
 	metadataStart += len(metadataStartMarker)
-	metadataDecoder := decoder.New(buffer[metadataStart:])
+	metadataDecoder := decoder.NewWithoutStringCache(buffer[metadataStart:])
 
 	var metadata Metadata
 
@@ -352,7 +360,12 @@ func OpenBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
 		return nil, mmdberrors.NewInvalidDatabaseError("the MaxMind DB contains invalid metadata")
 	}
 	dataSection := buffer[dataSectionStart:dataSectionEnd]
-	d := decoder.New(dataSection)
+	var d decoder.ReflectionDecoder
+	if opts.disableStringCache {
+		d = decoder.NewWithoutStringCache(dataSection)
+	} else {
+		d = decoder.New(dataSection)
+	}
 
 	reader := &Reader{
 		buffer:          buffer,

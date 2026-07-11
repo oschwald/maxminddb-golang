@@ -125,6 +125,13 @@ func NewDataDecoder(buffer []byte) DataDecoder {
 	}
 }
 
+// NewDataDecoderWithoutStringCache creates a DataDecoder that does not retain
+// decoded strings. It is intended for one-shot decoding where cache setup
+// would cost more than repeated string allocation.
+func NewDataDecoderWithoutStringCache(buffer []byte) DataDecoder {
+	return DataDecoder{buffer: buffer}
+}
+
 // getBuffer returns the underlying buffer for direct access.
 func (d *DataDecoder) getBuffer() []byte {
 	return d.buffer
@@ -298,6 +305,9 @@ func (d *DataDecoder) decodeString(size, offset uint) (string, uint, error) {
 	}
 
 	newOffset := offset + size
+	if d.stringCache == nil {
+		return string(d.buffer[offset:newOffset]), newOffset, nil
+	}
 	value := d.stringCache.internAt(offset, size, d.buffer)
 	return value, newOffset, nil
 }

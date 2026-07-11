@@ -8,6 +8,9 @@
   capacity already prevents an allocation.
 - Kept readers reachable through memory-mapped lookup, decode, and iteration
   operations so runtime cleanup cannot unmap active data.
+- Reduced opening memory by decoding metadata without a string cache and added
+  `DisableStringCache` for readers that favor lower memory over repeated-decode
+  allocation savings.
 
 ## 2.4.1 - 2026-06-28
 

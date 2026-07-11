@@ -33,6 +33,14 @@ func New(buffer []byte) ReflectionDecoder {
 	}
 }
 
+// NewWithoutStringCache creates a ReflectionDecoder without a string cache.
+// It is intended for one-shot decoding such as database metadata parsing.
+func NewWithoutStringCache(buffer []byte) ReflectionDecoder {
+	return ReflectionDecoder{
+		DataDecoder: NewDataDecoderWithoutStringCache(buffer),
+	}
+}
+
 // IsEmptyValueAt checks if the value at the given offset is an empty map or array.
 // Returns true if the value is a map or array with size 0.
 func (d *ReflectionDecoder) IsEmptyValueAt(offset uint) (bool, error) {

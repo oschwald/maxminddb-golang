@@ -77,6 +77,17 @@ func TestOpenBytesAppliesReaderOptions(t *testing.T) {
 	require.True(t, optionCalled)
 }
 
+func TestDisableStringCache(t *testing.T) {
+	reader, err := Open(testFile("MaxMind-DB-test-decoder.mmdb"), DisableStringCache())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, reader.Close()) })
+
+	var record map[string]any
+	err = reader.Lookup(netip.MustParseAddr("::1.1.1.0")).Decode(&record)
+	require.NoError(t, err)
+	require.NotEmpty(t, record)
+}
+
 func TestReaderLeaks(t *testing.T) {
 	collected := make(chan struct{})
 
@@ -1130,6 +1141,34 @@ func BenchmarkOpen(b *testing.B) {
 	}
 	assert.NotNil(b, db)
 	require.NoError(b, db.Close(), "error on close")
+}
+
+func BenchmarkOpenBytesOptions(b *testing.B) {
+	data, err := os.ReadFile(testFile("MaxMind-DB-test-decoder.mmdb"))
+	require.NoError(b, err)
+
+	tests := []struct {
+		name    string
+		options []ReaderOption
+	}{
+		{name: "default"},
+		{name: "disable_string_cache", options: []ReaderOption{DisableStringCache()}},
+	}
+
+	for _, test := range tests {
+		b.Run(test.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				reader, err := OpenBytes(data, test.options...)
+				if err != nil {
+					b.Fatal(err)
+				}
+				if err := reader.Close(); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
 }
 
 func BenchmarkInterfaceLookup(b *testing.B) {
