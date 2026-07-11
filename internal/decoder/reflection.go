@@ -53,9 +53,10 @@ func (d *ReflectionDecoder) IsEmptyValueAt(offset uint) (bool, error) {
 		}
 
 		if kindNum == KindPointer {
-			if followedPointers >= maximumDataStructureDepth {
+			if followedPointers > 0 {
 				return false, mmdberrors.NewInvalidDatabaseError(
-					"exceeded maximum data structure depth; database is likely corrupt",
+					"invalid pointer to pointer at offset %d",
+					dataOffset,
 				)
 			}
 			followedPointers++

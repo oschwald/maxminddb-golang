@@ -198,7 +198,7 @@ func TestIsEmptyValueAtFollowsPointers(t *testing.T) {
 	require.True(t, empty)
 }
 
-func TestIsEmptyValueAtRejectsPointerCycle(t *testing.T) {
+func TestIsEmptyValueAtRejectsPointerToPointer(t *testing.T) {
 	d := New([]byte{
 		0x20, 0x00, // pointer to offset 0
 	})
@@ -206,7 +206,7 @@ func TestIsEmptyValueAtRejectsPointerCycle(t *testing.T) {
 	empty, err := d.IsEmptyValueAt(0)
 	require.Error(t, err)
 	require.False(t, empty)
-	require.ErrorContains(t, err, "exceeded maximum data structure depth")
+	require.ErrorContains(t, err, "invalid pointer to pointer")
 }
 
 func TestDecodeRejectsOversizedContainersBeforeAllocation(t *testing.T) {

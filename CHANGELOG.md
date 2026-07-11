@@ -13,6 +13,8 @@
   allocation savings.
 - Released decoder-owned data and cache references when a reader is closed.
 - Rejected invalid `netip.Addr` lookup values.
+- Made verification reject invalid UTF-8 strings and made empty-value filtering
+  reject pointer-to-pointer records consistently with other decoder paths.
 
 ## 2.4.1 - 2026-06-28
 
