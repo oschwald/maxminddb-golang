@@ -15,11 +15,8 @@ type cacheEntry struct {
 // miss for the same offset (see internAt).
 //
 // The arrays are intentionally separate rather than packed into a single
-// [4096]struct{entry; recentMiss} layout. Packing halves slot density
-// per cache line (4 vs 8) and measurably regresses BenchmarkStringCacheCold
-// by ~8%: cold-sweep workloads benefit more from dense linear scanning of
-// entries than from co-locating each entry with its rarely-touched miss
-// counter.
+// [4096]struct{entry; recentMiss} layout. This keeps the frequently scanned
+// entries denser in cache lines while misses use a separate counter array.
 type stringCache struct {
 	entries      [4096]atomic.Pointer[cacheEntry]
 	recentMisses [4096]atomic.Uint64

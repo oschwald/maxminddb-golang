@@ -15,6 +15,8 @@
 - Rejected invalid `netip.Addr` lookup values.
 - Made verification reject invalid UTF-8 strings and made empty-value filtering
   reject pointer-to-pointer records consistently with other decoder paths.
+- Corrected cold-cache and concurrent-lookup benchmarks so they measure steady
+  cache misses and lookup work rather than warm caches and goroutine setup.
 
 ## 2.4.1 - 2026-06-28
 

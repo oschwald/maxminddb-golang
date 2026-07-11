@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sync"
 	"testing"
 	"time"
 
@@ -1458,60 +1457,43 @@ func BenchmarkDecodePathCountryCode(b *testing.B) {
 	require.NoError(b, db.Close(), "error on close")
 }
 
-// BenchmarkCityLookupConcurrent tests concurrent city lookups to demonstrate
-// string cache performance under concurrent load.
+// BenchmarkCityLookupConcurrent measures lookup and decode scaling under
+// concurrent access to the shared string cache.
 func BenchmarkCityLookupConcurrent(b *testing.B) {
-	db, err := Open("GeoLite2-City.mmdb")
+	db, err := Open(testFile("GeoIP2-City-Test.mmdb"))
 	require.NoError(b, err)
-	defer func() {
-		require.NoError(b, db.Close(), "error on close")
-	}()
+	b.Cleanup(func() { require.NoError(b, db.Close(), "error on close") })
 
-	// Test with different numbers of concurrent goroutines
+	var addresses []netip.Addr
+	for result := range db.Networks() {
+		require.NoError(b, result.Err())
+		addresses = append(addresses, result.Prefix().Addr())
+	}
+	require.NotEmpty(b, addresses)
+
 	goroutineCounts := []int{1, 4, 16, 64}
-
 	for _, numGoroutines := range goroutineCounts {
 		b.Run(fmt.Sprintf("goroutines_%d", numGoroutines), func(b *testing.B) {
-			// Each goroutine performs 100 lookups
-			const lookupsPerGoroutine = 100
+			previousProcs := runtime.GOMAXPROCS(numGoroutines)
+			b.Cleanup(func() { runtime.GOMAXPROCS(previousProcs) })
+			b.ReportAllocs()
 			b.ResetTimer()
 
-			for range b.N {
-				var wg sync.WaitGroup
-				wg.Add(numGoroutines)
-
-				for range numGoroutines {
-					go func() {
-						defer wg.Done()
-
-						//nolint:gosec // this is a test
-						r := rand.New(rand.NewSource(time.Now().UnixNano()))
-						s := make(net.IP, 4)
-						var result benchmarkCity
-
-						for range lookupsPerGoroutine {
-							ip := randomIPv4Address(r, s)
-							lookupResult := db.Lookup(ip)
-							err := lookupResult.Decode(&result)
-							if err != nil {
-								b.Error(err)
-								return
-							}
-							result.Traits.IPAddress = ip
-							result.Traits.Network = lookupResult.Prefix()
-							// Access string fields to exercise the cache
-							_ = result.City.Names
-							_ = result.Country.Names
-						}
-					}()
+			b.RunParallel(func(pb *testing.PB) {
+				var result benchmarkCity
+				var i uint
+				for pb.Next() {
+					ip := addresses[i%uint(len(addresses))]
+					lookupResult := db.Lookup(ip)
+					if err := lookupResult.Decode(&result); err != nil {
+						b.Error(err)
+						return
+					}
+					result.Traits.IPAddress = ip
+					result.Traits.Network = lookupResult.Prefix()
+					i++
 				}
-
-				wg.Wait()
-			}
-
-			// Report operations per second
-			totalOps := int64(b.N) * int64(numGoroutines) * int64(lookupsPerGoroutine)
-			b.ReportMetric(float64(totalOps)/b.Elapsed().Seconds(), "lookups/sec")
+			})
 		})
 	}
 }

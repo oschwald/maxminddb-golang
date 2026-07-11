@@ -145,17 +145,18 @@ func BenchmarkStringCacheHot(b *testing.B) {
 
 func BenchmarkStringCacheCold(b *testing.B) {
 	cache := newStringCache()
-	data := make([]byte, 8192)
+	data := make([]byte, 4096+5)
 	for i := range data {
 		data[i] = 'a' + byte(i%26)
 	}
 
-	var offset uint
+	// These offsets collide in the same slot and alternate, so neither reaches
+	// the cache's two-consecutive-miss admission threshold.
+	offsets := [...]uint{0, 4096}
+	var i uint
+	b.ReportAllocs()
 	for b.Loop() {
-		benchmarkStringCacheSink = cache.internAt(offset, 5, data)
-		offset += 7
-		if offset+5 >= uint(len(data)) {
-			offset = 0
-		}
+		benchmarkStringCacheSink = cache.internAt(offsets[i%uint(len(offsets))], 5, data)
+		i++
 	}
 }
