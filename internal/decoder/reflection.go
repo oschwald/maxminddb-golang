@@ -1080,7 +1080,11 @@ func (d *ReflectionDecoder) decodeStructWithFields(
 		}
 		// The string() does not create a copy due to this compiler
 		// optimization: https://github.com/golang/go/issues/3512
-		fieldInfo, ok := fields.namedFields[string(key)]
+		fingerprint := fieldKeyFingerprint(key)
+		fieldInfo, ok := fields.fieldForFingerprint(fingerprint)
+		if ok && (fieldInfo == nil || fieldInfo.name != string(key)) {
+			fieldInfo, ok = fields.namedFields[string(key)]
+		}
 		if !ok {
 			offset, err = d.nextValueOffset(offset, 1)
 			if err != nil {
@@ -1368,8 +1372,69 @@ type fieldInfo struct {
 }
 
 type fieldsType struct {
-	namedFields   map[string]*fieldInfo // Map from field name to field info
-	validationErr error
+	validationErr     error
+	namedFields       map[string]*fieldInfo // Map from field name to field info
+	fingerprintFields []fingerprintField
+}
+
+type fingerprintField struct {
+	field       *fieldInfo
+	fingerprint uint64
+}
+
+func (fs *fieldsType) fieldForFingerprint(fingerprint uint64) (*fieldInfo, bool) {
+	mask := uint64(len(fs.fingerprintFields) - 1)
+	index := (fingerprint ^ (fingerprint >> 16) ^ (fingerprint >> 32)) & mask
+	for {
+		entry := fs.fingerprintFields[index]
+		if entry.fingerprint == 0 {
+			return nil, false
+		}
+		if entry.fingerprint == fingerprint {
+			return entry.field, true
+		}
+		index = (index + 1) & mask
+	}
+}
+
+func fieldKeyFingerprint(key []byte) uint64 {
+	// Length plus the first and last two bytes distinguish ordinary MMDB
+	// field names cheaply. Collisions fall back to the full string map.
+	n := len(key)
+	fingerprint := uint64(n) << 32
+	if n > 0 {
+		fingerprint |= uint64(key[0]) << 24
+		fingerprint |= uint64(key[n-1]) << 16
+	}
+	if n > 1 {
+		fingerprint |= uint64(key[1]) << 8
+		fingerprint |= uint64(key[n-2])
+	}
+	return fingerprint
+}
+
+func makeFingerprintFields(namedFields map[string]*fieldInfo) []fingerprintField {
+	tableSize := 1
+	for tableSize < len(namedFields)*2 {
+		tableSize *= 2
+	}
+	fingerprintFields := make([]fingerprintField, tableSize)
+	mask := uint64(tableSize - 1)
+	for _, field := range namedFields {
+		fingerprint := fieldKeyFingerprint([]byte(field.name))
+		index := (fingerprint ^ (fingerprint >> 16) ^ (fingerprint >> 32)) & mask
+		for fingerprintFields[index].fingerprint != 0 &&
+			fingerprintFields[index].fingerprint != fingerprint {
+			index = (index + 1) & mask
+		}
+		entry := &fingerprintFields[index]
+		if entry.fingerprint != 0 {
+			entry.field = nil
+			continue
+		}
+		*entry = fingerprintField{fingerprint: fingerprint, field: field}
+	}
+	return fingerprintFields
 }
 
 type queueEntry struct {
@@ -1643,8 +1708,9 @@ func makeStructFieldsWithStack(
 	}
 
 	fields := &fieldsType{
-		namedFields:   namedFields,
-		validationErr: validationErr,
+		namedFields:       namedFields,
+		fingerprintFields: makeFingerprintFields(namedFields),
+		validationErr:     validationErr,
 	}
 
 	// Reindex all fields for optimized access

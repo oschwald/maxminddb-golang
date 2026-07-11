@@ -6,6 +6,8 @@
   records.
 - Reduced allocations when recurring decoded strings share a primary cache
   slot.
+- Reduced struct decoding time by using compact field-name fingerprints before
+  falling back to full string hashing.
 - Rejected impossible or malformed large container sizes before allocating
   destination maps and slices, while reducing preflight overhead for common
   strings and booleans and avoiding preflight when caller-provided slice

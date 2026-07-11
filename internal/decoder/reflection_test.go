@@ -299,6 +299,38 @@ func TestMap(t *testing.T) {
 	validateDecoding(t, maps)
 }
 
+func TestDecodeStructFieldFingerprintCollisions(t *testing.T) {
+	type resultType struct {
+		First  string `maxminddb:"abXXyz"`
+		Second string `maxminddb:"abYYyz"`
+	}
+
+	firstKey := []byte("abXXyz")
+	secondKey := []byte("abYYyz")
+	unknownKey := []byte("abZZyz")
+	require.Equal(t, fieldKeyFingerprint(firstKey), fieldKeyFingerprint(secondKey))
+	require.Equal(t, fieldKeyFingerprint(firstKey), fieldKeyFingerprint(unknownKey))
+
+	capacity := 1 + 6 + len(firstKey) + len(secondKey) + len(unknownKey) +
+		len("one") + len("two") + len("ignored")
+	data := make([]byte, 1, capacity)
+	data[0] = 0xe3 // map with three entries
+	data = append(data, 0x46)
+	data = append(data, firstKey...)
+	data = append(data, 0x43, 'o', 'n', 'e')
+	data = append(data, 0x46)
+	data = append(data, secondKey...)
+	data = append(data, 0x43, 't', 'w', 'o')
+	data = append(data, 0x46)
+	data = append(data, unknownKey...)
+	data = append(data, 0x47, 'i', 'g', 'n', 'o', 'r', 'e', 'd')
+
+	var result resultType
+	d := NewWithoutStringCache(data)
+	require.NoError(t, d.Decode(0, &result))
+	require.Equal(t, resultType{First: "one", Second: "two"}, result)
+}
+
 func TestSlice(t *testing.T) {
 	slice := map[string]any{
 		"0004":                 []any{},
