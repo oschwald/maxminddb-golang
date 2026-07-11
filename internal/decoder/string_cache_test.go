@@ -62,30 +62,27 @@ func TestStringCacheTwoMissAdmission(t *testing.T) {
 		"cache hit must return the admitted string's backing data, not a fresh allocation")
 }
 
-// TestStringCacheNoAdmissionOnSlotCollision verifies that two offsets mapping
-// to the same slot alternately miss without admitting. The Swap rule encodes
-// "saw the same offset twice in a row" — alternation never matches, so the
-// slot stays empty and we avoid thrashing the cache with one-off collisions.
-func TestStringCacheNoAdmissionOnSlotCollision(t *testing.T) {
+func TestStringCacheUsesAlternateSlotOnCollision(t *testing.T) {
 	cache := newStringCache()
-	const slotCount = uint(4096)
-	data := make([]byte, slotCount+5)
+	const offsetA, offsetB uint = 0, stringCacheSlots
+	data := make([]byte, offsetB+5)
 	for i := range data {
 		data[i] = 'a' + byte(i%26)
 	}
 
-	const offsetA, offsetB uint = 0, slotCount
-	require.Equal(t, offsetA%slotCount, offsetB%slotCount,
-		"test setup requires colliding slots")
+	primaryA := offsetA & (stringCacheSlots - 1)
+	primaryB := offsetB & (stringCacheSlots - 1)
+	alternateA := stringCacheAlternateIndex(offsetA, primaryA)
+	alternateB := stringCacheAlternateIndex(offsetB, primaryB)
+	require.Equal(t, primaryA, primaryB, "test setup requires colliding primary slots")
+	require.NotEqual(t, alternateA, alternateB, "alternate slots must differ")
 
-	for range 4 {
+	for range 3 {
 		_ = cache.internAt(offsetA, 5, data)
-		require.Nil(t, cache.entries[offsetA%slotCount].Load(),
-			"alternating offsets must not admit at offsetA miss")
 		_ = cache.internAt(offsetB, 5, data)
-		require.Nil(t, cache.entries[offsetB%slotCount].Load(),
-			"alternating offsets must not admit at offsetB miss")
 	}
+	require.Equal(t, offsetA, cache.entries[primaryA].Load().offset)
+	require.Equal(t, offsetB, cache.entries[alternateB].Load().offset)
 }
 
 // TestStringCacheConcurrent stresses the lock-free cache with multiple
@@ -125,10 +122,14 @@ func TestStringCacheConcurrent(t *testing.T) {
 	wg.Wait()
 
 	for i, off := range offsets {
-		entry := cache.entries[off%uint(len(cache.entries))].Load()
+		primary := off & (stringCacheSlots - 1)
+		alternate := stringCacheAlternateIndex(off, primary)
+		entry := cache.entries[primary].Load()
+		if entry == nil || entry.offset != off {
+			entry = cache.entries[alternate].Load()
+		}
 		require.NotNil(t, entry,
-			"hot offset %d (slot %d) should be admitted after concurrent stress",
-			off, off%uint(len(cache.entries)))
+			"hot offset %d should be admitted after concurrent stress", off)
 		require.Equal(t, off, entry.offset)
 		require.Equal(t, expected[i], entry.str)
 	}
@@ -145,14 +146,15 @@ func BenchmarkStringCacheHot(b *testing.B) {
 
 func BenchmarkStringCacheCold(b *testing.B) {
 	cache := newStringCache()
-	data := make([]byte, 4096+5)
+	const collidingOffset = 1 << 24
+	data := make([]byte, collidingOffset+5)
 	for i := range data {
 		data[i] = 'a' + byte(i%26)
 	}
 
 	// These offsets collide in the same slot and alternate, so neither reaches
 	// the cache's two-consecutive-miss admission threshold.
-	offsets := [...]uint{0, 4096}
+	offsets := [...]uint{0, collidingOffset}
 	var i uint
 	b.ReportAllocs()
 	for b.Loop() {

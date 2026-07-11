@@ -4,6 +4,8 @@
 
 - Reduced IPv4 and IPv6 lookup time for databases with 28-bit search-tree
   records.
+- Reduced allocations when recurring decoded strings share a primary cache
+  slot.
 - Rejected impossible or malformed large container sizes before allocating
   destination maps and slices, while reducing preflight overhead for common
   strings and booleans and avoiding preflight when caller-provided slice

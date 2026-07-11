@@ -9,7 +9,9 @@ type cacheEntry struct {
 	offset uint
 }
 
-// stringCache holds two parallel 4096-slot arrays indexed by offset%4096.
+const stringCacheSlots = 4096
+
+// stringCache holds two parallel arrays indexed by data offset.
 // entries holds admitted strings; recentMisses records the last missing
 // offset seen at each slot so we can admit only on the second consecutive
 // miss for the same offset (see internAt).
@@ -18,8 +20,8 @@ type cacheEntry struct {
 // [4096]struct{entry; recentMiss} layout. This keeps the frequently scanned
 // entries denser in cache lines while misses use a separate counter array.
 type stringCache struct {
-	entries      [4096]atomic.Pointer[cacheEntry]
-	recentMisses [4096]atomic.Uint64
+	entries      [stringCacheSlots]atomic.Pointer[cacheEntry]
+	recentMisses [stringCacheSlots]atomic.Uint64
 }
 
 func newStringCache() *stringCache {
@@ -40,10 +42,15 @@ func (sc *stringCache) internAt(offset, size uint, data []byte) string {
 		return string(data[offset : offset+size])
 	}
 
-	i := offset % uint(len(sc.entries))
-	entry := &sc.entries[i]
+	const mask = stringCacheSlots - 1
+	primary := offset & mask
+	entry := &sc.entries[primary]
 
 	if cached := entry.Load(); cached != nil && cached.offset == offset {
+		return cached.str
+	}
+	alternate := stringCacheAlternateIndex(offset, primary)
+	if cached := sc.entries[alternate].Load(); cached != nil && cached.offset == offset {
 		return cached.str
 	}
 
@@ -54,14 +61,22 @@ func (sc *stringCache) internAt(offset, size uint, data []byte) string {
 	// The +1 bias reserves 0 as the "no prior miss" sentinel so the initial
 	// zero state of recentMisses[i] never spuriously matches a real offset of 0.
 	admissionValue := uint64(offset) + 1
-	if sc.recentMisses[i].Load() == admissionValue {
+	if sc.recentMisses[alternate].Load() == admissionValue {
+		if entry.Load() != nil {
+			entry = &sc.entries[alternate]
+		}
 		entry.Store(&cacheEntry{
 			str:    str,
 			offset: offset,
 		})
 	} else {
-		sc.recentMisses[i].Store(admissionValue)
+		sc.recentMisses[alternate].Store(admissionValue)
 	}
 
 	return str
+}
+
+func stringCacheAlternateIndex(offset, primary uint) uint {
+	const mask = stringCacheSlots - 1
+	return (primary + ((offset>>12)*0x9e37 | 1)) & mask
 }
