@@ -12,6 +12,7 @@
   `DisableStringCache` for readers that favor lower memory over repeated-decode
   allocation savings.
 - Released decoder-owned data and cache references when a reader is closed.
+- Rejected invalid `netip.Addr` lookup values.
 
 ## 2.4.1 - 2026-06-28
 

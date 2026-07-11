@@ -124,6 +124,8 @@ const dataSectionSeparatorSize = 16
 
 var metadataStartMarker = []byte("\xAB\xCD\xEFMaxMind.com")
 
+var errInvalidIPAddress = errors.New("invalid IP address")
+
 // mmapCleanup holds the data needed to safely cleanup memory-mapped files.
 type mmapCleanup struct {
 	hasMapped *atomic.Bool
@@ -458,6 +460,9 @@ func (r *Reader) hasIPv4Subtree() bool {
 var zeroIP = netip.MustParseAddr("::")
 
 func (r *Reader) lookupPointer(ip netip.Addr) (uint, int, error) {
+	if !ip.IsValid() {
+		return 0, 0, errInvalidIPAddress
+	}
 	if r.Metadata.IPVersion == 4 && ip.Is6() {
 		return 0, 0, fmt.Errorf(
 			"error looking up '%s': you attempted to look up an IPv6 address in an IPv4-only database",

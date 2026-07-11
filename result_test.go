@@ -7,6 +7,15 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+var benchmarkFoundSink bool
+
+func BenchmarkResultFound(b *testing.B) {
+	result := Result{reader: &Reader{}, offset: 1}
+	for b.Loop() {
+		benchmarkFoundSink = result.Found()
+	}
+}
+
 func TestResultPrefixUsesIPv4StartBitDepth(t *testing.T) {
 	reader := &Reader{
 		Metadata:          Metadata{IPVersion: 6, NodeCount: 8},

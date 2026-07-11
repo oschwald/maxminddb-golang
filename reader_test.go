@@ -1002,6 +1002,20 @@ func TestUsingClosedDatabase(t *testing.T) {
 	assert.Zero(t, reader.dataSectionSize)
 }
 
+func TestLookupRejectsInvalidAddress(t *testing.T) {
+	for _, recordSize := range []uint{24, 28, 32} {
+		t.Run(fmt.Sprintf("%d-bit", recordSize), func(t *testing.T) {
+			reader, err := Open(testFile(fmt.Sprintf("MaxMind-DB-test-ipv4-%d.mmdb", recordSize)))
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, reader.Close()) })
+
+			result := reader.Lookup(netip.Addr{})
+			require.EqualError(t, result.Err(), "invalid IP address")
+			require.False(t, result.Found())
+		})
+	}
+}
+
 func TestResultDecodeAfterReaderClose(t *testing.T) {
 	reader, err := Open(testFile("MaxMind-DB-test-decoder.mmdb"))
 	require.NoError(t, err)
@@ -1327,6 +1341,75 @@ func BenchmarkCityLookupOnly(b *testing.B) {
 		}
 	}
 	require.NoError(b, db.Close(), "error on close")
+}
+
+func BenchmarkTestDatabaseLookup(b *testing.B) {
+	db, err := Open(testFile("MaxMind-DB-test-ipv4-28.mmdb"))
+	require.NoError(b, err)
+	b.Cleanup(func() { require.NoError(b, db.Close()) })
+
+	addresses := [...]netip.Addr{
+		netip.MustParseAddr("1.1.1.1"),
+		netip.MustParseAddr("1.1.1.2"),
+		netip.MustParseAddr("2.2.2.2"),
+		netip.MustParseAddr("255.255.255.255"),
+	}
+
+	var i uint
+	for b.Loop() {
+		result := db.Lookup(addresses[i%uint(len(addresses))])
+		if err := result.Err(); err != nil {
+			b.Fatal(err)
+		}
+		i++
+	}
+}
+
+func BenchmarkTestDatabaseLookupIPv6(b *testing.B) {
+	db, err := Open(testFile("MaxMind-DB-test-ipv6-28.mmdb"))
+	require.NoError(b, err)
+	b.Cleanup(func() { require.NoError(b, db.Close()) })
+
+	addresses := [...]netip.Addr{
+		netip.MustParseAddr("2001::1"),
+		netip.MustParseAddr("2001:db8::1"),
+		netip.MustParseAddr("abcd::1"),
+		netip.MustParseAddr("ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"),
+	}
+
+	var i uint
+	for b.Loop() {
+		result := db.Lookup(addresses[i%uint(len(addresses))])
+		if err := result.Err(); err != nil {
+			b.Fatal(err)
+		}
+		i++
+	}
+}
+
+var benchmarkLookupPointerSink uint
+
+func BenchmarkTestDatabaseLookupPointer(b *testing.B) {
+	db, err := Open(testFile("MaxMind-DB-test-ipv4-28.mmdb"))
+	require.NoError(b, err)
+	b.Cleanup(func() { require.NoError(b, db.Close()) })
+
+	addresses := [...]netip.Addr{
+		netip.MustParseAddr("1.1.1.1"),
+		netip.MustParseAddr("1.1.1.2"),
+		netip.MustParseAddr("2.2.2.2"),
+		netip.MustParseAddr("255.255.255.255"),
+	}
+
+	var i uint
+	for b.Loop() {
+		pointer, _, err := db.lookupPointer(addresses[i%uint(len(addresses))])
+		if err != nil {
+			b.Fatal(err)
+		}
+		benchmarkLookupPointerSink = pointer
+		i++
+	}
 }
 
 func BenchmarkDecodeCountryCodeWithStruct(b *testing.B) {
