@@ -313,6 +313,8 @@ func (r *Reader) Close() error {
 		err = munmap(r.buffer)
 	}
 	r.buffer = nil
+	r.decoder = decoder.ReflectionDecoder{}
+	r.dataSectionSize = 0
 	return err
 }
 

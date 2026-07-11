@@ -998,6 +998,8 @@ func TestUsingClosedDatabase(t *testing.T) {
 
 	err = reader.LookupOffset(0).Decode(recordInterface)
 	assert.Equal(t, "cannot call LookupOffset on a closed database", err.Error())
+	assert.Zero(t, reader.decoder, "Close should release decoder-owned data")
+	assert.Zero(t, reader.dataSectionSize)
 }
 
 func TestResultDecodeAfterReaderClose(t *testing.T) {
