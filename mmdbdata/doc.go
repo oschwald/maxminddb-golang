@@ -45,6 +45,13 @@
 // instead of reflection when used with maxminddb.Reader.Lookup, similar to how
 // json.Unmarshaler works with encoding/json.
 //
+// The Cursor, MapCursor, and SliceCursor APIs support code generated
+// by the maxminddb-gen command. They use opaque successor cursors to prove that
+// a complete value was consumed without walking it a second time. Applications
+// should normally generate this code rather than use the cursor API directly.
+// Handwritten CursorUnmarshaler implementations return that successor so they
+// can also decode nested fields without rescanning.
+//
 // # Direct Decoder Usage
 //
 // For even more control, you can use the Decoder directly:

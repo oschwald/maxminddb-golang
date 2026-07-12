@@ -122,6 +122,91 @@ func TestTopLevelUnmarshalerStillUsesValidPointer(t *testing.T) {
 	require.Equal(t, "custom:Foo", result.Value)
 }
 
+type topLevelCursorUnmarshaler struct {
+	Value        string
+	cursorCalled bool
+	legacyCalled bool
+}
+
+func (u *topLevelCursorUnmarshaler) UnmarshalMaxMindDB(*Decoder) error {
+	u.legacyCalled = true
+	panic("legacy unmarshaler should not be called")
+}
+
+func (u *topLevelCursorUnmarshaler) UnmarshalMaxMindDBCursor(cursor Cursor) (Cursor, error) {
+	value, next, err := cursor.ReadString()
+	if err != nil {
+		return Cursor{}, err
+	}
+	u.Value = "cursor:" + value
+	u.cursorCalled = true
+	return next, nil
+}
+
+func TestTopLevelCursorUnmarshalerTakesPriority(t *testing.T) {
+	d := New([]byte{0x43, 'F', 'o', 'o'})
+
+	var result topLevelCursorUnmarshaler
+	require.NoError(t, d.Decode(0, &result))
+	require.Equal(t, "cursor:Foo", result.Value)
+	require.True(t, result.cursorCalled)
+	require.False(t, result.legacyCalled)
+}
+
+type nestedCursorUnmarshaler struct {
+	Value        string
+	cursorCalled bool
+	legacyCalled bool
+}
+
+func (u *nestedCursorUnmarshaler) UnmarshalMaxMindDB(*Decoder) error {
+	u.legacyCalled = true
+	panic("legacy unmarshaler should not be called")
+}
+
+func (u *nestedCursorUnmarshaler) UnmarshalMaxMindDBCursor(cursor Cursor) (Cursor, error) {
+	value, next, err := cursor.ReadString()
+	if err != nil {
+		return Cursor{}, err
+	}
+	u.Value = "cursor:" + value
+	u.cursorCalled = true
+	return next, nil
+}
+
+func TestNestedCursorUnmarshalerTakesPriority(t *testing.T) {
+	type outer struct {
+		Value nestedCursorUnmarshaler `maxminddb:"value"`
+	}
+	data := []byte{0xe1, 0x45, 'v', 'a', 'l', 'u', 'e', 0x43, 'F', 'o', 'o'}
+
+	d := New(data)
+	var result outer
+	require.NoError(t, d.Decode(0, &result))
+	require.Equal(t, "cursor:Foo", result.Value.Value)
+	require.True(t, result.Value.cursorCalled)
+	require.False(t, result.Value.legacyCalled)
+}
+
+type invalidSuccessorCursorUnmarshaler struct{}
+
+func (*invalidSuccessorCursorUnmarshaler) UnmarshalMaxMindDBCursor(Cursor) (Cursor, error) {
+	return Cursor{}, nil
+}
+
+func TestCursorUnmarshalerRejectsInvalidSuccessorAndRollsBackPointer(t *testing.T) {
+	type outer struct {
+		Value *invalidSuccessorCursorUnmarshaler `maxminddb:"value"`
+	}
+	data := []byte{0xe1, 0x45, 'v', 'a', 'l', 'u', 'e', 0x43, 'F', 'o', 'o'}
+
+	d := New(data)
+	var result outer
+	err := d.Decode(0, &result)
+	require.ErrorContains(t, err, "cursor from another decoder")
+	require.Nil(t, result.Value)
+}
+
 // testInnerPointer with UnmarshalMaxMindDB for pointer test.
 type testInnerPointer struct {
 	Value  string

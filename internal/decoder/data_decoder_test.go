@@ -224,12 +224,140 @@ func TestDecodePointerKeyFastPointerSizes(t *testing.T) {
 	})
 }
 
+func TestDecodeStringValueCommonEncodings(t *testing.T) {
+	tests := []struct {
+		name     string
+		data     []byte
+		offset   uint
+		want     string
+		wantNext uint
+	}{
+		{
+			name:     "direct short string",
+			data:     []byte{0x43, 'o', 'n', 'e'},
+			want:     "one",
+			wantNext: 4,
+		},
+		{
+			name:     "one-byte pointer to short string",
+			data:     []byte{0x20, 0x04, 0x00, 0x00, 0x43, 'o', 'n', 'e'},
+			want:     "one",
+			wantNext: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			decoder := NewDataDecoderWithoutStringCache(tt.data)
+			got, next, err := decoder.decodeStringValue(tt.offset)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+			require.Equal(t, tt.wantNext, next)
+		})
+	}
+}
+
+func TestDecodeStringValueCompactPointerWidths(t *testing.T) {
+	tests := []struct {
+		name     string
+		control  byte
+		payload  []byte
+		target   int
+		wantNext uint
+	}{
+		{
+			name:     "two-byte pointer",
+			control:  0x28,
+			payload:  []byte{0x00, 0x00},
+			target:   pointerBase2,
+			wantNext: 3,
+		},
+		{
+			name:     "three-byte pointer",
+			control:  0x30,
+			payload:  []byte{0x00, 0x00, 0x00},
+			target:   pointerBase3,
+			wantNext: 4,
+		},
+		{
+			name:     "four-byte pointer",
+			control:  0x38,
+			payload:  []byte{0x00, 0x00, 0x00, 0x08},
+			target:   8,
+			wantNext: 5,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := make([]byte, tt.target+4)
+			data[0] = tt.control
+			copy(data[1:], tt.payload)
+			copy(data[tt.target:], []byte{0x43, 'o', 'n', 'e'})
+
+			decoder := NewDataDecoderWithoutStringCache(data)
+			got, next, err := decoder.decodeStringValue(0)
+			require.NoError(t, err)
+			require.Equal(t, "one", got)
+			require.Equal(t, tt.wantNext, next)
+		})
+	}
+}
+
+func TestDecodeStringValueSlowPaths(t *testing.T) {
+	longValue := strings.Repeat("x", 29)
+	tests := []struct {
+		name     string
+		data     []byte
+		want     string
+		wantNext uint
+	}{
+		{
+			name:     "direct extended-size string",
+			data:     append([]byte{0x5d, 0x00}, longValue...),
+			want:     longValue,
+			wantNext: 31,
+		},
+		{
+			name: "pointer to extended-size string",
+			data: append(
+				[]byte{0x20, 0x04, 0x00, 0x00, 0x5d, 0x00},
+				longValue...,
+			),
+			want:     longValue,
+			wantNext: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			decoder := NewDataDecoderWithoutStringCache(tt.data)
+			got, next, err := decoder.decodeStringValue(0)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+			require.Equal(t, tt.wantNext, next)
+		})
+	}
+
+	t.Run("wrong kind", func(t *testing.T) {
+		decoder := NewDataDecoderWithoutStringCache([]byte{0xa0})
+		_, _, err := decoder.decodeStringValue(0)
+		require.EqualError(t, err, "unexpected kind Uint16, expected String")
+	})
+
+	t.Run("pointer to pointer", func(t *testing.T) {
+		decoder := NewDataDecoderWithoutStringCache([]byte{0x20, 0x02, 0x20, 0x02})
+		_, _, err := decoder.decodeStringValue(0)
+		require.ErrorContains(t, err, "pointer-to-pointer chain detected")
+	})
+}
+
 // TestDecodePointerKeyFastNonStringTarget verifies that a pointer to a
 // non-KindString target bails out of the fast path. A regression that
 // accepted any pointer-target kind would return bogus key bytes (e.g.
 // pointing at a map or uint ctrl byte's payload), silently corrupting
 // struct decoding. The slow path also rejects this, but with a specific
-// "unexpected type when decoding string" error.
+// type mismatch error.
 func TestDecodePointerKeyFastNonStringTarget(t *testing.T) {
 	// Pointer at offset 0 -> offset 5. At offset 5 we put ctrl 0xC0
 	// (KindUint16, size 0). The fast path must not accept this.
@@ -241,7 +369,13 @@ func TestDecodePointerKeyFastNonStringTarget(t *testing.T) {
 	d := NewDataDecoder(buf)
 	_, _, err := d.decodeKey(0)
 	require.Error(t, err, "non-string pointer target must be rejected")
-	require.Contains(t, err.Error(), "unexpected type when decoding string")
+	require.Contains(t, err.Error(), "cannot unmarshal")
+}
+
+func TestDecodeKeyRejectsPointerToPointer(t *testing.T) {
+	d := NewDataDecoder([]byte{0x20, 0x02, 0x20, 0x02})
+	_, _, err := d.decodeKey(0)
+	require.ErrorContains(t, err, "pointer-to-pointer chain detected")
 }
 
 // TestDecodePointerKeyFastExtendedSize verifies that a pointer targeting a

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Added the optional `maxminddb-gen` command for reproducible generation of
+  reflection-free decoders for application-owned types, together with cursor
+  primitives that avoid rescanning completely consumed containers and a
+  pool-free cursor unmarshaling interface whose opaque successor supports
+  single-pass nested custom decoding. The command discovers exported structs in
+  its input source file and writes a matching
+  `<source>_maxminddb.go` file by default while preserving build constraints and
+  recognized filename build suffixes. Generated struct decoders use lightweight
+  counted map traversal and compact pointer-string fast paths. Output-path
+  migrations ignore superseded generated methods while analyzing replacements,
+  MaxMind tag validation remains isolated from unrelated tags, and output
+  replacement requires an exact generated ownership marker.
 - Reduced IPv4 and IPv6 lookup time for databases with 28-bit search-tree
   records.
 - Reduced allocations when recurring decoded strings share a primary cache

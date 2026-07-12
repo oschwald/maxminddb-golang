@@ -4,6 +4,7 @@ package decoder
 import (
 	"fmt"
 	"iter"
+	"sync"
 
 	"github.com/oschwald/maxminddb-golang/v2/internal/mmdberrors"
 )
@@ -16,6 +17,8 @@ type Decoder struct {
 	nextOffset    uint
 	hasNextOffset bool
 }
+
+var decoderPool = sync.Pool{New: func() any { return new(Decoder) }}
 
 type decoderOptions struct {
 	// Intentionally empty for now. DecoderOption callbacks are still invoked so
@@ -40,6 +43,17 @@ func NewDecoder(d DataDecoder, offset uint, options ...DecoderOption) *Decoder {
 	}
 }
 
+func acquireDecoder(d DataDecoder, offset uint) *Decoder {
+	decoder := decoderPool.Get().(*Decoder)
+	*decoder = Decoder{d: d, offset: offset}
+	return decoder
+}
+
+func releaseDecoder(decoder *Decoder) {
+	*decoder = Decoder{}
+	decoderPool.Put(decoder)
+}
+
 // ReadBool reads the value pointed by the decoder as a bool.
 //
 // Returns an error if the database is malformed or if the pointed value is not a bool.
@@ -61,12 +75,7 @@ func (d *Decoder) ReadBool() (bool, error) {
 //
 // Returns an error if the database is malformed or if the pointed value is not a string.
 func (d *Decoder) ReadString() (string, error) {
-	size, offset, err := d.decodeCtrlDataAndFollow(KindString)
-	if err != nil {
-		return "", d.wrapError(err)
-	}
-
-	value, newOffset, err := d.d.decodeString(size, offset)
+	value, newOffset, err := d.d.decodeStringValue(d.offset)
 	if err != nil {
 		return "", d.wrapError(err)
 	}
@@ -315,7 +324,7 @@ func (d *Decoder) SkipValue() error {
 // This allows for look-ahead parsing similar to jsontext.Decoder.PeekKind().
 func (d *Decoder) PeekKind() (Kind, error) {
 	//nolint:dogsled // only the resolved kind matters here
-	kindNum, _, _, _, err := d.resolveCtrlData(
+	kindNum, _, _, _, err := d.d.resolveCtrlData(
 		d.offset,
 	)
 	if err != nil {
@@ -406,12 +415,23 @@ func (d *Decoder) setNextOffset(offset uint) {
 	}
 }
 
+// UnexpectedKindError reports that a decoder operation encountered a different
+// MMDB kind than the operation accepts.
+type UnexpectedKindError struct {
+	Actual   Kind
+	Expected Kind
+}
+
+func (e UnexpectedKindError) Error() string {
+	return fmt.Sprintf("unexpected kind %s, expected %s", e.Actual, e.Expected)
+}
+
 func unexpectedKindErr(expectedKind, actualKind Kind) error {
-	return fmt.Errorf("unexpected kind %d, expected %d", actualKind, expectedKind)
+	return UnexpectedKindError{Actual: actualKind, Expected: expectedKind}
 }
 
 func (d *Decoder) decodeCtrlDataAndFollow(expectedKind Kind) (uint, uint, error) {
-	kindNum, size, dataOffset, nextOffset, err := d.resolveCtrlData(d.offset)
+	kindNum, size, dataOffset, nextOffset, err := d.d.resolveCtrlData(d.offset)
 	if err != nil {
 		return 0, 0, err // Don't wrap here, let caller wrap
 	}
@@ -435,10 +455,10 @@ func (d *Decoder) decodeCtrlDataAndFollow(expectedKind Kind) (uint, uint, error)
 // setNextOffset; passing 0 would clobber the sequential position. A genuine
 // pointer-end offset is always >= 2 because a pointer occupies a control byte
 // plus at least one payload byte.
-func (d *Decoder) resolveCtrlData(
+func (d *DataDecoder) resolveCtrlData(
 	offset uint,
 ) (kind Kind, size, dataOffset, nextOffset uint, err error) {
-	kind, size, dataOffset, err = d.d.decodeCtrlData(offset)
+	kind, size, dataOffset, err = d.decodeCtrlData(offset)
 	if err != nil {
 		return 0, 0, 0, 0, err
 	}
@@ -447,13 +467,13 @@ func (d *Decoder) resolveCtrlData(
 	}
 
 	var pointerEndOffset uint
-	dataOffset, pointerEndOffset, err = d.d.decodePointer(size, dataOffset)
+	dataOffset, pointerEndOffset, err = d.decodePointer(size, dataOffset)
 	if err != nil {
 		return 0, 0, 0, 0, err
 	}
 	nextOffset = pointerEndOffset
 
-	kind, size, dataOffset, err = d.d.decodeCtrlData(dataOffset)
+	kind, size, dataOffset, err = d.decodeCtrlData(dataOffset)
 	if err != nil {
 		return 0, 0, 0, 0, err
 	}
