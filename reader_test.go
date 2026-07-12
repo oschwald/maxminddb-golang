@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sync"
 	"testing"
 	"time"
 
@@ -75,6 +74,17 @@ func TestOpenBytesAppliesReaderOptions(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.True(t, optionCalled)
+}
+
+func TestDisableStringCache(t *testing.T) {
+	reader, err := Open(testFile("MaxMind-DB-test-decoder.mmdb"), DisableStringCache())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, reader.Close()) })
+
+	var record map[string]any
+	err = reader.Lookup(netip.MustParseAddr("::1.1.1.0")).Decode(&record)
+	require.NoError(t, err)
+	require.NotEmpty(t, record)
 }
 
 func TestReaderLeaks(t *testing.T) {
@@ -987,6 +997,22 @@ func TestUsingClosedDatabase(t *testing.T) {
 
 	err = reader.LookupOffset(0).Decode(recordInterface)
 	assert.Equal(t, "cannot call LookupOffset on a closed database", err.Error())
+	assert.Zero(t, reader.decoder, "Close should release decoder-owned data")
+	assert.Zero(t, reader.dataSectionSize)
+}
+
+func TestLookupRejectsInvalidAddress(t *testing.T) {
+	for _, recordSize := range []uint{24, 28, 32} {
+		t.Run(fmt.Sprintf("%d-bit", recordSize), func(t *testing.T) {
+			reader, err := Open(testFile(fmt.Sprintf("MaxMind-DB-test-ipv4-%d.mmdb", recordSize)))
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, reader.Close()) })
+
+			result := reader.Lookup(netip.Addr{})
+			require.EqualError(t, result.Err(), "invalid IP address")
+			require.False(t, result.Found())
+		})
+	}
 }
 
 func TestResultDecodeAfterReaderClose(t *testing.T) {
@@ -1130,6 +1156,34 @@ func BenchmarkOpen(b *testing.B) {
 	}
 	assert.NotNil(b, db)
 	require.NoError(b, db.Close(), "error on close")
+}
+
+func BenchmarkOpenBytesOptions(b *testing.B) {
+	data, err := os.ReadFile(testFile("MaxMind-DB-test-decoder.mmdb"))
+	require.NoError(b, err)
+
+	tests := []struct {
+		name    string
+		options []ReaderOption
+	}{
+		{name: "default"},
+		{name: "disable_string_cache", options: []ReaderOption{DisableStringCache()}},
+	}
+
+	for _, test := range tests {
+		b.Run(test.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				reader, err := OpenBytes(data, test.options...)
+				if err != nil {
+					b.Fatal(err)
+				}
+				if err := reader.Close(); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
 }
 
 func BenchmarkInterfaceLookup(b *testing.B) {
@@ -1288,6 +1342,99 @@ func BenchmarkCityLookupOnly(b *testing.B) {
 	require.NoError(b, db.Close(), "error on close")
 }
 
+func BenchmarkTestDatabaseLookup(b *testing.B) {
+	db, err := Open(testFile("MaxMind-DB-test-ipv4-28.mmdb"))
+	require.NoError(b, err)
+	b.Cleanup(func() { require.NoError(b, db.Close()) })
+
+	addresses := [...]netip.Addr{
+		netip.MustParseAddr("1.1.1.1"),
+		netip.MustParseAddr("1.1.1.2"),
+		netip.MustParseAddr("2.2.2.2"),
+		netip.MustParseAddr("255.255.255.255"),
+	}
+
+	var i uint
+	for b.Loop() {
+		result := db.Lookup(addresses[i%uint(len(addresses))])
+		if err := result.Err(); err != nil {
+			b.Fatal(err)
+		}
+		i++
+	}
+}
+
+func BenchmarkTestDatabaseLookupIPv6(b *testing.B) {
+	db, err := Open(testFile("MaxMind-DB-test-ipv6-28.mmdb"))
+	require.NoError(b, err)
+	b.Cleanup(func() { require.NoError(b, db.Close()) })
+
+	addresses := [...]netip.Addr{
+		netip.MustParseAddr("2001::1"),
+		netip.MustParseAddr("2001:db8::1"),
+		netip.MustParseAddr("abcd::1"),
+		netip.MustParseAddr("ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"),
+	}
+
+	var i uint
+	for b.Loop() {
+		result := db.Lookup(addresses[i%uint(len(addresses))])
+		if err := result.Err(); err != nil {
+			b.Fatal(err)
+		}
+		i++
+	}
+}
+
+var benchmarkLookupPointerSink uint
+
+func BenchmarkTestDatabaseLookupPointer(b *testing.B) {
+	db, err := Open(testFile("MaxMind-DB-test-ipv4-28.mmdb"))
+	require.NoError(b, err)
+	b.Cleanup(func() { require.NoError(b, db.Close()) })
+
+	addresses := [...]netip.Addr{
+		netip.MustParseAddr("1.1.1.1"),
+		netip.MustParseAddr("1.1.1.2"),
+		netip.MustParseAddr("2.2.2.2"),
+		netip.MustParseAddr("255.255.255.255"),
+	}
+
+	var i uint
+	for b.Loop() {
+		pointer, _, err := db.lookupPointer(addresses[i%uint(len(addresses))])
+		if err != nil {
+			b.Fatal(err)
+		}
+		benchmarkLookupPointerSink = pointer
+		i++
+	}
+}
+
+func BenchmarkTestDatabaseCityLookup(b *testing.B) {
+	db, err := Open(testFile("GeoIP2-City-Test.mmdb"))
+	require.NoError(b, err)
+	b.Cleanup(func() { require.NoError(b, db.Close()) })
+
+	var addresses []netip.Addr
+	for result := range db.Networks() {
+		require.NoError(b, result.Err())
+		addresses = append(addresses, result.Prefix().Addr())
+	}
+	require.NotEmpty(b, addresses)
+
+	var result benchmarkCity
+	var i uint
+	b.ResetTimer()
+	for b.Loop() {
+		lookupResult := db.Lookup(addresses[i%uint(len(addresses))])
+		if err := lookupResult.Decode(&result); err != nil {
+			b.Fatal(err)
+		}
+		i++
+	}
+}
+
 func BenchmarkDecodeCountryCodeWithStruct(b *testing.B) {
 	db, err := Open("GeoLite2-City.mmdb")
 	require.NoError(b, err)
@@ -1334,60 +1481,43 @@ func BenchmarkDecodePathCountryCode(b *testing.B) {
 	require.NoError(b, db.Close(), "error on close")
 }
 
-// BenchmarkCityLookupConcurrent tests concurrent city lookups to demonstrate
-// string cache performance under concurrent load.
+// BenchmarkCityLookupConcurrent measures lookup and decode scaling under
+// concurrent access to the shared string cache.
 func BenchmarkCityLookupConcurrent(b *testing.B) {
-	db, err := Open("GeoLite2-City.mmdb")
+	db, err := Open(testFile("GeoIP2-City-Test.mmdb"))
 	require.NoError(b, err)
-	defer func() {
-		require.NoError(b, db.Close(), "error on close")
-	}()
+	b.Cleanup(func() { require.NoError(b, db.Close(), "error on close") })
 
-	// Test with different numbers of concurrent goroutines
+	var addresses []netip.Addr
+	for result := range db.Networks() {
+		require.NoError(b, result.Err())
+		addresses = append(addresses, result.Prefix().Addr())
+	}
+	require.NotEmpty(b, addresses)
+
 	goroutineCounts := []int{1, 4, 16, 64}
-
 	for _, numGoroutines := range goroutineCounts {
 		b.Run(fmt.Sprintf("goroutines_%d", numGoroutines), func(b *testing.B) {
-			// Each goroutine performs 100 lookups
-			const lookupsPerGoroutine = 100
+			previousProcs := runtime.GOMAXPROCS(numGoroutines)
+			b.Cleanup(func() { runtime.GOMAXPROCS(previousProcs) })
+			b.ReportAllocs()
 			b.ResetTimer()
 
-			for range b.N {
-				var wg sync.WaitGroup
-				wg.Add(numGoroutines)
-
-				for range numGoroutines {
-					go func() {
-						defer wg.Done()
-
-						//nolint:gosec // this is a test
-						r := rand.New(rand.NewSource(time.Now().UnixNano()))
-						s := make(net.IP, 4)
-						var result benchmarkCity
-
-						for range lookupsPerGoroutine {
-							ip := randomIPv4Address(r, s)
-							lookupResult := db.Lookup(ip)
-							err := lookupResult.Decode(&result)
-							if err != nil {
-								b.Error(err)
-								return
-							}
-							result.Traits.IPAddress = ip
-							result.Traits.Network = lookupResult.Prefix()
-							// Access string fields to exercise the cache
-							_ = result.City.Names
-							_ = result.Country.Names
-						}
-					}()
+			b.RunParallel(func(pb *testing.PB) {
+				var result benchmarkCity
+				var i uint
+				for pb.Next() {
+					ip := addresses[i%uint(len(addresses))]
+					lookupResult := db.Lookup(ip)
+					if err := lookupResult.Decode(&result); err != nil {
+						b.Error(err)
+						return
+					}
+					result.Traits.IPAddress = ip
+					result.Traits.Network = lookupResult.Prefix()
+					i++
 				}
-
-				wg.Wait()
-			}
-
-			// Report operations per second
-			totalOps := int64(b.N) * int64(numGoroutines) * int64(lookupsPerGoroutine)
-			b.ReportMetric(float64(totalOps)/b.Elapsed().Seconds(), "lookups/sec")
+			})
 		})
 	}
 }

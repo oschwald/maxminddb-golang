@@ -33,6 +33,14 @@ func New(buffer []byte) ReflectionDecoder {
 	}
 }
 
+// NewWithoutStringCache creates a ReflectionDecoder without a string cache.
+// It is intended for one-shot decoding such as database metadata parsing.
+func NewWithoutStringCache(buffer []byte) ReflectionDecoder {
+	return ReflectionDecoder{
+		DataDecoder: NewDataDecoderWithoutStringCache(buffer),
+	}
+}
+
 // IsEmptyValueAt checks if the value at the given offset is an empty map or array.
 // Returns true if the value is a map or array with size 0.
 func (d *ReflectionDecoder) IsEmptyValueAt(offset uint) (bool, error) {
@@ -45,9 +53,10 @@ func (d *ReflectionDecoder) IsEmptyValueAt(offset uint) (bool, error) {
 		}
 
 		if kindNum == KindPointer {
-			if followedPointers >= maximumDataStructureDepth {
+			if followedPointers > 0 {
 				return false, mmdberrors.NewInvalidDatabaseError(
-					"exceeded maximum data structure depth; database is likely corrupt",
+					"invalid pointer to pointer at offset %d",
+					dataOffset,
 				)
 			}
 			followedPointers++
@@ -564,9 +573,15 @@ func (d *ReflectionDecoder) unmarshalMap(
 	case reflect.Struct:
 		return d.decodeStruct(size, offset, result, depth)
 	case reflect.Map:
+		if err := d.validateContainerSize(KindMap, size, offset, depth); err != nil {
+			return 0, err
+		}
 		return d.decodeMap(size, offset, result, depth)
 	case reflect.Interface:
 		if result.NumMethod() == 0 {
+			if err := d.validateContainerSize(KindMap, size, offset, depth); err != nil {
+				return 0, err
+			}
 			// Create map directly without makeAddressable wrapper
 			mapVal := reflect.ValueOf(make(map[string]any, size))
 			rv := addressableValue{Value: mapVal}
@@ -614,9 +629,17 @@ func (d *ReflectionDecoder) unmarshalSlice(
 ) (uint, error) {
 	switch result.Kind() {
 	case reflect.Slice:
+		if (result.IsNil() || result.Cap() < int(size)) && size > 0 {
+			if err := d.validateContainerSize(KindSlice, size, offset, depth); err != nil {
+				return 0, err
+			}
+		}
 		return d.decodeSlice(size, offset, result, depth)
 	case reflect.Interface:
 		if result.NumMethod() == 0 {
+			if err := d.validateContainerSize(KindSlice, size, offset, depth); err != nil {
+				return 0, err
+			}
 			a := []any{}
 			// Create slice directly without makeAddressable wrapper
 			sliceVal := reflect.ValueOf(&a).Elem()
@@ -629,6 +652,179 @@ func (d *ReflectionDecoder) unmarshalSlice(
 		// Fall through to error return
 	}
 	return 0, mmdberrors.NewUnmarshalTypeStrError("array", result.Type())
+}
+
+func (d *ReflectionDecoder) validateContainerSize(kind Kind, size, offset uint, depth int) error {
+	bufferLen := uint(len(d.buffer))
+	if offset > bufferLen {
+		return mmdberrors.NewOffsetError()
+	}
+
+	valueCount := size
+	if kind == KindMap {
+		if size > ^uint(0)/2 {
+			return mmdberrors.NewInvalidDatabaseError("container size overflow")
+		}
+		valueCount = size * 2
+	}
+
+	// Every encoded value occupies at least one byte. Reject impossible counts
+	// before using an attacker-controlled size as an allocation hint.
+	if valueCount > bufferLen-offset {
+		return mmdberrors.NewOffsetError()
+	}
+
+	// Large allocations are uncommon in MMDB records. Validate their complete
+	// encoded structure first, while keeping ordinary records single-pass.
+	const preflightValueCount = 1024
+	if valueCount >= preflightValueCount {
+		_, err := d.validateContainerContents(kind, size, offset, depth)
+		return err
+	}
+	return nil
+}
+
+//nolint:nestif // Keeping compact values inline avoids a call for every entry.
+func (d *ReflectionDecoder) validateContainerContents(
+	kind Kind,
+	size uint,
+	offset uint,
+	depth int,
+) (uint, error) {
+	bufferLen := uint(len(d.buffer))
+	for range size {
+		if kind == KindMap {
+			// Map keys are ordinarily directly encoded short strings. Validate
+			// that form inline and leave pointers and extended sizes to the
+			// complete validator below.
+			ctrlByte := byte(0)
+			if offset < bufferLen {
+				ctrlByte = d.buffer[offset]
+			}
+			keySize := uint(ctrlByte & 0x1f)
+			if offset >= bufferLen || Kind(ctrlByte>>5) != KindString || keySize >= 29 ||
+				!hasBufferRange(bufferLen, offset+1, keySize) {
+				var err error
+				offset, err = d.validateValueForAllocation(offset, depth, true)
+				if err != nil {
+					return 0, err
+				}
+			} else {
+				offset += 1 + keySize
+			}
+		}
+
+		// Booleans have a fixed two-byte encoding and no payload. They are
+		// common in large generated containers.
+		if offset+1 < bufferLen && d.buffer[offset] <= 1 && d.buffer[offset+1] == 7 {
+			offset += 2
+			continue
+		}
+
+		var err error
+		offset, err = d.validateValueForAllocation(offset, depth, false)
+		if err != nil {
+			return 0, err
+		}
+	}
+	return offset, nil
+}
+
+func (d *ReflectionDecoder) validateValueForAllocation(
+	offset uint,
+	depth int,
+	requireString bool,
+) (uint, error) {
+	if depth > maximumDataStructureDepth {
+		return 0, mmdberrors.NewInvalidDatabaseError(
+			"exceeded maximum data structure depth; database is likely corrupt",
+		)
+	}
+
+	kind, size, dataOffset, err := d.decodeCtrlData(offset)
+	if err != nil {
+		return 0, err
+	}
+	if kind == KindPointer {
+		pointer, nextOffset, err := d.decodePointer(size, dataOffset)
+		if err != nil {
+			return 0, err
+		}
+		targetKind, _, _, err := d.decodeCtrlData(pointer)
+		if err != nil {
+			return 0, err
+		}
+		if targetKind == KindPointer {
+			return 0, mmdberrors.NewInvalidDatabaseError(
+				"invalid pointer to pointer at offset %d",
+				pointer,
+			)
+		}
+		_, err = d.validateValueForAllocation(pointer, depth+1, requireString)
+		return nextOffset, err
+	}
+
+	if requireString && kind != KindString {
+		return 0, mmdberrors.NewInvalidDatabaseError(
+			"unexpected map key type: %s",
+			kind.String(),
+		)
+	}
+
+	bufferLen := uint(len(d.buffer))
+	switch kind {
+	case KindString, KindBytes:
+		if !hasBufferRange(bufferLen, dataOffset, size) {
+			return 0, mmdberrors.NewOffsetError()
+		}
+		return dataOffset + size, nil
+	case KindFloat64:
+		return validateFixedSize(kind, size, dataOffset, bufferLen, 8)
+	case KindFloat32:
+		return validateFixedSize(kind, size, dataOffset, bufferLen, 4)
+	case KindInt32, KindUint32:
+		return validateMaximumSize(kind, size, dataOffset, bufferLen, 4)
+	case KindUint16:
+		return validateMaximumSize(kind, size, dataOffset, bufferLen, 2)
+	case KindUint64:
+		return validateMaximumSize(kind, size, dataOffset, bufferLen, 8)
+	case KindUint128:
+		return validateMaximumSize(kind, size, dataOffset, bufferLen, 16)
+	case KindBool:
+		if size > 1 {
+			return 0, mmdberrors.NewInvalidDatabaseError("invalid bool size: %d", size)
+		}
+		return dataOffset, nil
+	case KindMap, KindSlice:
+		return d.validateContainerContents(kind, size, dataOffset, depth+1)
+	default:
+		return 0, mmdberrors.NewInvalidDatabaseError("unknown type: %d", kind)
+	}
+}
+
+func validateFixedSize(kind Kind, size, offset, bufferLen, expected uint) (uint, error) {
+	if size != expected {
+		return 0, mmdberrors.NewInvalidDatabaseError(
+			"invalid %s size: %d",
+			kind.String(),
+			size,
+		)
+	}
+	return validateMaximumSize(kind, size, offset, bufferLen, expected)
+}
+
+func validateMaximumSize(kind Kind, size, offset, bufferLen, maximum uint) (uint, error) {
+	if size > maximum {
+		return 0, mmdberrors.NewInvalidDatabaseError(
+			"invalid %s size: %d",
+			kind.String(),
+			size,
+		)
+	}
+	if !hasBufferRange(bufferLen, offset, size) {
+		return 0, mmdberrors.NewOffsetError()
+	}
+	return offset + size, nil
 }
 
 func (d *ReflectionDecoder) unmarshalString(
@@ -884,7 +1080,11 @@ func (d *ReflectionDecoder) decodeStructWithFields(
 		}
 		// The string() does not create a copy due to this compiler
 		// optimization: https://github.com/golang/go/issues/3512
-		fieldInfo, ok := fields.namedFields[string(key)]
+		fingerprint := fieldKeyFingerprint(key)
+		fieldInfo, ok := fields.fieldForFingerprint(fingerprint)
+		if ok && (fieldInfo == nil || fieldInfo.name != string(key)) {
+			fieldInfo, ok = fields.namedFields[string(key)]
+		}
 		if !ok {
 			offset, err = d.nextValueOffset(offset, 1)
 			if err != nil {
@@ -1172,8 +1372,69 @@ type fieldInfo struct {
 }
 
 type fieldsType struct {
-	namedFields   map[string]*fieldInfo // Map from field name to field info
-	validationErr error
+	validationErr     error
+	namedFields       map[string]*fieldInfo // Map from field name to field info
+	fingerprintFields []fingerprintField
+}
+
+type fingerprintField struct {
+	field       *fieldInfo
+	fingerprint uint64
+}
+
+func (fs *fieldsType) fieldForFingerprint(fingerprint uint64) (*fieldInfo, bool) {
+	mask := uint64(len(fs.fingerprintFields) - 1)
+	index := (fingerprint ^ (fingerprint >> 16) ^ (fingerprint >> 32)) & mask
+	for {
+		entry := fs.fingerprintFields[index]
+		if entry.fingerprint == 0 {
+			return nil, false
+		}
+		if entry.fingerprint == fingerprint {
+			return entry.field, true
+		}
+		index = (index + 1) & mask
+	}
+}
+
+func fieldKeyFingerprint(key []byte) uint64 {
+	// Length plus the first and last two bytes distinguish ordinary MMDB
+	// field names cheaply. Collisions fall back to the full string map.
+	n := len(key)
+	fingerprint := uint64(n) << 32
+	if n > 0 {
+		fingerprint |= uint64(key[0]) << 24
+		fingerprint |= uint64(key[n-1]) << 16
+	}
+	if n > 1 {
+		fingerprint |= uint64(key[1]) << 8
+		fingerprint |= uint64(key[n-2])
+	}
+	return fingerprint
+}
+
+func makeFingerprintFields(namedFields map[string]*fieldInfo) []fingerprintField {
+	tableSize := 1
+	for tableSize < len(namedFields)*2 {
+		tableSize *= 2
+	}
+	fingerprintFields := make([]fingerprintField, tableSize)
+	mask := uint64(tableSize - 1)
+	for _, field := range namedFields {
+		fingerprint := fieldKeyFingerprint([]byte(field.name))
+		index := (fingerprint ^ (fingerprint >> 16) ^ (fingerprint >> 32)) & mask
+		for fingerprintFields[index].fingerprint != 0 &&
+			fingerprintFields[index].fingerprint != fingerprint {
+			index = (index + 1) & mask
+		}
+		entry := &fingerprintFields[index]
+		if entry.fingerprint != 0 {
+			entry.field = nil
+			continue
+		}
+		*entry = fingerprintField{fingerprint: fingerprint, field: field}
+	}
+	return fingerprintFields
 }
 
 type queueEntry struct {
@@ -1447,8 +1708,9 @@ func makeStructFieldsWithStack(
 	}
 
 	fields := &fieldsType{
-		namedFields:   namedFields,
-		validationErr: validationErr,
+		namedFields:       namedFields,
+		fingerprintFields: makeFingerprintFields(namedFields),
+		validationErr:     validationErr,
 	}
 
 	// Reindex all fields for optimized access

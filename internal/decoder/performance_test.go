@@ -2,7 +2,9 @@ package decoder
 
 import (
 	"encoding/hex"
+	"fmt"
 	"reflect"
+	"strconv"
 	"testing"
 )
 
@@ -89,5 +91,56 @@ func BenchmarkFieldLookup(b *testing.B) {
 				b.Fatalf("Field %s not found", name)
 			}
 		}
+	}
+}
+
+func BenchmarkLargeSliceDecoding(b *testing.B) {
+	for _, size := range []int{1023, 1024} {
+		data := make([]byte, 0, 4+size*2)
+		data = append(data, 0x1e, 0x04, byte((size-285)>>8), byte(size-285))
+		for range size {
+			data = append(data, 0x00, 0x07) // false
+		}
+		d := NewWithoutStringCache(data)
+
+		b.Run(fmt.Sprintf("%d/new", size), func(b *testing.B) {
+			for b.Loop() {
+				var result []bool
+				if err := d.Decode(0, &result); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+
+		b.Run(fmt.Sprintf("%d/reused", size), func(b *testing.B) {
+			result := make([]bool, 0, size)
+			for b.Loop() {
+				if err := d.Decode(0, &result); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkLargeMapDecoding(b *testing.B) {
+	for _, size := range []int{511, 512} {
+		data := make([]byte, 0, 3+size*6)
+		data = append(data, 0xfe, byte((size-285)>>8), byte(size-285))
+		for i := range size {
+			data = append(data, 0x44)
+			data = append(data, fmt.Sprintf("%04x", i)...)
+			data = append(data, 0x00, 0x07) // false
+		}
+		d := NewWithoutStringCache(data)
+
+		b.Run(strconv.Itoa(size), func(b *testing.B) {
+			for b.Loop() {
+				var result map[string]bool
+				if err := d.Decode(0, &result); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
 	}
 }

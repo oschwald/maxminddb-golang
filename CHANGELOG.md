@@ -1,5 +1,29 @@
 # Changes
 
+## Unreleased
+
+- Reduced IPv4 and IPv6 lookup time for databases with 28-bit search-tree
+  records.
+- Reduced allocations when recurring decoded strings share a primary cache
+  slot.
+- Reduced struct decoding time by using compact field-name fingerprints before
+  falling back to full string hashing.
+- Rejected impossible or malformed large container sizes before allocating
+  destination maps and slices, while reducing preflight overhead for common
+  strings and booleans and avoiding preflight when caller-provided slice
+  capacity already prevents an allocation.
+- Kept readers reachable through memory-mapped lookup, decode, and iteration
+  operations so runtime cleanup cannot unmap active data.
+- Reduced opening memory by decoding metadata without a string cache and added
+  `DisableStringCache` for readers that favor lower memory over repeated-decode
+  allocation savings.
+- Released decoder-owned data and cache references when a reader is closed.
+- Rejected invalid `netip.Addr` lookup values.
+- Made verification reject invalid UTF-8 strings and made empty-value filtering
+  reject pointer-to-pointer records consistently with other decoder paths.
+- Corrected cold-cache and concurrent-lookup benchmarks so they measure steady
+  cache misses and lookup work rather than warm caches and goroutine setup.
+
 ## 2.4.1 - 2026-06-28
 
 - Fixed `Result.Decode` and `Result.DecodePath` after `Reader.Close` so stale

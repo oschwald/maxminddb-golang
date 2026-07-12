@@ -63,6 +63,61 @@ func TestVerifyOnBrokenDatabases(t *testing.T) {
 	}
 }
 
+func TestVerifyMetadataRejectsInvalidUTF8(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*Metadata)
+		errMsg string
+	}{
+		{
+			name: "database type",
+			mutate: func(metadata *Metadata) {
+				metadata.DatabaseType = "Test\xff"
+			},
+			errMsg: "database_type contains invalid UTF-8",
+		},
+		{
+			name: "description key",
+			mutate: func(metadata *Metadata) {
+				metadata.Description = map[string]string{"\xff": "test"}
+			},
+			errMsg: "description contains invalid UTF-8",
+		},
+		{
+			name: "description value",
+			mutate: func(metadata *Metadata) {
+				metadata.Description = map[string]string{"en": "test\xff"}
+			},
+			errMsg: "description contains invalid UTF-8",
+		},
+		{
+			name: "languages",
+			mutate: func(metadata *Metadata) {
+				metadata.Languages = []string{"en\xff"}
+			},
+			errMsg: "languages contains invalid UTF-8",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			metadata := Metadata{
+				Description:              map[string]string{"en": "test"},
+				DatabaseType:             "Test",
+				BinaryFormatMajorVersion: 2,
+				BinaryFormatMinorVersion: 0,
+				IPVersion:                4,
+				NodeCount:                1,
+				RecordSize:               24,
+			}
+			tt.mutate(&metadata)
+
+			v := verifier{reader: &Reader{Metadata: metadata}}
+			require.ErrorContains(t, v.verifyMetadata(), tt.errMsg)
+		})
+	}
+}
+
 func TestVerifyDataSectionSeparatorOutOfBounds(t *testing.T) {
 	v := verifier{reader: &Reader{
 		buffer: []byte{0x00},
