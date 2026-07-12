@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -84,6 +85,69 @@ func (u *topLevelPointerUnmarshaler) UnmarshalMaxMindDB(d *Decoder) error {
 	return nil
 }
 
+type cursorRetainingUnmarshaler struct {
+	cursor Cursor
+}
+
+func (u *cursorRetainingUnmarshaler) UnmarshalMaxMindDB(d *Decoder) error {
+	cursor := d.Cursor()
+	_, next, err := cursor.ReadString()
+	if err != nil {
+		return err
+	}
+	if err := d.Advance(next); err != nil {
+		return err
+	}
+	u.cursor = cursor
+	return nil
+}
+
+func assertRetainedCursorReadsString(
+	t *testing.T,
+	unmarshaler cursorRetainingUnmarshaler,
+	want string,
+) {
+	t.Helper()
+	value, _, err := unmarshaler.cursor.ReadString()
+	require.NoError(t, err)
+	require.Equal(t, want, value)
+}
+
+func TestLegacyUnmarshalerRetainedCursorHasStableBacking(t *testing.T) {
+	data := []byte{0x43, 'F', 'o', 'o'}
+
+	t.Run("reflection", func(t *testing.T) {
+		decoder := New(data)
+		var result cursorRetainingUnmarshaler
+		require.NoError(t, decoder.Decode(0, &result))
+		assertRetainedCursorReadsString(t, result, "Foo")
+	})
+
+	t.Run("nested reflection", func(t *testing.T) {
+		type outer struct {
+			Field cursorRetainingUnmarshaler `maxminddb:"field"`
+		}
+		nestedData := []byte{
+			0xe1,
+			0x45, 'f', 'i', 'e', 'l', 'd',
+			0x43, 'F', 'o', 'o',
+		}
+		decoder := New(nestedData)
+		var result outer
+		require.NoError(t, decoder.Decode(0, &result))
+		assertRetainedCursorReadsString(t, result.Field, "Foo")
+	})
+
+	t.Run("cursor bridge", func(t *testing.T) {
+		decoder := NewDecoder(NewDataDecoder(data), 0)
+		var result cursorRetainingUnmarshaler
+		next, err := decoder.Cursor().Unmarshal(&result)
+		require.NoError(t, err)
+		require.NoError(t, decoder.Advance(next))
+		assertRetainedCursorReadsString(t, result, "Foo")
+	})
+}
+
 func TestTopLevelUnmarshalerRequiresNonNilPointer(t *testing.T) {
 	d := New([]byte{0x43, 'F', 'o', 'o'})
 
@@ -120,6 +184,190 @@ func TestTopLevelUnmarshalerStillUsesValidPointer(t *testing.T) {
 	var result topLevelPointerUnmarshaler
 	require.NoError(t, d.Decode(0, &result))
 	require.Equal(t, "custom:Foo", result.Value)
+}
+
+type topLevelCursorUnmarshaler struct {
+	Value        string
+	cursorCalled bool
+	legacyCalled bool
+}
+
+func (u *topLevelCursorUnmarshaler) UnmarshalMaxMindDB(*Decoder) error {
+	u.legacyCalled = true
+	panic("legacy unmarshaler should not be called")
+}
+
+func (u *topLevelCursorUnmarshaler) UnmarshalMaxMindDBCursor(cursor Cursor) (Cursor, error) {
+	value, next, err := cursor.ReadString()
+	if err != nil {
+		return Cursor{}, err
+	}
+	u.Value = "cursor:" + value
+	u.cursorCalled = true
+	return next, nil
+}
+
+func TestTopLevelCursorUnmarshalerTakesPriority(t *testing.T) {
+	d := New([]byte{0x43, 'F', 'o', 'o'})
+
+	var result topLevelCursorUnmarshaler
+	require.NoError(t, d.Decode(0, &result))
+	require.Equal(t, "cursor:Foo", result.Value)
+	require.True(t, result.cursorCalled)
+	require.False(t, result.legacyCalled)
+}
+
+type nestedCursorUnmarshaler struct {
+	Value        string
+	cursorCalled bool
+	legacyCalled bool
+}
+
+func (u *nestedCursorUnmarshaler) UnmarshalMaxMindDB(*Decoder) error {
+	u.legacyCalled = true
+	panic("legacy unmarshaler should not be called")
+}
+
+func (u *nestedCursorUnmarshaler) UnmarshalMaxMindDBCursor(cursor Cursor) (Cursor, error) {
+	value, next, err := cursor.ReadString()
+	if err != nil {
+		return Cursor{}, err
+	}
+	u.Value = "cursor:" + value
+	u.cursorCalled = true
+	return next, nil
+}
+
+func TestNestedCursorUnmarshalerTakesPriority(t *testing.T) {
+	type outer struct {
+		Value nestedCursorUnmarshaler `maxminddb:"value"`
+	}
+	data := []byte{0xe1, 0x45, 'v', 'a', 'l', 'u', 'e', 0x43, 'F', 'o', 'o'}
+
+	d := New(data)
+	var result outer
+	require.NoError(t, d.Decode(0, &result))
+	require.Equal(t, "cursor:Foo", result.Value.Value)
+	require.True(t, result.Value.cursorCalled)
+	require.False(t, result.Value.legacyCalled)
+}
+
+type cursorMarkedString string
+
+func (value *cursorMarkedString) UnmarshalMaxMindDBCursor(cursor Cursor) (Cursor, error) {
+	decoded, next, err := cursor.ReadString()
+	if err == nil {
+		*value = cursorMarkedString("cursor:" + decoded)
+	}
+	return next, err
+}
+
+func TestCursorUnmarshalerForNamedPrimitiveValuesAndPointers(t *testing.T) {
+	t.Run("nested method sets", func(t *testing.T) {
+		type record struct {
+			Value   cursorMarkedString  `maxminddb:"value"`
+			Pointer *cursorMarkedString `maxminddb:"pointer"`
+			After   string              `maxminddb:"after"`
+		}
+		data := []byte{
+			0xe3,
+			0x45, 'v', 'a', 'l', 'u', 'e', 0x43, 'o', 'n', 'e',
+			0x47, 'p', 'o', 'i', 'n', 't', 'e', 'r', 0x43, 't', 'w', 'o',
+			0x45, 'a', 'f', 't', 'e', 'r', 0x44, 'd', 'o', 'n', 'e',
+		}
+
+		var result record
+		decoder := New(data)
+		require.NoError(t, decoder.Decode(0, &result))
+		require.Equal(t, cursorMarkedString("cursor:one"), result.Value)
+		require.NotNil(t, result.Pointer)
+		require.Equal(t, cursorMarkedString("cursor:two"), *result.Pointer)
+		require.Equal(t, "done", result.After)
+	})
+
+	t.Run("successor", func(t *testing.T) {
+		decoder := NewDecoder(NewDataDecoder([]byte{
+			0x43, 'o', 'n', 'e',
+			0x44, 'd', 'o', 'n', 'e',
+		}), 0)
+		var value cursorMarkedString
+		next, err := decoder.Cursor().UnmarshalCursor(&value)
+		require.NoError(t, err)
+		require.Equal(t, cursorMarkedString("cursor:one"), value)
+		require.NoError(t, decoder.Advance(next))
+		trailing, err := decoder.ReadString()
+		require.NoError(t, err)
+		require.Equal(t, "done", trailing)
+	})
+}
+
+type invalidSuccessorCursorUnmarshaler struct {
+	next                Cursor
+	err                 error
+	sameDecoderUnproven bool
+}
+
+func (u *invalidSuccessorCursorUnmarshaler) UnmarshalMaxMindDBCursor(
+	cursor Cursor,
+) (Cursor, error) {
+	if u.sameDecoderUnproven {
+		return Cursor{decoder: cursor.decoder, offset: cursor.offset}, u.err
+	}
+	return u.next, u.err
+}
+
+func TestTopLevelCursorUnmarshalerRejectsInvalidSuccessor(t *testing.T) {
+	data := []byte{0x43, 'F', 'o', 'o'}
+	foreign := New(data)
+	tests := []struct {
+		name                string
+		next                Cursor
+		sameDecoderUnproven bool
+		want                string
+	}{
+		{name: "zero cursor", want: "cursor from another decoder"},
+		{
+			name: "foreign cursor",
+			next: Cursor{decoder: &foreign.DataDecoder, offset: 4, originToken: 1},
+			want: "cursor from another decoder",
+		},
+		{
+			name:                "same decoder without provenance",
+			sameDecoderUnproven: true,
+			want:                "did not return the successor",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := New(data)
+			result := invalidSuccessorCursorUnmarshaler{
+				next:                tt.next,
+				sameDecoderUnproven: tt.sameDecoderUnproven,
+			}
+			err := d.Decode(0, &result)
+			require.ErrorContains(t, err, tt.want)
+		})
+	}
+}
+
+func TestTopLevelCursorUnmarshalerPreservesError(t *testing.T) {
+	d := New([]byte{0x43, 'F', 'o', 'o'})
+	want := errors.New("custom cursor error")
+	result := invalidSuccessorCursorUnmarshaler{err: want}
+	require.ErrorIs(t, d.Decode(0, &result), want)
+}
+
+func TestCursorUnmarshalerRejectsInvalidSuccessorAndRollsBackPointer(t *testing.T) {
+	type outer struct {
+		Value *invalidSuccessorCursorUnmarshaler `maxminddb:"value"`
+	}
+	data := []byte{0xe1, 0x45, 'v', 'a', 'l', 'u', 'e', 0x43, 'F', 'o', 'o'}
+
+	d := New(data)
+	var result outer
+	err := d.Decode(0, &result)
+	require.ErrorContains(t, err, "cursor from another decoder")
+	require.Nil(t, result.Value)
 }
 
 // testInnerPointer with UnmarshalMaxMindDB for pointer test.
@@ -467,6 +715,28 @@ func (m *markedUint64) UnmarshalMaxMindDB(d *Decoder) error {
 	return nil
 }
 
+type markedInt32 int32
+
+func (m *markedInt32) UnmarshalMaxMindDB(d *Decoder) error {
+	n, err := d.ReadInt32()
+	if err != nil {
+		return err
+	}
+	*m = markedInt32(n) + 1000
+	return nil
+}
+
+type markedFloat32 float32
+
+func (m *markedFloat32) UnmarshalMaxMindDB(d *Decoder) error {
+	f, err := d.ReadFloat32()
+	if err != nil {
+		return err
+	}
+	*m = markedFloat32(-f)
+	return nil
+}
+
 type markedFloat64 float64
 
 func (m *markedFloat64) UnmarshalMaxMindDB(d *Decoder) error {
@@ -637,6 +907,52 @@ func TestFastPathPreservesUnmarshalerForNamedTypes(t *testing.T) {
 			},
 		},
 		{
+			name: "int32",
+			data: wrap(0x01, 0x01, 0x2a), // extended Int32, size=1, value 42
+			runValue: func(t *testing.T, data []byte) {
+				type record struct {
+					V markedInt32 `maxminddb:"v"`
+				}
+				var r record
+				d := New(data)
+				require.NoError(t, d.Decode(0, &r))
+				require.Equal(t, markedInt32(1042), r.V)
+			},
+			runPointer: func(t *testing.T, data []byte) {
+				type record struct {
+					V *markedInt32 `maxminddb:"v"`
+				}
+				var r record
+				d := New(data)
+				require.NoError(t, d.Decode(0, &r))
+				require.NotNil(t, r.V)
+				require.Equal(t, markedInt32(1042), *r.V)
+			},
+		},
+		{
+			name: "float32",
+			data: wrap(0x04, 0x08, 0x3f, 0x80, 0x00, 0x00),
+			runValue: func(t *testing.T, data []byte) {
+				type record struct {
+					V markedFloat32 `maxminddb:"v"`
+				}
+				var r record
+				d := New(data)
+				require.NoError(t, d.Decode(0, &r))
+				require.InDelta(t, -1, float64(r.V), 0)
+			},
+			runPointer: func(t *testing.T, data []byte) {
+				type record struct {
+					V *markedFloat32 `maxminddb:"v"`
+				}
+				var r record
+				d := New(data)
+				require.NoError(t, d.Decode(0, &r))
+				require.NotNil(t, r.V)
+				require.InDelta(t, -1, float64(*r.V), 0)
+			},
+		},
+		{
 			name: "float64",
 			// KindFloat64 (high=3), size=8; IEEE 754 of 3.14159265359
 			data: wrap(0x68, 0x40, 0x09, 0x21, 0xfb, 0x54, 0x44, 0x2e, 0xea),
@@ -666,6 +982,43 @@ func TestFastPathPreservesUnmarshalerForNamedTypes(t *testing.T) {
 		t.Run(tc.name+"/value", func(t *testing.T) { tc.runValue(t, tc.data) })
 		t.Run(tc.name+"/pointer", func(t *testing.T) { tc.runPointer(t, tc.data) })
 	}
+}
+
+func TestContainerFastPathPreservesUnmarshalers(t *testing.T) {
+	t.Run("legacy slice values", func(t *testing.T) {
+		data := []byte{0x02, 0x04, 0x43, 'o', 'n', 'e', 0x43, 't', 'w', 'o'}
+		var result []markedString
+		decoder := New(data)
+		require.NoError(t, decoder.Decode(0, &result))
+		require.Equal(t, []markedString{"X:one", "X:two"}, result)
+	})
+
+	t.Run("legacy pointer slice values", func(t *testing.T) {
+		data := []byte{0x01, 0x04, 0x43, 'o', 'n', 'e'}
+		var result []*markedString
+		decoder := New(data)
+		require.NoError(t, decoder.Decode(0, &result))
+		require.Len(t, result, 1)
+		require.NotNil(t, result[0])
+		require.Equal(t, markedString("X:one"), *result[0])
+	})
+
+	t.Run("cursor map values", func(t *testing.T) {
+		data := []byte{0xe1, 0x41, 'k', 0x43, 'o', 'n', 'e'}
+		var result map[string]cursorMarkedString
+		decoder := New(data)
+		require.NoError(t, decoder.Decode(0, &result))
+		require.Equal(t, map[string]cursorMarkedString{"k": "cursor:one"}, result)
+	})
+}
+
+func TestTopLevelMultiPointerPreservesUnmarshaler(t *testing.T) {
+	var result **markedString
+	decoder := New([]byte{0x43, 'o', 'n', 'e'})
+	require.NoError(t, decoder.Decode(0, &result))
+	require.NotNil(t, result)
+	require.NotNil(t, *result)
+	require.Equal(t, markedString("X:one"), **result)
 }
 
 func TestPreinitializedPointerToInterfaceFieldUsesUnmarshaler(t *testing.T) {

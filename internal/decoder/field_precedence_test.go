@@ -158,6 +158,34 @@ func TestPointerStructFieldCaching(t *testing.T) {
 	assert.Equal(t, "Foo", target.Inner.En)
 }
 
+func TestNestedStructWrongKindUsesFieldOffset(t *testing.T) {
+	type inner struct {
+		Name string `maxminddb:"name"`
+	}
+	data := []byte{0xe1, 0x46, 'n', 'e', 's', 't', 'e', 'd', 0x80}
+
+	t.Run("value", func(t *testing.T) {
+		var target struct {
+			Nested inner `maxminddb:"nested"`
+		}
+		decoder := New(data)
+		err := decoder.Decode(0, &target)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "cannot unmarshal")
+	})
+
+	t.Run("pointer", func(t *testing.T) {
+		var target struct {
+			Nested *inner `maxminddb:"nested"`
+		}
+		decoder := New(data)
+		err := decoder.Decode(0, &target)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "cannot unmarshal")
+		require.Nil(t, target.Nested)
+	})
+}
+
 func TestRecursivePointerStructFieldCaching(t *testing.T) {
 	type node struct {
 		Next *node  `maxminddb:"next"`

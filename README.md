@@ -112,7 +112,33 @@ err = db.Lookup(ip).Decode(&city)
 
 ### High-Performance Custom Unmarshaling
 
-Import `github.com/oschwald/maxminddb-golang/v2/mmdbdata` for the decoder type.
+For application-owned structs, `maxminddb-gen` can generate an
+`UnmarshalMaxMindDB` method that avoids reflection. The generator is versioned
+with this module and remains optional; types with neither generated nor
+handwritten custom unmarshaling methods continue to use reflection.
+
+Add the tool to the consuming module's `go.mod` and add a generation directive
+in the package that owns the target types:
+
+```go.mod
+tool github.com/oschwald/maxminddb-golang/v2/maxminddb-gen
+```
+
+```go
+//go:generate go tool maxminddb-gen $GOFILE
+```
+
+This discovers the exported structs declared in the directive's source file.
+For `models.go`, it writes `models_maxminddb.go`; recognized build suffixes and
+source build constraints are preserved. Constrained inputs must match the
+generation environment; multiple inputs share the intersection of their
+constraints. Use `-output` to override the default. Run `go generate ./...` and
+check the generated file into source control. See
+[`maxminddb-gen/README.md`](maxminddb-gen/README.md) for supported types,
+diagnostics, and reproducible CI usage.
+
+For handwritten decoding, import
+`github.com/oschwald/maxminddb-golang/v2/mmdbdata` for the decoder type.
 
 ```go
 type FastCity struct {
@@ -225,8 +251,9 @@ regardless of the data provider.
 ## Performance Tips
 
 1. **Reuse Reader instances**: Lookups, decoding, and iteration are safe to run
-   concurrently. `Close` invalidates outstanding results and should run after
-   readers are done.
+   concurrently. `Close` invalidates outstanding results, Reader-backed cursors,
+   and their derived traversal handles; it must not run concurrently with their
+   use and should run only after readers are done.
 2. **Use specific structs**: Only decode the fields you need rather than using
    `any`
 3. **Implement Unmarshaler**: For high-throughput applications, implement

@@ -11,7 +11,7 @@ type cacheEntry struct {
 
 const stringCacheSlots = 4096
 
-// stringCache holds two parallel arrays indexed by data offset.
+// stringCache holds two parallel arrays indexed by string control-record offset.
 // entries holds admitted strings; recentMisses records the last missing
 // offset seen at each slot so we can admit only on the second consecutive
 // miss for the same offset (see internAt).
@@ -28,18 +28,22 @@ func newStringCache() *stringCache {
 	return &stringCache{}
 }
 
-// internAt returns a string for the data at the given offset and size.
+// internAt returns a string for value, keyed by the offset of its MMDB string
+// control record. A control-record offset uniquely identifies both the payload
+// offset and its encoded length, including for overlapping encodings.
+//
 // Hot offsets are interned and the same backing string is returned on
 // subsequent hits; cold offsets are returned freshly allocated on every
 // call (see the admission rule below).
-func (sc *stringCache) internAt(offset, size uint, data []byte) string {
+func (sc *stringCache) internAt(offset uint, value []byte) string {
 	const (
 		minCachedLen = 2   // single byte strings not worth caching
 		maxCachedLen = 100 // reasonable upper bound for geographic strings
 	)
 
+	size := uint(len(value))
 	if size < minCachedLen || size > maxCachedLen {
-		return string(data[offset : offset+size])
+		return string(value)
 	}
 
 	const mask = stringCacheSlots - 1
@@ -54,7 +58,7 @@ func (sc *stringCache) internAt(offset, size uint, data []byte) string {
 		return cached.str
 	}
 
-	str := string(data[offset : offset+size])
+	str := string(value)
 
 	// Only admit strings that miss twice in the same slot. This keeps the
 	// lock-free fast path for hot strings while avoiding heap churn for one-offs.

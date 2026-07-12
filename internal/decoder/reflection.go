@@ -19,7 +19,18 @@ type Unmarshaler interface {
 	UnmarshalMaxMindDB(d *Decoder) error
 }
 
-var unmarshalerType = reflect.TypeFor[Unmarshaler]()
+// CursorUnmarshaler is implemented by decoders that can decode directly from
+// an immutable cursor and return its proven successor without acquiring a
+// stateful Decoder.
+type CursorUnmarshaler interface {
+	UnmarshalMaxMindDBCursor(cursor Cursor) (Cursor, error)
+}
+
+var (
+	unmarshalerType       = reflect.TypeFor[Unmarshaler]()
+	cursorUnmarshalerType = reflect.TypeFor[CursorUnmarshaler]()
+	stringType            = reflect.TypeFor[string]()
+)
 
 // ReflectionDecoder is a decoder for the MMDB data section.
 type ReflectionDecoder struct {
@@ -80,12 +91,29 @@ func (d *ReflectionDecoder) Decode(offset uint, v any) error {
 		return errors.New("result param must be a pointer")
 	}
 
-	if unmarshaler, ok := v.(Unmarshaler); ok {
-		decoder := NewDecoder(d.DataDecoder, offset)
-		return unmarshaler.UnmarshalMaxMindDB(decoder)
+	switch unmarshaler := v.(type) {
+	case CursorUnmarshaler:
+		_, err := (Cursor{
+			decoder: &d.DataDecoder,
+			offset:  offset,
+		}).UnmarshalCursor(unmarshaler)
+		return err
+	case Unmarshaler:
+		decoder := acquireDecoder(&d.DataDecoder, offset)
+		err := unmarshaler.UnmarshalMaxMindDB(decoder)
+		releaseDecoder(decoder)
+		return err
+	case *string, *[]byte, *bool, *int32, *uint, *uint16, *uint32, *uint64,
+		*float32, *float64:
+		result := addressableValue{Value: rv.Elem()}
+		if _, ok := d.tryFastDecodeTyped(offset, result, result.Type()); ok {
+			return nil
+		}
+	default:
 	}
 
-	_, err := d.decode(offset, rv, 0)
+	result := addressableValue{Value: rv.Elem()}
+	_, err := d.decodeValue(offset, result, 0)
 	if err == nil {
 		return nil
 	}
@@ -272,9 +300,10 @@ func (d *ReflectionDecoder) decodeValue(
 	return d.decodeValueImpl(offset, result, depth, true)
 }
 
-// decodeValueSkipUnmarshaler is the struct-field fast path: when the
-// destination type was precomputed to not implement Unmarshaler, we skip
-// the reflective type-assert that decodeValue would otherwise perform.
+// decodeValueSkipUnmarshaler decodes a destination that was preclassified as
+// implementing neither CursorUnmarshaler nor Unmarshaler. Struct fields and
+// map and slice elements use it to skip both reflective type assertions that
+// decodeValue would otherwise perform.
 func (d *ReflectionDecoder) decodeValueSkipUnmarshaler(
 	offset uint,
 	result addressableValue,
@@ -355,17 +384,13 @@ func (d *ReflectionDecoder) decodeValueImpl(
 		} // dereferenced pointer is always addressable
 	}
 
-	// Try Unmarshaler dispatch only when the type might actually implement
-	// the interface. Struct decoding passes checkUnmarshaler=false when the
-	// per-field precomputation already established the destination cannot
-	// match, avoiding the reflective type assertion entirely.
+	// Try custom unmarshaler dispatch only when the type might actually
+	// implement one of the interfaces. Struct decoding passes
+	// checkUnmarshaler=false when the per-field precomputation established the
+	// destination cannot match, avoiding reflective type assertions entirely.
 	if checkUnmarshaler && result.CanAddr() && mayImplementUnmarshaler(result.Type()) {
-		if unmarshaler, ok := reflect.TypeAssert[Unmarshaler](result.Addr()); ok {
-			decoder := NewDecoder(d.DataDecoder, offset)
-			if err := unmarshaler.UnmarshalMaxMindDB(decoder); err != nil {
-				return 0, err
-			}
-			return d.nextValueOffset(offset, 1)
+		if next, handled, err := d.tryCustomUnmarshal(offset, result.Addr()); handled {
+			return next, err
 		}
 	}
 
@@ -379,6 +404,33 @@ func (d *ReflectionDecoder) decodeValueImpl(
 		return d.nextValueOffset(offset, 1)
 	}
 	return d.decodeFromType(typeNum, size, newOffset, result, depth+1)
+}
+
+func (d *ReflectionDecoder) tryCustomUnmarshal(
+	offset uint,
+	result reflect.Value,
+) (uint, bool, error) {
+	if unmarshaler, ok := reflect.TypeAssert[CursorUnmarshaler](result); ok {
+		next, err := (Cursor{
+			decoder: &d.DataDecoder,
+			offset:  offset,
+		}).UnmarshalCursor(unmarshaler)
+		if err != nil {
+			return 0, true, err
+		}
+		return next.offset, true, nil
+	}
+	if unmarshaler, ok := reflect.TypeAssert[Unmarshaler](result); ok {
+		decoder := acquireDecoder(&d.DataDecoder, offset)
+		err := unmarshaler.UnmarshalMaxMindDB(decoder)
+		releaseDecoder(decoder)
+		if err != nil {
+			return 0, true, err
+		}
+		next, err := d.nextValueOffset(offset, 1)
+		return next, true, err
+	}
+	return 0, false, nil
 }
 
 func (d *ReflectionDecoder) decodeFromType(
@@ -609,7 +661,11 @@ func (d *ReflectionDecoder) unmarshalPointer(
 	// This is done efficiently by checking the control byte at the pointer location
 	if pointer < uint(len(d.buffer)) {
 		controlByte := d.buffer[pointer]
-		if Kind(controlByte>>5) == KindPointer {
+		kind := Kind(controlByte >> 5)
+		if kind == KindExtended && pointer+1 < uint(len(d.buffer)) {
+			kind = Kind(d.buffer[pointer+1] + 7)
+		}
+		if kind == KindPointer {
 			return 0, mmdberrors.NewInvalidDatabaseError(
 				"invalid pointer to pointer at offset %d",
 				pointer,
@@ -676,8 +732,7 @@ func (d *ReflectionDecoder) validateContainerSize(kind Kind, size, offset uint, 
 
 	// Large allocations are uncommon in MMDB records. Validate their complete
 	// encoded structure first, while keeping ordinary records single-pass.
-	const preflightValueCount = 1024
-	if valueCount >= preflightValueCount {
+	if valueCount >= containerPreflightValueCount {
 		_, err := d.validateContainerContents(kind, size, offset, depth)
 		return err
 	}
@@ -970,6 +1025,7 @@ func (d *ReflectionDecoder) unmarshalUint128(
 	return newOffset, mmdberrors.NewUnmarshalTypeError(value, result.Type())
 }
 
+//nolint:nestif // Keeping the type-specialized hot paths inline avoids per-entry calls.
 func (d *ReflectionDecoder) decodeMap(
 	size uint,
 	offset uint,
@@ -981,11 +1037,19 @@ func (d *ReflectionDecoder) decodeMap(
 	}
 
 	mapType := result.Type()
+	keyType := mapType.Key()
+	keyKind := keyType.Kind()
+	customKey := keyType != stringType && keyKind == reflect.String &&
+		reflect.PointerTo(keyType).NumMethod() != 0 &&
+		mayImplementUnmarshaler(keyType)
+	plainStringKey := keyKind == reflect.String && !customKey
 
 	// Pre-allocated values for efficient reuse
-	keyVal := reflect.New(mapType.Key()).Elem()
+	keyVal := reflect.New(keyType).Elem()
 	keyValue := addressableValue{Value: keyVal}
 	elemType := mapType.Elem()
+	elemMayUnmarshal := typeMayImplementUnmarshaler(elemType)
+	elemFast := !elemMayUnmarshal && isFastDecodeType(elemType)
 	var elemValue addressableValue
 	// Pre-allocate element value to reduce allocations
 	elemVal := reflect.New(elemType).Elem()
@@ -995,22 +1059,79 @@ func (d *ReflectionDecoder) decodeMap(
 
 		// Reuse keyValue by zeroing it
 		keyValue.SetZero()
-		offset, err = d.decodeValue(offset, keyValue, depth)
-		if err != nil {
-			return 0, err
+		keyOffset := offset
+		if plainStringKey {
+			var key string
+			key, offset, err = d.decodeStringKey(offset)
+			if err != nil {
+				return 0, err
+			}
+			keyValue.SetString(key)
+		} else {
+			var key []byte
+			key, offset, err = d.decodeKey(offset)
+			if err != nil {
+				return 0, err
+			}
+			if customKey {
+				err = d.unmarshalValidatedMapKey(keyOffset, keyValue.Addr())
+			} else {
+				// Preserve destination-type errors after decodeKey has validated
+				// the database's key encoding.
+				_, err = d.decodeValue(keyOffset, keyValue, depth)
+			}
+			if err != nil {
+				return 0, d.wrapErrorWithMapKey(err, string(key))
+			}
 		}
 
 		// Reuse elemValue by zeroing it
 		elemValue.SetZero()
 
-		offset, err = d.decodeValue(offset, elemValue, depth)
-		if err != nil {
-			return 0, d.wrapErrorWithMapKey(err, keyValue.String())
+		decoded := false
+		if elemFast {
+			if fastOffset, ok := d.tryFastDecodeTyped(offset, elemValue, elemType); ok {
+				offset = fastOffset
+				decoded = true
+			}
+		}
+		if !decoded {
+			if elemMayUnmarshal {
+				offset, err = d.decodeValue(offset, elemValue, depth)
+			} else {
+				offset, err = d.decodeValueSkipUnmarshaler(offset, elemValue, depth)
+			}
+			if err != nil {
+				return 0, d.wrapErrorWithMapKey(err, keyValue.String())
+			}
 		}
 
 		result.SetMapIndex(keyValue.Value, elemValue.Value)
 	}
 	return offset, nil
+}
+
+// unmarshalValidatedMapKey invokes a custom map-key decoder after decodeKey
+// has already validated the raw key and found the map value's offset. The
+// cursor callback must still return a valid successor, but neither callback's
+// successor needs to be recomputed here.
+func (d *ReflectionDecoder) unmarshalValidatedMapKey(
+	offset uint,
+	result reflect.Value,
+) error {
+	if unmarshaler, ok := reflect.TypeAssert[CursorUnmarshaler](result); ok {
+		_, err := (Cursor{
+			decoder: &d.DataDecoder,
+			offset:  offset,
+		}).UnmarshalCursor(unmarshaler)
+		return err
+	}
+
+	unmarshaler, _ := reflect.TypeAssert[Unmarshaler](result)
+	decoder := acquireDecoder(&d.DataDecoder, offset)
+	err := unmarshaler.UnmarshalMaxMindDB(decoder)
+	releaseDecoder(decoder)
+	return err
 }
 
 func (d *ReflectionDecoder) decodeSlice(
@@ -1019,6 +1140,9 @@ func (d *ReflectionDecoder) decodeSlice(
 	result addressableValue,
 	depth int,
 ) (uint, error) {
+	elemType := result.Type().Elem()
+	elemMayUnmarshal := typeMayImplementUnmarshaler(elemType)
+	elemFast := !elemMayUnmarshal && isFastDecodeType(elemType)
 	sliceLen := int(size)
 	if result.IsNil() || result.Cap() < sliceLen {
 		result.Set(reflect.MakeSlice(result.Type(), sliceLen, sliceLen))
@@ -1039,9 +1163,22 @@ func (d *ReflectionDecoder) decodeSlice(
 	for i := range size {
 		var err error
 		elemValue := addressableValue{Value: result.Index(int(i))}
-		offset, err = d.decodeValue(offset, elemValue, depth)
-		if err != nil {
-			return 0, d.wrapErrorWithSliceIndex(err, int(i))
+		decoded := false
+		if elemFast {
+			if fastOffset, ok := d.tryFastDecodeTyped(offset, elemValue, elemType); ok {
+				offset = fastOffset
+				decoded = true
+			}
+		}
+		if !decoded {
+			if elemMayUnmarshal {
+				offset, err = d.decodeValue(offset, elemValue, depth)
+			} else {
+				offset, err = d.decodeValueSkipUnmarshaler(offset, elemValue, depth)
+			}
+			if err != nil {
+				return 0, d.wrapErrorWithSliceIndex(err, int(i))
+			}
 		}
 	}
 	return offset, nil
@@ -1192,12 +1329,12 @@ func (d *ReflectionDecoder) tryDecodeStructWithFields(
 			)
 		}
 		if typeNum != KindMap {
-			return 0, false, nil
+			return offset, false, nil
 		}
 		_, err = d.decodeStructWithFields(size, dataOffset, result, depth+2, fields)
 		return pointerEndOffset, true, err
 	default:
-		return 0, false, nil
+		return offset, false, nil
 	}
 }
 
@@ -1240,11 +1377,11 @@ func (d *ReflectionDecoder) tryDecodePointerStructWithFields(
 			)
 		}
 		if typeNum != KindMap {
-			return 0, false, nil
+			return offset, false, nil
 		}
 		decodeDepth = depth + 2
 	default:
-		return 0, false, nil
+		return offset, false, nil
 	}
 
 	return d.decodePointerStructWithFields(
@@ -1332,22 +1469,22 @@ func cleanupAllocatedPointers(
 }
 
 // fieldDispatch encodes the decode strategy for a struct field, computed
-// once at struct-cache build time. Encoding the three-way choice as a
+// once at struct-cache build time. Encoding the choice as a
 // single enum (rather than non-orthogonal booleans) makes illegal
-// combinations like "fast path AND Unmarshaler" unrepresentable.
+// combinations like "fast path AND custom unmarshaler" unrepresentable.
 type fieldDispatch uint8
 
 const (
-	// dispatchFast: field type is one of the primitive Go kinds the
-	// fast path supports (string/bool/uint*/float64 or pointer to such)
-	// and its unwrapped type does not implement Unmarshaler. The fast
+	// dispatchFast: field type satisfies isFastDecodeType and its unwrapped type
+	// does not implement a custom unmarshaler. The fast
 	// path is attempted; on type-num mismatch it falls back to
 	// decodeValueSkipUnmarshaler (which is sound: the field type cannot
-	// implement Unmarshaler by construction).
+	// implement either custom interface by construction).
 	dispatchFast fieldDispatch = iota
-	// dispatchUnmarshaler: field's unwrapped type is an interface or
-	// implements Unmarshaler via its pointer receiver. Goes through
-	// decodeValue, which performs the type assertion.
+	// dispatchUnmarshaler: field's unwrapped type is an interface, or its pointer
+	// type implements CursorUnmarshaler or Unmarshaler through methods declared
+	// on either a value or pointer receiver. Goes through decodeValue, which
+	// performs cursor-first type assertions.
 	dispatchUnmarshaler
 	// dispatchStruct: field is a nested struct whose field set is
 	// precomputed and can be decoded without consulting the field cache.
@@ -1355,8 +1492,9 @@ const (
 	// dispatchPointerStruct: field is a pointer to a nested struct whose
 	// field set is precomputed and whose pointer chain may need allocation.
 	dispatchPointerStruct
-	// dispatchPlain: everything else (structs, slices, maps, named
-	// types without Unmarshaler). Uses decodeValueSkipUnmarshaler.
+	// dispatchPlain: fallback for fields not selected for custom-unmarshaler,
+	// primitive fast, or cached nested-struct dispatch. Uses
+	// decodeValueSkipUnmarshaler.
 	dispatchPlain
 )
 
@@ -1513,7 +1651,8 @@ func mayImplementUnmarshaler(t reflect.Type) bool {
 		return cached.(bool)
 	}
 
-	implements := reflect.PointerTo(t).Implements(unmarshalerType)
+	pointer := reflect.PointerTo(t)
+	implements := pointer.Implements(cursorUnmarshalerType) || pointer.Implements(unmarshalerType)
 	unmarshalerCache.Store(t, implements)
 	return implements
 }
@@ -1610,12 +1749,10 @@ func makeStructFieldsWithStack(
 				continue
 			}
 
-			// Resolve dispatch strategy once per field. Unmarshaler
-			// possibility takes precedence over fast-path eligibility so
-			// a named primitive type whose pointer receiver implements
-			// UnmarshalMaxMindDB always takes the slow path. The case
-			// order matches that precedence; the switch is exhaustive
-			// because dispatchPlain is the default fallback.
+			// Resolve dispatch strategy once per field. Custom unmarshaler
+			// possibility takes precedence over fast-path eligibility so a named
+			// primitive type with a custom pointer receiver takes the slow path.
+			// The switch is exhaustive because dispatchPlain is the fallback.
 			fieldType := field.Type
 			unwrappedFieldType := unwrapPtrType(fieldType)
 			var dispatch fieldDispatch
@@ -1777,13 +1914,19 @@ func makeAddressable(v reflect.Value) addressableValue {
 
 // isFastDecodeType determines if a field type can use optimized decode paths.
 func isFastDecodeType(t reflect.Type) bool {
+	if t == sliceType {
+		return true
+	}
+
 	switch t.Kind() {
 	case reflect.String,
 		reflect.Bool,
+		reflect.Int32,
 		reflect.Uint,
 		reflect.Uint16,
 		reflect.Uint32,
 		reflect.Uint64,
+		reflect.Float32,
 		reflect.Float64:
 		return true
 	case reflect.Pointer:
@@ -1793,10 +1936,15 @@ func isFastDecodeType(t reflect.Type) bool {
 	}
 }
 
+func typeMayImplementUnmarshaler(t reflect.Type) bool {
+	unwrapped := unwrapPtrType(t)
+	return unwrapped.Kind() == reflect.Interface || mayImplementUnmarshaler(unwrapped)
+}
+
 // unwrapPtrType strips all pointer indirection from t and returns the
 // underlying element type. Used to find the addressable receiver type that
-// mayImplementUnmarshaler should check, since decoding allocates and
-// dereferences as many *T layers as the field declares.
+// mayImplementUnmarshaler should check for either custom interface, since
+// decoding allocates and dereferences as many *T layers as the field declares.
 func unwrapPtrType(t reflect.Type) reflect.Type {
 	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
@@ -1844,10 +1992,9 @@ func (av addressableValue) indirect(mayAlloc bool) addressableValue {
 
 // tryFastDecodeTyped returns (newOffset, true) on success and (0, false)
 // on any failure: a malformed buffer, a DB-type/Go-kind mismatch, or an
-// inner decode error. Error surfacing relies on the caller (decodeStruct
-// in the dispatchFast case) re-decoding from the same offset via the
-// slow path, which re-encounters the underlying error and propagates it
-// with proper context. The fast path itself never logs or wraps.
+// inner decode error. Callers surface failures by re-decoding from the same
+// offset via the slow path, which re-encounters the underlying error and
+// propagates it with proper context. The fast path itself never logs or wraps.
 //
 //nolint:gocyclo // fairly readable and this is optimized code.
 func (d *ReflectionDecoder) tryFastDecodeTyped(
@@ -1862,6 +2009,15 @@ func (d *ReflectionDecoder) tryFastDecodeTyped(
 
 	// Use pre-computed type information for faster matching
 	switch expectedType.Kind() {
+	case reflect.Slice:
+		if expectedType == sliceType && typeNum == KindBytes {
+			value, finalOffset, err := d.decodeBytes(size, newOffset)
+			if err != nil {
+				return 0, false
+			}
+			result.SetBytes(value)
+			return finalOffset, true
+		}
 	case reflect.String:
 		if typeNum == KindString {
 			value, finalOffset, err := d.decodeString(size, newOffset)
@@ -1929,6 +2085,24 @@ func (d *ReflectionDecoder) tryFastDecodeTyped(
 				return 0, false
 			}
 			result.SetBool(value)
+			return finalOffset, true
+		}
+	case reflect.Int32:
+		if typeNum == KindInt32 {
+			value, finalOffset, err := d.decodeInt32(size, newOffset)
+			if err != nil {
+				return 0, false
+			}
+			result.SetInt(int64(value))
+			return finalOffset, true
+		}
+	case reflect.Float32:
+		if typeNum == KindFloat32 {
+			value, finalOffset, err := d.decodeFloat32(size, newOffset)
+			if err != nil {
+				return 0, false
+			}
+			result.SetFloat(float64(value))
 			return finalOffset, true
 		}
 	case reflect.Float64:

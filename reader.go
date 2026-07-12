@@ -101,7 +101,8 @@
 // # Thread Safety
 //
 // Reader lookup, decode, and iteration methods are safe to call concurrently.
-// Close must not be called concurrently with other Reader or Result methods.
+// Close must not be called concurrently with other Reader or Result methods,
+// or with use of Reader-backed cursors or cursor-derived traversal handles.
 package maxminddb
 
 import (
@@ -136,7 +137,8 @@ type mmapCleanup struct {
 // field is Metadata, which contains the metadata from the MaxMind DB file.
 //
 // Reader lookup, decode, and iteration methods are safe to call concurrently.
-// Close must not be called concurrently with other Reader or Result methods.
+// Close must not be called concurrently with other Reader or Result methods,
+// or with use of Reader-backed cursors or cursor-derived traversal handles.
 type Reader struct {
 	hasMappedFile     *atomic.Bool
 	decoder           decoder.ReflectionDecoder
@@ -337,27 +339,26 @@ func OpenBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
 	}
 
 	metadataStart += len(metadataStartMarker)
-	metadataDecoder := decoder.NewWithoutStringCache(buffer[metadataStart:])
-
-	var metadata Metadata
-
-	err := metadataDecoder.Decode(0, &metadata)
+	reader := &Reader{
+		decoder: decoder.NewWithoutStringCache(buffer[metadataStart:]),
+	}
+	err := reader.decoder.Decode(0, &reader.Metadata)
 	if err != nil {
 		return nil, err
 	}
 
 	// Check for integer overflow in search tree size calculation
-	if metadata.NodeCount > 0 && metadata.RecordSize > 0 {
-		recordSizeQuarter := metadata.RecordSize / 4
+	if reader.Metadata.NodeCount > 0 && reader.Metadata.RecordSize > 0 {
+		recordSizeQuarter := reader.Metadata.RecordSize / 4
 		if recordSizeQuarter > 0 {
 			maxNodes := ^uint(0) / recordSizeQuarter
-			if metadata.NodeCount > maxNodes {
+			if reader.Metadata.NodeCount > maxNodes {
 				return nil, mmdberrors.NewInvalidDatabaseError("database tree size would overflow")
 			}
 		}
 	}
 
-	searchTreeSize := searchTreeSizeBytes(metadata.NodeCount, metadata.RecordSize)
+	searchTreeSize := searchTreeSizeBytes(reader.Metadata.NodeCount, reader.Metadata.RecordSize)
 	dataSectionStart := searchTreeSize + dataSectionSeparatorSize
 	dataSectionEnd := uint(metadataStart - len(metadataStartMarker))
 	if dataSectionStart > dataSectionEnd {
@@ -371,15 +372,11 @@ func OpenBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
 		d = decoder.New(dataSection)
 	}
 
-	reader := &Reader{
-		buffer:          buffer,
-		dataSectionSize: dataSectionEnd - dataSectionStart,
-		decoder:         d,
-		Metadata:        metadata,
-		ipv4Start:       0,
-		nodeOffsetMult:  metadata.RecordSize / 4,
-		hasMappedFile:   &atomic.Bool{},
-	}
+	reader.buffer = buffer
+	reader.dataSectionSize = dataSectionEnd - dataSectionStart
+	reader.decoder = d
+	reader.nodeOffsetMult = reader.Metadata.RecordSize / 4
+	reader.hasMappedFile = &atomic.Bool{}
 
 	err = reader.setIPv4Start()
 	if err != nil {
