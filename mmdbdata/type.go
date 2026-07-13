@@ -8,6 +8,20 @@ type Kind = decoder.Kind
 // Decoder provides methods for decoding MMDB data.
 type Decoder = decoder.Decoder
 
+// Cursor identifies a value in MMDB data and allows generated decoders to
+// return a proven successor without rescanning that value.
+type Cursor = decoder.Cursor
+
+// MapCursor incrementally reads a map using proven value successors.
+type MapCursor = decoder.MapCursor
+
+// SliceCursor incrementally reads a slice using proven value successors.
+type SliceCursor = decoder.SliceCursor
+
+// UnexpectedKindError is returned when a decoder operation encounters an MMDB
+// kind that it does not accept.
+type UnexpectedKindError = decoder.UnexpectedKindError
+
 // DecoderOption configures a Decoder.
 type DecoderOption = decoder.DecoderOption
 

@@ -10,6 +10,8 @@ import (
 
 const testDataHex = "e142656e43466f6f" // Map with: "en"->"Foo"
 
+var cursorSizeSink uint
+
 // BenchmarkStructDecoding tests the performance of struct decoding
 // with the new optimized field access patterns.
 func BenchmarkStructDecoding(b *testing.B) {
@@ -143,4 +145,32 @@ func BenchmarkLargeMapDecoding(b *testing.B) {
 			}
 		})
 	}
+}
+
+func BenchmarkCursorOpenSmallContainers(b *testing.B) {
+	b.Run("map", func(b *testing.B) {
+		decoder := NewDecoder(NewDataDecoder([]byte{0xe1, 0x41, 'a', 0x00, 0x07}), 0)
+		for b.Loop() {
+			entries, err := decoder.Cursor().Map()
+			if err != nil {
+				b.Fatal(err)
+			}
+			cursorSizeSink = entries.Size()
+		}
+	})
+
+	b.Run("slice", func(b *testing.B) {
+		// Slice is an extended kind, so its kind byte follows the control byte.
+		decoder := NewDecoder(NewDataDecoder([]byte{0x01, 0x04, 0x00, 0x07}), 0)
+		for b.Loop() {
+			values, err := decoder.Cursor().Slice()
+			if err != nil {
+				b.Fatal(err)
+			}
+			cursorSizeSink, err = values.Size()
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }
