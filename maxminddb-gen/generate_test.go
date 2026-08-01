@@ -1012,6 +1012,11 @@ func TestRunCombinesLegacyMultipleFileBuildConstraints(t *testing.T) {
 			"package fixture\n\ntype Second struct { Count uint }\n"),
 		0o600,
 	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dir, "common.go"),
+		[]byte("package fixture\n"),
+		0o600,
+	))
 
 	t.Chdir(dir)
 	const output = "combined_maxminddb.go"
@@ -1034,7 +1039,7 @@ func TestRunCombinesLegacyMultipleFileBuildConstraints(t *testing.T) {
 	testGeneratedPackageWithEnv(
 		t,
 		"GOOS="+otherOS,
-		"GOARCH="+runtime.GOARCH,
+		"GOARCH=amd64",
 		"CGO_ENABLED=0",
 	)
 }

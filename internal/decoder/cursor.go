@@ -15,7 +15,7 @@ var (
 
 // Cursor identifies one value in the decoder's input. Cursor values are
 // immutable. Read methods return a successor cursor positioned immediately
-// after the value in its containing stream.
+// after the value in its containing stream. The zero value is not readable.
 type Cursor struct {
 	decoder     *DataDecoder
 	offset      uint
@@ -23,7 +23,8 @@ type Cursor struct {
 }
 
 // MapCursor incrementally reads a map without rescanning values that have
-// already been completely consumed.
+// already been completely consumed. Its zero value is invalid; obtain one by
+// calling Cursor.Map.
 type MapCursor struct {
 	decoder     *DataDecoder
 	err         error
@@ -46,7 +47,8 @@ type MapReader struct {
 }
 
 // SliceCursor incrementally reads a slice without rescanning values that have
-// already been completely consumed.
+// already been completely consumed. Its zero value is invalid; obtain one by
+// calling Cursor.Slice.
 type SliceCursor struct {
 	decoder     *DataDecoder
 	err         error
@@ -380,7 +382,7 @@ func (c Cursor) Map() (MapCursor, error) {
 		if Kind(ctrlByte>>5) == KindMap && size < 29 {
 			dataOffset := c.offset + 1
 			if err := validateCursorContainerSize(
-				*c.decoder,
+				c.decoder,
 				KindMap,
 				size,
 				dataOffset,
@@ -408,7 +410,7 @@ func (c Cursor) Map() (MapCursor, error) {
 		(size >= containerPreflightValueCount && size > (bufferLen-dataOffset)/2) {
 		return MapCursor{}, c.wrapError(mmdberrors.NewOffsetError())
 	}
-	if err := validateCursorContainerSize(*c.decoder, KindMap, size, dataOffset); err != nil {
+	if err := validateCursorContainerSize(c.decoder, KindMap, size, dataOffset); err != nil {
 		return MapCursor{}, c.wrapError(err)
 	}
 	return MapCursor{
@@ -535,7 +537,7 @@ func (c Cursor) Slice() (SliceCursor, error) {
 	}
 	buffer := c.decoder.buffer
 	bufferLen := uint(len(buffer))
-	if c.offset+1 < bufferLen {
+	if c.offset < bufferLen && c.offset+1 < bufferLen {
 		ctrlByte := buffer[c.offset]
 		size := uint(ctrlByte & 0x1f)
 		if Kind(ctrlByte>>5) == KindExtended &&
@@ -577,7 +579,8 @@ func (c Cursor) Slice() (SliceCursor, error) {
 
 // Unmarshal invokes an existing custom unmarshaler at the cursor and returns
 // a validated successor cursor. It is intended for generated decoders with
-// nested fields that already implement Unmarshaler.
+// nested fields that already implement Unmarshaler. A nil interface or an
+// interface containing a typed nil is rejected.
 func (c Cursor) Unmarshal(value Unmarshaler) (Cursor, error) {
 	if err := c.validate(); err != nil {
 		return Cursor{}, err
@@ -603,7 +606,8 @@ func (c Cursor) Unmarshal(value Unmarshaler) (Cursor, error) {
 }
 
 // UnmarshalCursor invokes an existing cursor unmarshaler and validates that it
-// returned the proven successor of this cursor.
+// returned the proven successor of this cursor. A nil interface or an interface
+// containing a typed nil is rejected.
 func (c Cursor) UnmarshalCursor(value CursorUnmarshaler) (Cursor, error) {
 	if err := c.validate(); err != nil {
 		return Cursor{}, err
@@ -638,7 +642,8 @@ func isNilableDynamicKind(kind reflect.Kind) bool {
 	}
 }
 
-// Size returns the entry count validated when Map opened the container.
+// Size returns the entry count validated when Map opened the container. It
+// returns zero for an uninitialized cursor, whose Err method reports an error.
 func (m *MapCursor) Size() uint { return m.size }
 
 // Next consumes the proven successor of the previous map value and returns the
@@ -675,12 +680,20 @@ func (m *MapCursor) Next(successor Cursor) ([]byte, Cursor, bool) {
 }
 
 // Err returns the first map iteration error.
-func (m *MapCursor) Err() error { return m.err }
+func (m *MapCursor) Err() error {
+	if m.err != nil {
+		return m.err
+	}
+	if m.decoder == nil {
+		return errInvalidZeroMapCursor
+	}
+	return nil
+}
 
 // End returns the proven successor of the complete map.
 func (m *MapCursor) End() (Cursor, error) {
-	if m.err != nil {
-		return Cursor{}, m.err
+	if err := m.Err(); err != nil {
+		return Cursor{}, err
 	}
 	if m.pending || m.remaining != 0 {
 		return Cursor{}, errors.New("map was not completely consumed")
@@ -713,11 +726,11 @@ func (c Cursor) ReadMapKey() ([]byte, Cursor, error) {
 
 // Size validates and returns the number of elements declared by the slice.
 func (s *SliceCursor) Size() (uint, error) {
-	if s.err != nil {
-		return 0, s.err
+	if err := s.Err(); err != nil {
+		return 0, err
 	}
 	if err := validateCursorContainerSize(
-		*s.decoder,
+		s.decoder,
 		KindSlice,
 		s.size,
 		s.dataOffset,
@@ -733,7 +746,7 @@ func (s *SliceCursor) Size() (uint, error) {
 // Call Size when ok is false to perform the allocation preflight or retrieve
 // an existing cursor error.
 func (s *SliceCursor) SizeForCapacity(capacity int) (size uint, ok bool) {
-	if s.err != nil {
+	if s.err != nil || s.decoder == nil {
 		return 0, false
 	}
 	if capacity >= 0 && uint(capacity) >= s.size && s.size < containerPreflightValueCount {
@@ -770,12 +783,20 @@ func (s *SliceCursor) Next(successor Cursor) (uint, Cursor, bool) {
 }
 
 // Err returns the first slice iteration error.
-func (s *SliceCursor) Err() error { return s.err }
+func (s *SliceCursor) Err() error {
+	if s.err != nil {
+		return s.err
+	}
+	if s.decoder == nil {
+		return errInvalidZeroSliceCursor
+	}
+	return nil
+}
 
 // End returns the proven successor of the complete slice.
 func (s *SliceCursor) End() (Cursor, error) {
-	if s.err != nil {
-		return Cursor{}, s.err
+	if err := s.Err(); err != nil {
+		return Cursor{}, err
 	}
 	if s.pending || s.remaining != 0 {
 		return Cursor{}, errors.New("slice was not completely consumed")
@@ -869,14 +890,14 @@ func (c Cursor) unexpectedKinds(expected KindSet, actual Kind) error {
 	return c.wrapError(unexpectedKindsErr(expected, actual))
 }
 
-func validateCursorContainerSize(d DataDecoder, kind Kind, size, offset uint) error {
-	// Keep ordinary generated records on a tiny bounds-checking path. Large or
-	// malformed containers use reflection's complete allocation validator so
-	// both decoders retain identical structural preflight behavior.
+func validateCursorContainerSize(d *DataDecoder, kind Kind, size, offset uint) error {
+	// Ordinary containers receive cheap size and bounds checks here, then full
+	// validation while they are traversed. Large containers use reflection's
+	// complete structural preflight before allocation.
 	if cursorContainerSizeIsCheap(kind, size, offset, uint(len(d.buffer))) {
 		return nil
 	}
-	validator := ReflectionDecoder{DataDecoder: d}
+	validator := ReflectionDecoder{DataDecoder: *d}
 	return validator.validateContainerSize(kind, size, offset, 0)
 }
 

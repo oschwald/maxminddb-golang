@@ -1292,6 +1292,8 @@ func (d *ReflectionDecoder) decodeStructWithFields(
 	return offset, nil
 }
 
+// tryDecodeStructWithFields returns the input offset when ok is false so its
+// caller can retry the field with the general decoder.
 func (d *ReflectionDecoder) tryDecodeStructWithFields(
 	offset uint,
 	result addressableValue,
@@ -1338,6 +1340,8 @@ func (d *ReflectionDecoder) tryDecodeStructWithFields(
 	}
 }
 
+// tryDecodePointerStructWithFields returns the input offset when ok is false so
+// its caller can retry the field with the general decoder.
 func (d *ReflectionDecoder) tryDecodePointerStructWithFields(
 	offset uint,
 	result addressableValue,
