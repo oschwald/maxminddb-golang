@@ -55,25 +55,29 @@
 // For maximum performance in high-throughput applications, consider:
 //
 //  1. Using custom struct types that only include the fields you need
-//  2. Implementing the Unmarshaler interface for custom decoding
+//  2. Generating decoders with maxminddb-gen or implementing CursorUnmarshaler
 //  3. Reusing the Reader instance across multiple goroutines (it's thread-safe)
 //
 // # Custom Unmarshaling
 //
-// For custom decoding logic, you can implement the mmdbdata.Unmarshaler interface,
-// similar to how encoding/json's json.Unmarshaler works. Types implementing this
-// interface will automatically use custom decoding logic when used with Reader.Lookup:
+// For new custom decoding logic, implement mmdbdata.CursorUnmarshaler. Types
+// implementing this interface automatically use custom decoding logic when
+// decoded by Reader:
 //
-//	type FastCity struct {
-//		CountryISO string
-//		CityName   string
+//	type Label string
+//
+//	func (label *Label) UnmarshalMaxMindDBCursor(
+//		cursor mmdbdata.Cursor,
+//	) (mmdbdata.Cursor, error) {
+//		value, next, err := cursor.ReadString()
+//		if err == nil {
+//			*label = Label(value)
+//		}
+//		return next, err
 //	}
 //
-//	func (c *FastCity) UnmarshalMaxMindDB(d *mmdbdata.Decoder) error {
-//		// Custom decoding logic using d.ReadMap(), d.ReadString(), etc.
-//		// Allows fine-grained control over how MaxMind DB data is decoded
-//		// See mmdbdata package documentation and ExampleUnmarshaler for complete examples
-//	}
+// The older mmdbdata.Unmarshaler interface remains supported throughout v2 but
+// is deprecated and planned for removal in v3.
 //
 // # Network Iteration
 //

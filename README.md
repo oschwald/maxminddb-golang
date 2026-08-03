@@ -16,13 +16,13 @@ This is not an official MaxMind API.
 go get github.com/oschwald/maxminddb-golang/v2
 ```
 
-## Version 2.0 Features
+## Version 2 Features
 
-Version 2.0 includes significant improvements:
+Version 2 includes significant improvements:
 
 - **Modern API**: Uses `netip.Addr` instead of `net.IP` for better performance
-- **Custom Unmarshaling**: Implement `Unmarshaler` interface for
-  zero-allocation decoding
+- **Custom Unmarshaling**: Implement `CursorUnmarshaler` for
+  reflection-free custom decoding
 - **Network Iteration**: Iterate over all networks in a database with
   `Networks()` and `NetworksWithin()`
 - **Enhanced Performance**: Optimized data structures and decoding paths
@@ -113,9 +113,9 @@ err = db.Lookup(ip).Decode(&city)
 ### High-Performance Custom Unmarshaling
 
 For application-owned structs, `maxminddb-gen` can generate an
-`UnmarshalMaxMindDB` method that avoids reflection. The generator is versioned
-with this module and remains optional; types with neither generated nor
-handwritten custom unmarshaling methods continue to use reflection.
+`UnmarshalMaxMindDBCursor` method that avoids reflection. The generator is
+versioned with this module and remains optional; types with neither generated
+nor handwritten custom unmarshaling methods continue to use reflection.
 
 Add the tool to the consuming module's `go.mod` and add a generation directive
 in the package that owns the target types:
@@ -137,54 +137,25 @@ check the generated file into source control. See
 [`maxminddb-gen/README.md`](maxminddb-gen/README.md) for supported types,
 diagnostics, and reproducible CI usage.
 
-For handwritten decoding, import
-`github.com/oschwald/maxminddb-golang/v2/mmdbdata` for the decoder type.
+For new handwritten decoders, implement `mmdbdata.CursorUnmarshaler`. Cursor
+reads return an opaque successor positioned after the decoded value, allowing
+nested custom decoding to continue without rescanning it.
+
+The older `UnmarshalMaxMindDB(*mmdbdata.Decoder) error` callback is deprecated.
+It remains supported throughout v2 but is planned for removal in v3; see
+[GitHub #224](https://github.com/oschwald/maxminddb-golang/issues/224).
 
 ```go
-type FastCity struct {
-	CountryISO string
-	CityName   string
-}
+type Label string
 
-func (c *FastCity) UnmarshalMaxMindDB(d *mmdbdata.Decoder) error {
-	mapIter, size, err := d.ReadMap()
-	if err != nil {
-		return err
+func (label *Label) UnmarshalMaxMindDBCursor(
+	cursor mmdbdata.Cursor,
+) (mmdbdata.Cursor, error) {
+	value, next, err := cursor.ReadString()
+	if err == nil {
+		*label = Label(value)
 	}
-	// Pre-allocate with correct capacity for better performance
-	_ = size // Use for pre-allocation if storing map data
-	for key, err := range mapIter {
-		if err != nil {
-			return err
-		}
-		switch string(key) {
-		case "country":
-			countryIter, _, err := d.ReadMap()
-			if err != nil {
-				return err
-			}
-			for countryKey, countryErr := range countryIter {
-				if countryErr != nil {
-					return countryErr
-				}
-				if string(countryKey) == "iso_code" {
-					c.CountryISO, err = d.ReadString()
-					if err != nil {
-						return err
-					}
-				} else {
-					if err := d.SkipValue(); err != nil {
-						return err
-					}
-				}
-			}
-		default:
-			if err := d.SkipValue(); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
+	return next, err
 }
 ```
 
@@ -256,8 +227,8 @@ regardless of the data provider.
    use and should run only after readers are done.
 2. **Use specific structs**: Only decode the fields you need rather than using
    `any`
-3. **Implement Unmarshaler**: For high-throughput applications, implement
-   custom unmarshaling
+3. **Generate a decoder**: For high-throughput applications, use
+   `maxminddb-gen`, or implement `CursorUnmarshaler` for custom decoding
 4. **Consider caching**: Use `Result.Offset()` as a cache key for database
    records
 

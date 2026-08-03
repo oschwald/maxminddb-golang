@@ -1,7 +1,7 @@
 # maxminddb-gen
 
-`maxminddb-gen` generates reflection-free `UnmarshalMaxMindDB` methods for
-types owned by the package where generation runs. It is part of the
+`maxminddb-gen` generates reflection-free decoder methods for types owned by
+the package where generation runs. It is part of the
 `maxminddb-golang` module and uses the same version as the decoder support API.
 Generation is optional: a type with neither generated nor handwritten custom
 unmarshaling methods continues to use the reflection decoder.
@@ -24,10 +24,13 @@ target types:
 ```
 
 The command generates methods for every exported, named struct declared in each
-input file. Unexported structs, aliases, and non-struct types are skipped. A
-handwritten `UnmarshalMaxMindDB` or `UnmarshalMaxMindDBCursor` method also takes
-precedence and is left alone with a diagnostic. Generation fails when no
-eligible exported structs remain, avoiding a successful header-only output.
+input file. Unexported structs, aliases, and non-struct types are skipped.
+Generated targets receive both `UnmarshalMaxMindDBCursor` and, throughout v2,
+the deprecated `UnmarshalMaxMindDB` compatibility bridge. A handwritten
+implementation of either callback causes that target to be skipped with a
+diagnostic; new handwritten decoders should implement
+`mmdbdata.CursorUnmarshaler`. Generation fails when no eligible exported
+structs remain, avoiding a successful header-only output.
 The default output name is derived from the source
 filename: a directive in `models.go` writes `models_maxminddb.go`. Recognized
 build suffixes remain at the end, so `models_linux.go` writes
@@ -81,8 +84,9 @@ The initial generator supports:
 - slices of supported values
 - maps with string or named-string keys and supported values
 - nested package-owned structs
-- nested types that already implement `mmdbdata.CursorUnmarshaler` or
-  `mmdbdata.Unmarshaler`; cursor unmarshaling takes precedence
+- nested types that implement `mmdbdata.CursorUnmarshaler`; the deprecated
+  `mmdbdata.Unmarshaler` remains supported throughout v2, and cursor unmarshaling
+  takes precedence when both are present
 
 Named-string map keys may also implement either custom unmarshaling interface.
 Their callback receives the original MMDB key, and cursor unmarshaling takes
@@ -115,4 +119,5 @@ its backing array and does not protect aliases.
 
 Generation must run in the package that owns the target type. The command does
 not add methods to types from another package and does not replace handwritten
-`UnmarshalMaxMindDB` or `UnmarshalMaxMindDBCursor` methods.
+`UnmarshalMaxMindDBCursor` methods. It also leaves deprecated handwritten
+`UnmarshalMaxMindDB` methods in place for v2 compatibility.

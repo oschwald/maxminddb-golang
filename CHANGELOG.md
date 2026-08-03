@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Deprecated the legacy `mmdbdata.Unmarshaler` callback,
+  `UnmarshalMaxMindDB(*mmdbdata.Decoder) error`. It remains supported throughout
+  v2, but new handwritten decoders should implement
+  `mmdbdata.CursorUnmarshaler` so nested decoding can return a proven successor
+  without rescanning the value. Removal is planned for v3. GitHub #224.
+  Legacy callbacks must not retain the supplied decoder or its iterators after
+  returning; decoder instances may now be pooled and reused.
 - Added the optional `maxminddb-gen` command for reproducible generation of
   reflection-free decoders for application-owned types, together with cursor
   primitives that avoid rescanning completely consumed containers and a

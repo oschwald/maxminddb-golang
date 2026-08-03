@@ -2,7 +2,12 @@ package mmdbdata
 
 // Unmarshaler is implemented by types that can unmarshal MaxMind DB data. The
 // Decoder and iterators returned by it are valid only for the duration of
-// UnmarshalMaxMindDB and must not be retained by the implementation.
+// UnmarshalMaxMindDB and must not be retained by the implementation. Cursor
+// values returned by Decoder.Cursor are the exception; they follow the backing
+// lifetime documented for Cursor.
+//
+// Deprecated: Implement CursorUnmarshaler instead. Unmarshaler remains
+// supported throughout v2 but is planned for removal in v3.
 type Unmarshaler interface {
 	UnmarshalMaxMindDB(d *Decoder) error
 }
