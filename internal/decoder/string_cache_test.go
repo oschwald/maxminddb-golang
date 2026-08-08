@@ -28,7 +28,7 @@ func TestStringCacheVariousOffsets(t *testing.T) {
 	for _, tc := range testCases {
 		// Repeat 3x: first miss records, second miss admits, third hits.
 		for range 3 {
-			got := cache.internAt(tc.offset, tc.size, data)
+			got := cache.internAt(tc.offset, data[tc.offset:tc.offset+tc.size])
 			require.Equal(t, tc.expected, got)
 		}
 	}
@@ -42,19 +42,19 @@ func TestStringCacheTwoMissAdmission(t *testing.T) {
 	cache := newStringCache()
 	data := []byte("hello world, this is test data")
 
-	str1 := cache.internAt(0, 5, data)
+	str1 := cache.internAt(0, data[:5])
 	require.Equal(t, "hello", str1)
 	require.Nil(t, cache.entries[0].Load(),
 		"first miss must not admit (one-off offsets should not allocate cache slots)")
 
-	str2 := cache.internAt(0, 5, data)
+	str2 := cache.internAt(0, data[:5])
 	require.Equal(t, "hello", str2)
 	entry := cache.entries[0].Load()
 	require.NotNil(t, entry, "second miss at same offset must admit")
 	require.Equal(t, uint(0), entry.offset)
 	require.Equal(t, "hello", entry.str)
 
-	str3 := cache.internAt(0, 5, data)
+	str3 := cache.internAt(0, data[:5])
 	require.Equal(t, "hello", str3)
 	require.Equal(t,
 		//nolint:gosec // test only
@@ -78,8 +78,8 @@ func TestStringCacheUsesAlternateSlotOnCollision(t *testing.T) {
 	require.NotEqual(t, alternateA, alternateB, "alternate slots must differ")
 
 	for range 3 {
-		_ = cache.internAt(offsetA, 5, data)
-		_ = cache.internAt(offsetB, 5, data)
+		_ = cache.internAt(offsetA, data[offsetA:offsetA+5])
+		_ = cache.internAt(offsetB, data[offsetB:offsetB+5])
 	}
 	require.Equal(t, offsetA, cache.entries[primaryA].Load().offset)
 	require.Equal(t, offsetB, cache.entries[alternateB].Load().offset)
@@ -110,7 +110,8 @@ func TestStringCacheConcurrent(t *testing.T) {
 			defer wg.Done()
 			for iter := range iterations {
 				idx := iter % len(offsets)
-				got := cache.internAt(offsets[idx], size, data)
+				offset := offsets[idx]
+				got := cache.internAt(offset, data[offset:offset+size])
 				if got != expected[idx] {
 					t.Errorf("at offset %d got %q, want %q",
 						offsets[idx], got, expected[idx])
@@ -140,7 +141,7 @@ func BenchmarkStringCacheHot(b *testing.B) {
 	data := []byte("hello world, this is test data")
 
 	for b.Loop() {
-		benchmarkStringCacheSink = cache.internAt(0, 5, data)
+		benchmarkStringCacheSink = cache.internAt(0, data[:5])
 	}
 }
 
@@ -158,7 +159,8 @@ func BenchmarkStringCacheCold(b *testing.B) {
 	var i uint
 	b.ReportAllocs()
 	for b.Loop() {
-		benchmarkStringCacheSink = cache.internAt(offsets[i%uint(len(offsets))], 5, data)
+		offset := offsets[i%uint(len(offsets))]
+		benchmarkStringCacheSink = cache.internAt(offset, data[offset:offset+5])
 		i++
 	}
 }

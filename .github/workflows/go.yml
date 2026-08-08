@@ -33,3 +33,23 @@ jobs:
 
       - name: Test
         run: go test -race -v ./...
+
+  test-386:
+    name: Test (Go 1.25, linux/386)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Go 1.25
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+
+      - name: Check out code into the Go module directory
+        uses: actions/checkout@v7
+        with:
+          submodules: true
+
+      - name: Test
+        env:
+          CGO_ENABLED: 0
+          GOARCH: "386"
+        run: go test -count=1 -v ./...

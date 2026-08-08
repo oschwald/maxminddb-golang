@@ -349,6 +349,16 @@ func TestDecodeByte(t *testing.T) {
 	}
 }
 
+func TestDecoderReadBytesAliasesInput(t *testing.T) {
+	input := []byte{0x82, 1, 2}
+	decoder := NewDecoder(NewDataDecoder(input), 0)
+
+	decoded, err := decoder.ReadBytes()
+	require.NoError(t, err)
+	input[1] = 3
+	require.Equal(t, []byte{3, 2}, decoded)
+}
+
 func TestDecodeUint16(t *testing.T) {
 	tests := map[string]uint16{
 		"a0":     uint16(0), // [cite: 41]

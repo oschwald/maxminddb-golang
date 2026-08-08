@@ -3,8 +3,11 @@ package decoder
 import (
 	"strings"
 	"testing"
+	"unsafe"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/oschwald/maxminddb-golang/v2/internal/mmdberrors"
 )
 
 // TestDecodeCtrlData verifies all four size-encoding paths
@@ -74,6 +77,13 @@ func TestDecodeCtrlData(t *testing.T) {
 			wantKind:   KindSlice,
 			wantSize:   541,
 			wantOffset: 4,
+		},
+		{
+			name:       "four-byte pointer address bits are not an extended size",
+			buffer:     []byte{0x3f},
+			wantKind:   KindPointer,
+			wantSize:   31,
+			wantOffset: 1,
 		},
 	}
 
@@ -180,6 +190,71 @@ func TestDecodeKeyFollowsPointer(t *testing.T) {
 		"nextOffset should point past the pointer bytes, not past the pointed-to string")
 }
 
+func TestDecodeStringKeyUsesControlOffsetForCache(t *testing.T) {
+	tests := []struct {
+		name            string
+		data            []byte
+		wantCacheOffset uint
+		wantNextOffset  uint
+	}{
+		{
+			name:            "direct",
+			data:            []byte{0x43, 'k', 'e', 'y'},
+			wantCacheOffset: 0,
+			wantNextOffset:  4,
+		},
+		{
+			name: "pointer",
+			data: []byte{
+				0x20, 0x05,
+				0x00, 0x00, 0x00,
+				0x43, 'k', 'e', 'y',
+			},
+			wantCacheOffset: 5,
+			wantNextOffset:  2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := NewDataDecoder(tt.data)
+			var got string
+			for range 3 {
+				var nextOffset uint
+				var err error
+				got, nextOffset, err = d.decodeStringKey(0)
+				require.NoError(t, err)
+				require.Equal(t, tt.wantNextOffset, nextOffset)
+			}
+
+			primary := tt.wantCacheOffset & (stringCacheSlots - 1)
+			alternate := stringCacheAlternateIndex(tt.wantCacheOffset, primary)
+			entry := d.stringCache.entries[primary].Load()
+			if entry == nil || entry.offset != tt.wantCacheOffset {
+				entry = d.stringCache.entries[alternate].Load()
+			}
+			require.NotNil(t, entry)
+			require.Equal(t, tt.wantCacheOffset, entry.offset)
+			require.Equal(t, "key", entry.str)
+			require.Equal(t,
+				//nolint:gosec // test only
+				unsafe.StringData(entry.str), unsafe.StringData(got),
+				"the third decode should reuse the cached string")
+		})
+	}
+}
+
+func TestDecodeStringKeyWithoutCacheReturnsCopy(t *testing.T) {
+	data := []byte{0x43, 'k', 'e', 'y'}
+	d := NewDataDecoderWithoutStringCache(data)
+	got, nextOffset, err := d.decodeStringKey(0)
+	require.NoError(t, err)
+	require.Equal(t, uint(4), nextOffset)
+
+	data[1] = 'x'
+	require.Equal(t, "key", got, "retained map keys must not alias decoder input")
+}
+
 // TestDecodePointerKeyFastPointerSizes exercises decodePointerKeyFast for
 // pointer sizes 2 and 4. Size 1 is covered by TestDecodeKeyFollowsPointer;
 // size 3 requires a >526KB buffer (pointerBase3 offset) and is exercised
@@ -200,9 +275,10 @@ func TestDecodePointerKeyFastPointerSizes(t *testing.T) {
 		copy(buf[2054:], "key")
 
 		d := NewDataDecoder(buf)
-		got, nextOffset, err := d.decodeKey(0)
+		got, cacheOffset, nextOffset, err := d.decodeKeyAt(0)
 		require.NoError(t, err)
 		require.Equal(t, "key", string(got))
+		require.Equal(t, uint(2053), cacheOffset)
 		require.Equal(t, uint(3), nextOffset,
 			"nextOffset must point past the 1-byte ctrl + 2-byte payload")
 	})
@@ -216,32 +292,236 @@ func TestDecodePointerKeyFastPointerSizes(t *testing.T) {
 			0x43, 'k', 'e', 'y',
 		}
 		d := NewDataDecoder(buf)
-		got, nextOffset, err := d.decodeKey(0)
+		got, cacheOffset, nextOffset, err := d.decodeKeyAt(0)
 		require.NoError(t, err)
 		require.Equal(t, "key", string(got))
+		require.Equal(t, uint(9), cacheOffset)
 		require.Equal(t, uint(5), nextOffset,
 			"nextOffset must point past the 1-byte ctrl + 4-byte payload")
 	})
 }
 
-// TestDecodePointerKeyFastNonStringTarget verifies that a pointer to a
-// non-KindString target bails out of the fast path. A regression that
-// accepted any pointer-target kind would return bogus key bytes (e.g.
-// pointing at a map or uint ctrl byte's payload), silently corrupting
-// struct decoding. The slow path also rejects this, but with a specific
-// "unexpected type when decoding string" error.
-func TestDecodePointerKeyFastNonStringTarget(t *testing.T) {
-	// Pointer at offset 0 -> offset 5. At offset 5 we put ctrl 0xC0
-	// (KindUint16, size 0). The fast path must not accept this.
-	buf := []byte{
-		0x20, 0x05,
-		0x00, 0x00, 0x00,
-		0xC0,
+func TestDecodeStringValueCommonEncodings(t *testing.T) {
+	tests := []struct {
+		name     string
+		data     []byte
+		offset   uint
+		want     string
+		wantNext uint
+	}{
+		{
+			name:     "direct short string",
+			data:     []byte{0x43, 'o', 'n', 'e'},
+			want:     "one",
+			wantNext: 4,
+		},
+		{
+			name:     "one-byte pointer to short string",
+			data:     []byte{0x20, 0x04, 0x00, 0x00, 0x43, 'o', 'n', 'e'},
+			want:     "one",
+			wantNext: 2,
+		},
 	}
-	d := NewDataDecoder(buf)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			decoder := NewDataDecoderWithoutStringCache(tt.data)
+			got, next, err := decoder.decodeStringValue(tt.offset)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+			require.Equal(t, tt.wantNext, next)
+		})
+	}
+}
+
+func TestDecodeStringValueCompactPointerWidths(t *testing.T) {
+	tests := []struct {
+		name     string
+		control  byte
+		payload  []byte
+		target   int
+		wantNext uint
+	}{
+		{
+			name:     "two-byte pointer",
+			control:  0x28,
+			payload:  []byte{0x00, 0x00},
+			target:   pointerBase2,
+			wantNext: 3,
+		},
+		{
+			name:     "three-byte pointer",
+			control:  0x30,
+			payload:  []byte{0x00, 0x00, 0x00},
+			target:   pointerBase3,
+			wantNext: 4,
+		},
+		{
+			name:     "four-byte pointer",
+			control:  0x38,
+			payload:  []byte{0x00, 0x00, 0x00, 0x08},
+			target:   8,
+			wantNext: 5,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := make([]byte, tt.target+4)
+			data[0] = tt.control
+			copy(data[1:], tt.payload)
+			copy(data[tt.target:], []byte{0x43, 'o', 'n', 'e'})
+
+			decoder := NewDataDecoderWithoutStringCache(data)
+			got, next, err := decoder.decodeStringValue(0)
+			require.NoError(t, err)
+			require.Equal(t, "one", got)
+			require.Equal(t, tt.wantNext, next)
+		})
+	}
+}
+
+func TestDecodeCompactPointersUseNonzeroAddressPrefixes(t *testing.T) {
+	tests := []struct {
+		name       string
+		control    byte
+		payload    []byte
+		zeroTarget int
+		target     int
+		wantNext   uint
+	}{
+		{
+			name:       "one-byte pointer",
+			control:    0x21,
+			payload:    []byte{0x08},
+			zeroTarget: 8,
+			target:     1<<8 | 8,
+			wantNext:   2,
+		},
+		{
+			name:       "two-byte pointer",
+			control:    0x29,
+			payload:    []byte{0x00, 0x08},
+			zeroTarget: pointerBase2 + 8,
+			target:     pointerBase2 + 1<<16 + 8,
+			wantNext:   3,
+		},
+		{
+			name:       "three-byte pointer",
+			control:    0x31,
+			payload:    []byte{0x00, 0x00, 0x08},
+			zeroTarget: pointerBase3 + 8,
+			target:     pointerBase3 + 1<<24 + 8,
+			wantNext:   4,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := make([]byte, tt.target+5)
+			data[0] = tt.control
+			copy(data[1:], tt.payload)
+			copy(data[tt.zeroTarget:], []byte{0x44, 'f', 'a', 'k', 'e'})
+			copy(data[tt.target:], []byte{0x44, 'w', 'a', 'n', 't'})
+
+			decoder := NewDataDecoderWithoutStringCache(data)
+			value, next, err := decoder.decodeStringValue(0)
+			require.NoError(t, err)
+			require.Equal(t, "want", value)
+			require.Equal(t, tt.wantNext, next)
+
+			key, next, err := decoder.decodeKey(0)
+			require.NoError(t, err)
+			require.Equal(t, "want", string(key))
+			require.Equal(t, tt.wantNext, next)
+		})
+	}
+}
+
+func TestDecodeStringValueSlowPaths(t *testing.T) {
+	longValue := strings.Repeat("x", 29)
+	tests := []struct {
+		name     string
+		data     []byte
+		want     string
+		wantNext uint
+	}{
+		{
+			name:     "direct extended-size string",
+			data:     append([]byte{0x5d, 0x00}, longValue...),
+			want:     longValue,
+			wantNext: 31,
+		},
+		{
+			name: "pointer to extended-size string",
+			data: append(
+				[]byte{0x20, 0x04, 0x00, 0x00, 0x5d, 0x00},
+				longValue...,
+			),
+			want:     longValue,
+			wantNext: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			decoder := NewDataDecoderWithoutStringCache(tt.data)
+			got, next, err := decoder.decodeStringValue(0)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+			require.Equal(t, tt.wantNext, next)
+		})
+	}
+
+	t.Run("wrong kind", func(t *testing.T) {
+		decoder := NewDataDecoderWithoutStringCache([]byte{0xa0})
+		_, _, err := decoder.decodeStringValue(0)
+		require.EqualError(t, err, "unexpected kind Uint16, expected String")
+	})
+
+	t.Run("pointer to pointer", func(t *testing.T) {
+		decoder := NewDataDecoderWithoutStringCache([]byte{0x20, 0x02, 0x20, 0x02})
+		_, _, err := decoder.decodeStringValue(0)
+		require.ErrorContains(t, err, "pointer-to-pointer chain detected")
+	})
+}
+
+// TestDecodeKeyRejectsNonStringKind verifies that direct and pointer-encoded
+// non-string keys are classified as corrupt database data.
+func TestDecodeKeyRejectsNonStringKind(t *testing.T) {
+	tests := []struct {
+		name string
+		data []byte
+	}{
+		{name: "direct", data: []byte{0xa0}},
+		{
+			name: "pointer",
+			data: []byte{
+				0x20, 0x05,
+				0x00, 0x00, 0x00,
+				0xa0,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := NewDataDecoder(tt.data)
+			_, _, err := d.decodeKey(0)
+			require.Error(t, err)
+			var invalidDatabase mmdberrors.InvalidDatabaseError
+			require.ErrorAs(t, err, &invalidDatabase)
+			var unmarshalType mmdberrors.UnmarshalTypeError
+			require.NotErrorAs(t, err, &unmarshalType)
+			require.ErrorContains(t, err, "unexpected map key type: Uint16")
+		})
+	}
+}
+
+func TestDecodeKeyRejectsPointerToPointer(t *testing.T) {
+	d := NewDataDecoder([]byte{0x20, 0x02, 0x20, 0x02})
 	_, _, err := d.decodeKey(0)
-	require.Error(t, err, "non-string pointer target must be rejected")
-	require.Contains(t, err.Error(), "unexpected type when decoding string")
+	require.ErrorContains(t, err, "pointer-to-pointer chain detected")
 }
 
 // TestDecodePointerKeyFastExtendedSize verifies that a pointer targeting a
@@ -261,11 +541,49 @@ func TestDecodePointerKeyFastExtendedSize(t *testing.T) {
 	buf = append(buf, key...)
 
 	d := NewDataDecoder(buf)
-	got, nextOffset, err := d.decodeKey(0)
+	got, cacheOffset, nextOffset, err := d.decodeKeyAt(0)
 	require.NoError(t, err)
 	require.Equal(t, key, string(got))
+	require.Equal(t, uint(5), cacheOffset)
 	require.Equal(t, uint(2), nextOffset,
 		"nextOffset must point past the pointer bytes regardless of fast/slow path")
+}
+
+func TestMapKeyCacheDistinguishesOverlappingStringLengths(t *testing.T) {
+	longKey := "lo" + strings.Repeat("n", 93)
+	data := append([]byte{0x5d, 0x42}, longKey...)
+	mapOffset := uint(len(data))
+	data = append(data,
+		0xe3,
+		0x20, 0x00, 0x41, 'a',
+		0x20, 0x01, 0x41, 'b',
+		0x20, 0x00, 0x41, 'c',
+	)
+
+	decoder := New(data)
+	var result map[string]string
+	require.NoError(t, decoder.Decode(mapOffset, &result))
+	require.Equal(t, map[string]string{
+		longKey: "c",
+		"lo":    "b",
+	}, result)
+}
+
+func TestStringCacheDistinguishesOverlappingStringLengths(t *testing.T) {
+	longValue := "lo" + strings.Repeat("n", 93)
+	dataDecoder := NewDataDecoder(append([]byte{0x5d, 0x42}, longValue...))
+
+	long, _, err := (Cursor{decoder: &dataDecoder, offset: 0}).ReadString()
+	require.NoError(t, err)
+	require.Equal(t, longValue, long)
+
+	short, _, err := (Cursor{decoder: &dataDecoder, offset: 1}).ReadString()
+	require.NoError(t, err)
+	require.Equal(t, "lo", short)
+
+	long, _, err = (Cursor{decoder: &dataDecoder, offset: 0}).ReadString()
+	require.NoError(t, err)
+	require.Equal(t, longValue, long)
 }
 
 func TestNextValueOffsetSkipsPointerTokenOnly(t *testing.T) {

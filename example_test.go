@@ -252,81 +252,110 @@ func ExampleSkipEmptyValues() {
 }
 
 // CustomCity represents a simplified city record with custom unmarshaling.
-// This demonstrates the Unmarshaler interface for custom decoding.
+// This demonstrates the CursorUnmarshaler interface for custom decoding.
 type CustomCity struct {
 	Names     map[string]string
 	GeoNameID uint
 }
 
-// UnmarshalMaxMindDB implements the mmdbdata.Unmarshaler interface.
+// UnmarshalMaxMindDBCursor implements the mmdbdata.CursorUnmarshaler interface.
 // This provides custom decoding logic, similar to how json.Unmarshaler works
 // with encoding/json, allowing fine-grained control over data processing.
-func (c *CustomCity) UnmarshalMaxMindDB(d *mmdbdata.Decoder) error {
-	mapIter, _, err := d.ReadMap()
+func (c *CustomCity) UnmarshalMaxMindDBCursor(
+	cursor mmdbdata.Cursor,
+) (mmdbdata.Cursor, error) {
+	entries, err := cursor.Map()
 	if err != nil {
-		return err
+		return mmdbdata.Cursor{}, mmdbdata.NormalizeUnmarshalError[CustomCity](err)
 	}
-	for key, err := range mapIter {
-		if err != nil {
-			return err
+	var next mmdbdata.Cursor
+	for {
+		key, valueCursor, ok := entries.Next(next)
+		if !ok {
+			break
 		}
 
 		switch string(key) {
 		case "city":
-			// Decode nested city structure
-			cityMapIter, _, err := d.ReadMap()
+			next, err = c.unmarshalCity(valueCursor)
+		default:
+			next, err = valueCursor.Skip()
+		}
+		if err != nil {
+			return mmdbdata.Cursor{}, err
+		}
+	}
+	return entries.End()
+}
+
+func (c *CustomCity) unmarshalCity(cursor mmdbdata.Cursor) (mmdbdata.Cursor, error) {
+	entries, err := cursor.Map()
+	if err != nil {
+		return mmdbdata.Cursor{}, mmdbdata.NormalizeUnmarshalError[CustomCity](err)
+	}
+	var next mmdbdata.Cursor
+	for {
+		key, valueCursor, ok := entries.Next(next)
+		if !ok {
+			break
+		}
+
+		switch string(key) {
+		case "names":
+			next, err = c.unmarshalNames(valueCursor)
+		case "geoname_id":
+			var geoID uint64
+			geoID, next, err = valueCursor.ReadUint()
 			if err != nil {
-				return err
-			}
-			for cityKey, cityErr := range cityMapIter {
-				if cityErr != nil {
-					return cityErr
-				}
-				switch string(cityKey) {
-				case "names":
-					// Decode nested map[string]string for localized names
-					names := make(map[string]string)
-					nameMapIter, _, err := d.ReadMap()
-					if err != nil {
-						return err
-					}
-					for nameKey, nameErr := range nameMapIter {
-						if nameErr != nil {
-							return nameErr
-						}
-						value, valueErr := d.ReadString()
-						if valueErr != nil {
-							return valueErr
-						}
-						names[string(nameKey)] = value
-					}
-					c.Names = names
-				case "geoname_id":
-					geoID, err := d.ReadUint32()
-					if err != nil {
-						return err
-					}
-					c.GeoNameID = uint(geoID)
-				default:
-					if err := d.SkipValue(); err != nil {
-						return err
-					}
+				err = mmdbdata.NormalizeUnmarshalError[uint](err)
+			} else {
+				converted := uint(geoID)
+				if uint64(converted) != geoID {
+					err = mmdbdata.NewUnmarshalTypeError[uint](geoID)
+				} else {
+					c.GeoNameID = converted
 				}
 			}
 		default:
-			// Skip unknown fields to ensure forward compatibility
-			if err := d.SkipValue(); err != nil {
-				return err
-			}
+			next, err = valueCursor.Skip()
+		}
+		if err != nil {
+			return mmdbdata.Cursor{}, err
 		}
 	}
-	return nil
+	return entries.End()
 }
 
-// This example demonstrates how to use the Unmarshaler interface for custom decoding.
-// Types implementing Unmarshaler automatically use custom decoding logic instead of
-// reflection, similar to how json.Unmarshaler works with encoding/json.
-func ExampleUnmarshaler() {
+func (c *CustomCity) unmarshalNames(cursor mmdbdata.Cursor) (mmdbdata.Cursor, error) {
+	entries, err := cursor.Map()
+	if err != nil {
+		return mmdbdata.Cursor{}, mmdbdata.NormalizeUnmarshalError[map[string]string](err)
+	}
+	names := make(map[string]string, entries.Size())
+	var next mmdbdata.Cursor
+	for {
+		key, valueCursor, ok := entries.Next(next)
+		if !ok {
+			break
+		}
+		var value string
+		value, next, err = valueCursor.ReadString()
+		if err != nil {
+			return mmdbdata.Cursor{}, mmdbdata.NormalizeUnmarshalError[string](err)
+		}
+		names[string(key)] = value
+	}
+	next, err = entries.End()
+	if err == nil {
+		c.Names = names
+	}
+	return next, err
+}
+
+// This example demonstrates how to use CursorUnmarshaler for custom decoding.
+// Types implementing CursorUnmarshaler automatically use custom decoding logic
+// instead of reflection, similar to how json.Unmarshaler works with encoding/json.
+func Example_cursorUnmarshaler() {
 	db, err := maxminddb.Open("test-data/test-data/GeoIP2-City-Test.mmdb")
 	if err != nil {
 		log.Fatal(err)
@@ -335,8 +364,8 @@ func ExampleUnmarshaler() {
 
 	addr := netip.MustParseAddr("81.2.69.142")
 
-	// CustomCity implements Unmarshaler, so it will automatically use
-	// the custom UnmarshalMaxMindDB method instead of reflection
+	// CustomCity implements CursorUnmarshaler, so it will automatically use
+	// the custom UnmarshalMaxMindDBCursor method instead of reflection.
 	var city CustomCity
 	err = db.Lookup(addr).Decode(&city)
 	if err != nil {

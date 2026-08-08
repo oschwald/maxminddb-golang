@@ -7,6 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/oschwald/maxminddb-golang/v2/internal/mmdberrors"
 )
 
 // TestFieldPrecedenceRules tests json/v2 style field precedence behavior.
@@ -156,6 +158,47 @@ func TestPointerStructFieldCaching(t *testing.T) {
 	require.NoError(t, decoder.Decode(0, &target))
 	require.NotNil(t, target.Inner)
 	assert.Equal(t, "Foo", target.Inner.En)
+}
+
+func TestNestedStructWrongKindUsesFieldOffset(t *testing.T) {
+	type inner struct {
+		Name string `maxminddb:"name"`
+	}
+	tests := map[string][]byte{
+		"direct scalar": {0xe1, 0x46, 'n', 'e', 's', 't', 'e', 'd', 0x80},
+		"pointer to scalar": {
+			0xe1, 0x46, 'n', 'e', 's', 't', 'e', 'd',
+			0x20, 0x0a, // pointer to the scalar at offset 10
+			0x80,
+		},
+	}
+
+	for name, data := range tests {
+		t.Run(name+"/value", func(t *testing.T) {
+			var target struct {
+				Nested inner `maxminddb:"nested"`
+			}
+			decoder := New(data)
+			err := decoder.Decode(0, &target)
+			require.Error(t, err)
+			require.ErrorContains(t, err, "cannot unmarshal")
+			var typeError mmdberrors.UnmarshalTypeError
+			require.ErrorAs(t, err, &typeError)
+		})
+
+		t.Run(name+"/pointer", func(t *testing.T) {
+			var target struct {
+				Nested *inner `maxminddb:"nested"`
+			}
+			decoder := New(data)
+			err := decoder.Decode(0, &target)
+			require.Error(t, err)
+			require.ErrorContains(t, err, "cannot unmarshal")
+			var typeError mmdberrors.UnmarshalTypeError
+			require.ErrorAs(t, err, &typeError)
+			require.Nil(t, target.Nested)
+		})
+	}
 }
 
 func TestRecursivePointerStructFieldCaching(t *testing.T) {
