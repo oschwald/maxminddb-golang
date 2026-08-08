@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 2.5.0 - 2026-08-08
 
 - Deprecated the legacy `mmdbdata.Unmarshaler` callback,
   `UnmarshalMaxMindDB(*mmdbdata.Decoder) error`. It remains supported throughout
