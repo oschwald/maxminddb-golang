@@ -14,7 +14,11 @@ type Unmarshaler interface {
 
 // CursorUnmarshaler is implemented by generated and handwritten decoders that
 // can unmarshal directly from a Cursor. Implementations must consume and
-// validate the complete value and return its proven successor.
+// validate the complete value and return its proven successor. Direct cursor
+// kind mismatches should be passed to NormalizeUnmarshalError before adding any
+// wrapping context so Reader.Decode retains its documented error categories.
+// When a type implements both CursorUnmarshaler and Unmarshaler, reflection
+// decoding invokes CursorUnmarshaler.
 type CursorUnmarshaler interface {
 	UnmarshalMaxMindDBCursor(cursor Cursor) (Cursor, error)
 }

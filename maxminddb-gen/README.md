@@ -92,14 +92,15 @@ Named-string map keys may also implement either custom unmarshaling interface.
 Their callback receives the original MMDB key, and cursor unmarshaling takes
 precedence when both interfaces are implemented.
 
-Fields tagged `maxminddb:"-"` are ignored. Fields without a tag, or with an
-explicit empty tag, use their Go field name, matching reflection decoding.
+Non-embedded fields tagged `maxminddb:"-"` are ignored. Fields without a tag,
+or with an explicit empty tag, use their Go field name, matching reflection
+decoding.
 
-The generator rejects embedded fields, generic structs, recursive type graphs,
-interfaces, unsupported map keys, arrays, complex numbers, channels, functions,
-unsafe pointers, struct types owned by another package without a custom unmarshaler,
-and unsupported target fields. Diagnostics include the source position and
-field name.
+The generator rejects embedded fields, including those tagged `maxminddb:"-"`,
+generic structs, recursive type graphs, interfaces, unsupported map keys,
+arrays, complex numbers, channels, functions, unsafe pointers, struct types
+owned by another package without a custom unmarshaler, and unsupported target
+fields. Diagnostics include the source position and field name.
 
 Generated slice decoding matches reflection reuse behavior: it reuses adequate
 capacity, clears visible elements before decoding, and clears a hidden tail

@@ -143,7 +143,8 @@ nested custom decoding to continue without rescanning it.
 
 The older `UnmarshalMaxMindDB(*mmdbdata.Decoder) error` callback is deprecated.
 It remains supported throughout v2 but is planned for removal in v3; see
-[GitHub #224](https://github.com/oschwald/maxminddb-golang/issues/224).
+[GitHub #224](https://github.com/oschwald/maxminddb-golang/issues/224). When a
+type implements both callbacks, `UnmarshalMaxMindDBCursor` takes precedence.
 
 ```go
 type Label string
@@ -152,10 +153,11 @@ func (label *Label) UnmarshalMaxMindDBCursor(
 	cursor mmdbdata.Cursor,
 ) (mmdbdata.Cursor, error) {
 	value, next, err := cursor.ReadString()
-	if err == nil {
-		*label = Label(value)
+	if err != nil {
+		return mmdbdata.Cursor{}, mmdbdata.NormalizeUnmarshalError[Label](err)
 	}
-	return next, err
+	*label = Label(value)
+	return next, nil
 }
 ```
 

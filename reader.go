@@ -70,14 +70,16 @@
 //		cursor mmdbdata.Cursor,
 //	) (mmdbdata.Cursor, error) {
 //		value, next, err := cursor.ReadString()
-//		if err == nil {
-//			*label = Label(value)
+//		if err != nil {
+//			return mmdbdata.Cursor{}, mmdbdata.NormalizeUnmarshalError[Label](err)
 //		}
-//		return next, err
+//		*label = Label(value)
+//		return next, nil
 //	}
 //
 // The older mmdbdata.Unmarshaler interface remains supported throughout v2 but
-// is deprecated and planned for removal in v3.
+// is deprecated and planned for removal in v3. When a type implements both
+// interfaces, mmdbdata.CursorUnmarshaler takes precedence.
 //
 // # Network Iteration
 //

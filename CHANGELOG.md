@@ -6,7 +6,8 @@
   `UnmarshalMaxMindDB(*mmdbdata.Decoder) error`. It remains supported throughout
   v2, but new handwritten decoders should implement
   `mmdbdata.CursorUnmarshaler` so nested decoding can return a proven successor
-  without rescanning the value. Removal is planned for v3. GitHub #224.
+  without rescanning the value. When a type implements both interfaces, the
+  cursor callback takes precedence. Removal is planned for v3. GitHub #224.
   Legacy callbacks must not retain the supplied decoder or its iterators after
   returning; decoder instances may now be pooled and reused.
 - Added the optional `maxminddb-gen` command for reproducible generation of
@@ -21,6 +22,13 @@
   migrations ignore superseded generated methods while analyzing replacements,
   MaxMind tag validation remains isolated from unrelated tags, and output
   replacement requires an exact generated ownership marker.
+- Fixed valid four-byte data pointers whose ignored high address bits produce
+  control values 29 through 31 so they are not misread as extended value sizes.
+- Fixed the string cache so overlapping string encodings that share a payload
+  offset remain distinct and cannot return the wrong cached string or map key.
+- Fixed nested struct fields containing a non-map value so decoding reports the
+  correct type error at the field offset instead of retrying from the record
+  root.
 - Reduced IPv4 and IPv6 lookup time for databases with 28-bit search-tree
   records.
 - Reduced allocations when recurring decoded strings share a primary cache

@@ -1,12 +1,25 @@
 package maxminddb_test
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 	"testing"
 
+	maxminddb "github.com/oschwald/maxminddb-golang/v2"
 	"github.com/oschwald/maxminddb-golang/v2/mmdbdata"
 )
+
+func TestCustomCityNormalizesKindMismatch(t *testing.T) {
+	city := CustomCity{}
+	_, err := city.UnmarshalMaxMindDBCursor(
+		mmdbdata.NewDecoder([]byte{0x40}, 0).Cursor(),
+	)
+	var typeError maxminddb.UnmarshalTypeError
+	if !errors.As(err, &typeError) {
+		t.Fatalf("expected UnmarshalTypeError, got %v", err)
+	}
+}
 
 func TestCustomCityRejectsGeoNameIDOverflowOn32Bit(t *testing.T) {
 	if strconv.IntSize != 32 {

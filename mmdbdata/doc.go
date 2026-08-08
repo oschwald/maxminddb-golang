@@ -14,16 +14,18 @@
 //		cursor mmdbdata.Cursor,
 //	) (mmdbdata.Cursor, error) {
 //		value, next, err := cursor.ReadString()
-//		if err == nil {
-//			*label = Label(value)
+//		if err != nil {
+//			return mmdbdata.Cursor{}, mmdbdata.NormalizeUnmarshalError[Label](err)
 //		}
-//		return next, err
+//		*label = Label(value)
+//		return next, nil
 //	}
 //
 // Types implementing CursorUnmarshaler automatically use custom decoding logic
 // instead of reflection when decoded by maxminddb.Reader. The older Unmarshaler
 // interface remains supported throughout v2 but is deprecated and planned for
-// removal in v3.
+// removal in v3. When a type implements both interfaces, CursorUnmarshaler takes
+// precedence.
 //
 // The Cursor, MapReader, MapCursor, and SliceCursor APIs support code generated
 // by the maxminddb-gen command. Scalar and container reads use opaque successor

@@ -75,6 +75,9 @@ type Decoder = decoder.Decoder
 //	func (Cursor) Unmarshal(Unmarshaler) (Cursor, error)
 //	func (Cursor) UnmarshalCursor(CursorUnmarshaler) (Cursor, error)
 //
+// Kind resolves a valid pointer and reports its target kind without consuming
+// the cursor.
+//
 // ReadFloat accepts either MMDB floating-point kind. ReadUint accepts the
 // Uint16, Uint32, and Uint64 kinds. ReadInteger additionally accepts Int32 and
 // reports signed values as the uint64 bit pattern of their int64 value.

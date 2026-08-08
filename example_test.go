@@ -266,7 +266,7 @@ func (c *CustomCity) UnmarshalMaxMindDBCursor(
 ) (mmdbdata.Cursor, error) {
 	entries, err := cursor.Map()
 	if err != nil {
-		return mmdbdata.Cursor{}, err
+		return mmdbdata.Cursor{}, mmdbdata.NormalizeUnmarshalError[CustomCity](err)
 	}
 	var next mmdbdata.Cursor
 	for {
@@ -291,7 +291,7 @@ func (c *CustomCity) UnmarshalMaxMindDBCursor(
 func (c *CustomCity) unmarshalCity(cursor mmdbdata.Cursor) (mmdbdata.Cursor, error) {
 	entries, err := cursor.Map()
 	if err != nil {
-		return mmdbdata.Cursor{}, err
+		return mmdbdata.Cursor{}, mmdbdata.NormalizeUnmarshalError[CustomCity](err)
 	}
 	var next mmdbdata.Cursor
 	for {
@@ -306,7 +306,9 @@ func (c *CustomCity) unmarshalCity(cursor mmdbdata.Cursor) (mmdbdata.Cursor, err
 		case "geoname_id":
 			var geoID uint64
 			geoID, next, err = valueCursor.ReadUint()
-			if err == nil {
+			if err != nil {
+				err = mmdbdata.NormalizeUnmarshalError[uint](err)
+			} else {
 				converted := uint(geoID)
 				if uint64(converted) != geoID {
 					err = mmdbdata.NewUnmarshalTypeError[uint](geoID)
@@ -327,7 +329,7 @@ func (c *CustomCity) unmarshalCity(cursor mmdbdata.Cursor) (mmdbdata.Cursor, err
 func (c *CustomCity) unmarshalNames(cursor mmdbdata.Cursor) (mmdbdata.Cursor, error) {
 	entries, err := cursor.Map()
 	if err != nil {
-		return mmdbdata.Cursor{}, err
+		return mmdbdata.Cursor{}, mmdbdata.NormalizeUnmarshalError[map[string]string](err)
 	}
 	names := make(map[string]string, entries.Size())
 	var next mmdbdata.Cursor
@@ -339,7 +341,7 @@ func (c *CustomCity) unmarshalNames(cursor mmdbdata.Cursor) (mmdbdata.Cursor, er
 		var value string
 		value, next, err = valueCursor.ReadString()
 		if err != nil {
-			return mmdbdata.Cursor{}, err
+			return mmdbdata.Cursor{}, mmdbdata.NormalizeUnmarshalError[string](err)
 		}
 		names[string(key)] = value
 	}
