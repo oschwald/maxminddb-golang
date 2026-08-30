@@ -90,6 +90,33 @@ case "$major" in
         ;;
 esac
 
+generator_readme=maxminddb-gen/README.md
+generator_module=github.com/oschwald/maxminddb-golang/v2
+readarray -t generator_versions < <(
+    awk -v module="$generator_module" '
+        $1 == "require" && $2 == module { print $3 }
+    ' "$generator_readme"
+)
+if [ "${#generator_versions[@]}" -ne 1 ]; then
+    die "$generator_readme must contain exactly one requirement for $generator_module"
+fi
+if [ "${generator_versions[0]}" != "$tag" ]; then
+    generator_readme_tmp=$(mktemp "${TMPDIR:-/tmp}/maxminddb-generator-readme.XXXXXX")
+    awk -v module="$generator_module" -v tag="$tag" '
+        $1 == "require" && $2 == module {
+            print "require " module " " tag
+            next
+        }
+        { print }
+    ' "$generator_readme" >"$generator_readme_tmp"
+    command cat "$generator_readme_tmp" >"$generator_readme"
+    rm -f -- "$generator_readme_tmp"
+
+    echo "Updated $generator_readme to require $tag." >&2
+    git diff -- "$generator_readme" >&2
+    die "commit the release version update and rerun the release"
+fi
+
 if ! gh auth status >/dev/null 2>&1; then
     die "gh is not authenticated"
 fi
