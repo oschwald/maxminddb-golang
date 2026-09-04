@@ -679,26 +679,10 @@ func (r *Reader) traverseTree28(ip netip.Addr, node uint, stopBit int) (uint, in
 
 		j := 0
 		for ; j < remainingBits && node < nodeCount; j++ {
-			// 28-bit record layout: each pair of records occupies 7 bytes.
-			// bit=0 reads buffer[base..base+3] high-nibble half; bit=1 reads
-			// buffer[base+4..base+6] low-nibble half. A single 7-byte range
-			// check covers both halves and is strictly stronger than the
-			// IPv6 path's two separate (base, 4) and (offset, 3) checks.
 			baseOffset := node * 7
 			bit := uint((ipBits >> 31) & 1)
 			ipBits <<= 1
-			offset := baseOffset + bit*4
-
-			// shift = 20 (bit=0) or 24 (bit=1): position the shared nibble's
-			// high or low 4 bits into the top of the assembled 28-bit node.
-			sharedByte := uint(buffer[baseOffset+3])
-			shift := 20 + bit*4
-			nibble := (sharedByte << shift) & 0x0F000000
-
-			node = nibble |
-				(uint(buffer[offset]) << 16) |
-				(uint(buffer[offset+1]) << 8) |
-				uint(buffer[offset+2])
+			node = readNode28(buffer, baseOffset, bit)
 		}
 
 		return node, i + j, nil
@@ -722,21 +706,21 @@ func (r *Reader) traverseTree28(ip netip.Addr, node uint, stopBit int) (uint, in
 			ipBits <<= 1
 
 			baseOffset := node * 7
-			offset := baseOffset + bit*4
-
-			sharedByte := uint(buffer[baseOffset+3])
-			shift := 20 + bit*4
-			nibble := (sharedByte << shift) & 0x0F000000
-
-			node = nibble |
-				(uint(buffer[offset]) << 16) |
-				(uint(buffer[offset+1]) << 8) |
-				uint(buffer[offset+2])
+			node = readNode28(buffer, baseOffset, bit)
 			i++
 		}
 	}
 
 	return node, i, nil
+}
+
+// readNode28 reads either half of a seven-byte node with one four-byte load.
+// The left half ends in the shared nibble byte; the right half starts there.
+func readNode28(buffer []byte, baseOffset, bit uint) uint {
+	offset := baseOffset + bit*3
+	word := binary.BigEndian.Uint32(buffer[offset : offset+4])
+	left := 1 - bit
+	return uint((word>>(left*8))&0x00FFFFFF | (word<<(left*20))&0x0F000000)
 }
 
 func (r *Reader) traverseTree32(ip netip.Addr, node uint, stopBit int) (uint, int, error) {

@@ -11,6 +11,8 @@
   bytes in reflection and generated decoders, plus bounded cursor reads.
   Field names containing commas must now be single-quoted.
 - Made generated decoders reject duplicate recognized map keys.
+- Improved performance:
+  - Reduced 28-bit search-tree lookup overhead with single-word node reads.
 
 ## 2.5.0 - 2026-08-08
 
