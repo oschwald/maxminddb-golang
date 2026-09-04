@@ -291,9 +291,19 @@ func (d *ReflectionDecoder) nextValueOffsetBudgetedSlow(
 ) (uint, error) {
 	bufferLen := uint(len(d.buffer))
 	for numberToSkip > 0 {
-		kind, size, newOffset, err := d.decodeCtrlData(offset)
-		if err != nil {
-			return 0, err
+		if offset >= bufferLen {
+			return 0, mmdberrors.NewOffsetError()
+		}
+		// Read compact headers inline; extended kinds and sizes still use
+		// the general parser. Pointer size bits describe the token width.
+		ctrlByte := d.buffer[offset]
+		kind, size, newOffset := Kind(ctrlByte>>5), uint(ctrlByte&0x1f), offset+1
+		if kind == KindExtended || (kind != KindPointer && size >= 29) {
+			var err error
+			kind, size, newOffset, err = d.decodeCtrlData(offset)
+			if err != nil {
+				return 0, err
+			}
 		}
 
 		switch kind {
