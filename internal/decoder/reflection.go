@@ -1002,21 +1002,37 @@ func (d *ReflectionDecoder) unmarshalPointer(
 	if err != nil {
 		return 0, err
 	}
+	if pointer >= uint(len(d.buffer)) {
+		_, err = d.decodeValue(pointer, result, depth)
+		return newOffset, err
+	}
 
 	// Check for pointer-to-pointer by looking at what we're about to decode
 	// This is done efficiently by checking the control byte at the pointer location
-	if pointer < uint(len(d.buffer)) {
-		controlByte := d.buffer[pointer]
-		kind := Kind(controlByte >> 5)
-		if kind == KindExtended && pointer+1 < uint(len(d.buffer)) {
-			kind = Kind(d.buffer[pointer+1] + 7)
+	controlByte := d.buffer[pointer]
+	kind := Kind(controlByte >> 5)
+	if kind == KindExtended && pointer+1 < uint(len(d.buffer)) {
+		kind = Kind(d.buffer[pointer+1] + 7)
+	}
+	if kind == KindPointer {
+		return 0, mmdberrors.NewInvalidDatabaseError(
+			"invalid pointer to pointer at offset %d",
+			pointer,
+		)
+	}
+	// The destination has already passed unmarshaler dispatch. Decode
+	// compact strings without repeating reflection on the pointer target,
+	// while preserving the target's depth and payload checks.
+	size = uint(controlByte & 0x1f)
+	dataOffset := pointer + 1
+	if Kind(controlByte>>5) == KindString && result.Kind() == reflect.String &&
+		depth <= maximumDataStructureDepth &&
+		size < 29 && size <= uint(len(d.buffer))-dataOffset {
+		if err := d.reserveExactPayload(size); err != nil {
+			return newOffset, err
 		}
-		if kind == KindPointer {
-			return 0, mmdberrors.NewInvalidDatabaseError(
-				"invalid pointer to pointer at offset %d",
-				pointer,
-			)
-		}
+		result.SetString(d.decodeCompactString(size, dataOffset))
+		return newOffset, nil
 	}
 
 	_, err = d.decodeValue(pointer, result, depth)
