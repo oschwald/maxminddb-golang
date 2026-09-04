@@ -203,6 +203,18 @@ func (c Cursor) ReadStringMaxSize(maximum uint64) (string, Cursor, error) {
 					}
 				}
 			}
+			if size >= 8 {
+				value, dataOffset, nextOffset, ok := c.decoder.decodePointerKeyFast(
+					c.offset, uint(ctrlByte), bufferLen,
+				)
+				if ok {
+					if uint64(len(value)) > maximum {
+						return "", Cursor{}, c.maxSizeError(KindString, uint(len(value)), maximum)
+					}
+					return c.decoder.decodeCompactString(uint(len(value)), dataOffset),
+						c.successor(nextOffset), nil
+				}
+			}
 		default:
 		}
 	}

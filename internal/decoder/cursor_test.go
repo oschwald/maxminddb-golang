@@ -657,6 +657,67 @@ func TestCursorBoundedReads(t *testing.T) {
 	})
 }
 
+func TestCursorBoundedStringWidePointers(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		pointer []byte
+		target  int
+	}{
+		{"two-byte", []byte{0x29, 0, 8}, pointerBase2 + 1<<16 + 8},
+		{"three-byte", []byte{0x31, 0, 0, 8}, pointerBase3 + 1<<24 + 8},
+		{"four-byte", []byte{0x38, 0, 0, 0, 8}, 8},
+		{"four-byte ignored prefix", []byte{0x3f, 0, 0, 0, 8}, 8},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, newDecoder := range []func([]byte) DataDecoder{NewDataDecoder, NewDataDecoderWithoutStringCache} {
+				data := make([]byte, tt.target+4)
+				copy(data, tt.pointer)
+				copy(data[len(tt.pointer):], []byte{0xa1, 7})
+				copy(data[tt.target:], []byte{0x43, 'a', 'b', 'c'})
+				d := newDecoder(data)
+				cursor := NewDecoder(d, 0).Cursor()
+				for range 4 {
+					value, next, err := cursor.ReadStringMaxSize(3)
+					require.NoError(t, err)
+					require.Equal(t, "abc", value)
+					number, _, err := next.ReadUint()
+					require.NoError(t, err)
+					require.Equal(t, uint64(7), number)
+					value, _, err = cursor.ReadStringMaxSize(2)
+					requireMaxSizeError(t, err)
+					require.Empty(t, value)
+				}
+				// The fast path must fall back to full validation on a short target.
+				short := NewDecoder(newDecoder(data[:len(data)-1]), 0).Cursor()
+				_, _, err := short.ReadStringMaxSize(3)
+				requireMalformedDatabaseError(t, err)
+				require.NotContains(t, err.Error(), "exceeds maxsize")
+			}
+		})
+	}
+	for _, data := range [][]byte{
+		{0x28, 0}, {0x30, 0, 0}, {0x38, 0, 0, 0}, // Truncated pointer payloads.
+		{0x28, 0, 0},                      // Missing target.
+		{0x38, 0, 0, 0, 5, 0x20, 7, 0x40}, // Pointer to pointer.
+	} {
+		_, _, err := NewDecoder(NewDataDecoder(data), 0).Cursor().ReadStringMaxSize(3)
+		requireMalformedDatabaseError(t, err)
+	}
+	wrong := NewDecoder(NewDataDecoder([]byte{0x38, 0, 0, 0, 5, 0xa1, 7}), 0).Cursor()
+	_, _, err := wrong.ReadStringMaxSize(3)
+	var unexpected UnexpectedKindError
+	require.ErrorAs(t, err, &unexpected)
+
+	extended := append([]byte{0x38, 0, 0, 0, 5}, stringLeaf(29)...)
+	cursor := NewDecoder(NewDataDecoder(extended), 0).Cursor()
+	value, next, err := cursor.ReadStringMaxSize(29)
+	require.NoError(t, err)
+	require.Len(t, value, 29)
+	require.Equal(t, uint(5), next.offset)
+	_, _, err = cursor.ReadStringMaxSize(28)
+	requireMaxSizeError(t, err)
+}
+
 func requireMaxSizeError(t *testing.T, err error) {
 	t.Helper()
 	var invalidDatabase mmdberrors.InvalidDatabaseError

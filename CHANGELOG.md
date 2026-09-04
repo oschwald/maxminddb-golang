@@ -13,6 +13,7 @@
 - Made generated decoders reject duplicate recognized map keys.
 - Improved performance:
   - Reduced 28-bit search-tree lookup overhead with single-word node reads.
+  - Extended bounded cursor string fast paths to wider data pointers.
 
 ## 2.5.0 - 2026-08-08
 
