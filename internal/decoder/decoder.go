@@ -346,23 +346,27 @@ func (d *Decoder) PeekKind() (Kind, error) {
 // that multiple pointers to the same data return the same offset, which
 // is important for caching purposes.
 func (d *Decoder) Offset() uint {
+	return d.d.resolvedValueOffset(d.offset)
+}
+
+func (d *DataDecoder) resolvedValueOffset(offset uint) uint {
 	// This intentionally does not use resolveCtrlData: Offset must return the
 	// resolved value's control-byte offset, not the post-control-byte payload
 	// offset used by read methods.
-	kindNum, size, ctrlEndOffset, err := d.d.decodeCtrlData(d.offset)
+	kindNum, size, ctrlEndOffset, err := d.decodeCtrlData(offset)
 	if err != nil || kindNum != KindPointer {
-		return d.offset
+		return offset
 	}
 
-	pointer, _, err := d.d.decodePointer(size, ctrlEndOffset)
+	pointer, _, err := d.decodePointer(size, ctrlEndOffset)
 	if err != nil {
 		// Return original offset to avoid breaking the public API.
 		// The caller will encounter the same error when they try to read.
-		return d.offset
+		return offset
 	}
-	kindNum, _, _, err = d.d.decodeCtrlData(pointer)
+	kindNum, _, _, err = d.decodeCtrlData(pointer)
 	if err != nil || kindNum == KindPointer {
-		return d.offset
+		return offset
 	}
 	return pointer
 }

@@ -7,6 +7,8 @@ import (
 )
 
 func TestZeroContainerCursorsAreRejected(t *testing.T) {
+	require.Zero(t, Cursor{}.Offset())
+
 	t.Run("map", func(t *testing.T) {
 		var entries MapCursor
 		require.Zero(t, entries.Size())

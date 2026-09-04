@@ -649,19 +649,26 @@ func TestOffsetReturnsValueStart(t *testing.T) {
 			offset:         0,
 			expectedOffset: 0,
 		},
+		"truncated pointer": {
+			buffer:         []byte{0x20},
+			offset:         0,
+			expectedOffset: 0,
+		},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			dd := NewDataDecoder(tt.buffer)
-			offset := NewDecoder(dd, tt.offset).Offset()
+			decoder := NewDecoder(dd, tt.offset)
+			offset := decoder.Offset()
 
 			require.Equal(t, tt.expectedOffset, offset)
+			require.Equal(t, tt.expectedOffset, decoder.Cursor().Offset())
 			if tt.expectedValue == "" {
 				return
 			}
 
-			decoder := NewDecoder(dd, offset)
+			decoder = NewDecoder(dd, offset)
 			value, err := decoder.ReadString()
 			require.NoError(t, err)
 			require.Equal(t, tt.expectedValue, value)

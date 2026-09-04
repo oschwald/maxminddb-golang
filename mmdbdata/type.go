@@ -56,6 +56,7 @@ type Decoder = decoder.Decoder
 //
 // Cursor provides these operations:
 //
+//	func (Cursor) Offset() uint
 //	func (Cursor) Kind() (Kind, error)
 //	func (Cursor) Skip() (Cursor, error)
 //	func (Cursor) ReadBool() (bool, Cursor, error)
@@ -75,6 +76,8 @@ type Decoder = decoder.Decoder
 //	func (Cursor) Unmarshal(Unmarshaler) (Cursor, error)
 //	func (Cursor) UnmarshalCursor(CursorUnmarshaler) (Cursor, error)
 //
+// Offset returns the resolved value's control-byte offset. It follows one
+// pointer so callers can use the result to cache values within one database.
 // Kind resolves a valid pointer and reports its target kind without consuming
 // the cursor.
 //

@@ -81,6 +81,16 @@ func (d *Decoder) Advance(next Cursor) error {
 	return nil
 }
 
+// Offset returns the current value's control-byte offset. It resolves one
+// pointer so that cursors pointing to the same value return the same offset.
+// It returns the cursor's original offset if the pointer cannot be resolved.
+func (c Cursor) Offset() uint {
+	if c.decoder == nil {
+		return c.offset
+	}
+	return c.decoder.resolvedValueOffset(c.offset)
+}
+
 // Kind returns the resolved kind at the cursor without consuming it.
 func (c Cursor) Kind() (Kind, error) {
 	if err := c.validate(); err != nil {
