@@ -21,8 +21,9 @@ type Result struct {
 // Decode unmarshals the data from the data section into the value pointed to
 // by v. If v is nil or not a pointer, an error is returned. If the data in
 // the database record cannot be stored in v because of type differences, an
-// UnmarshalTypeError is returned. If the database is invalid or otherwise
-// cannot be read, an InvalidDatabaseError is returned.
+// UnmarshalTypeError is returned. An InvalidDatabaseError is returned when the
+// data is malformed or rejected by structural, resource, or schema validation,
+// including maxsize checks.
 //
 // An error will also be returned if there was an error during the
 // Reader.Lookup call.

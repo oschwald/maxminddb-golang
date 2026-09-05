@@ -434,11 +434,11 @@ func TestPayloadExpansionBoundary(t *testing.T) {
 
 	t.Run("concrete duplicate field", func(t *testing.T) {
 		type record struct {
-			Payload []byte `maxminddb:"payload"`
+			Payload string `maxminddb:"payload,maxsize:4096"`
 		}
 
 		makeBuffer := func(count int) ([]byte, uint) {
-			buf := bytesLeaf(leafSize)
+			buf := stringLeaf(leafSize)
 			root := uint(len(buf))
 			buf = append(buf, mapHeader(count)...)
 			for range count {
@@ -568,6 +568,36 @@ func TestConcretePayloadCollectionIsExpansionBounded(t *testing.T) {
 		var out []record
 		requireExpansionLimit(t, decodeAt(buf, uint(root), &out))
 	})
+}
+
+func TestBoundedStringReservesPayloadBeforeMaterialization(t *testing.T) {
+	type record struct {
+		Padding string `maxminddb:"padding"`
+		Limited string `maxminddb:"limited,maxsize:3"`
+	}
+
+	data := make([]byte, 1, decodePayloadBudgetBytes+64)
+	data[0] = 0xe2
+	data = append(data, encodedString("padding")...)
+	data = append(data, stringLeaf(decodePayloadBudgetBytes-2)...)
+	data = append(data, encodedString("limited")...)
+	limitedOffset := uint(len(data))
+	data = append(data, encodedString("abc")...)
+
+	decoder := New(data)
+	got := record{Limited: "keep"}
+	requireExpansionLimit(t, decoder.Decode(0, &got))
+	require.Equal(t, "keep", got.Limited)
+
+	// A cold string read records its control-record offset as a cache miss.
+	// The aggregate payload check must reject this value before that read.
+	primary := limitedOffset & (stringCacheSlots - 1)
+	alternate := stringCacheAlternateIndex(limitedOffset, primary)
+	require.NotEqual(
+		t,
+		uint64(limitedOffset)+1,
+		decoder.stringCache.recentMisses[alternate].Load(),
+	)
 }
 
 func TestCitySubdivisionsRejectDeclaredSizeBeforeAllocating(t *testing.T) {

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	"github.com/oschwald/maxminddb-golang/v2/internal/maxminddbtag"
 	"github.com/oschwald/maxminddb-golang/v2/internal/mmdberrors"
 )
 
@@ -403,6 +404,7 @@ func wrapRootDecodeError(err error, offset uint) error {
 	return mmdberrors.WrapWithContext(err, offset, nil)
 }
 
+//nolint:gocyclo // Keep path navigation and final depth validation together.
 func (d *ReflectionDecoder) decodePath(
 	offset uint,
 	path []any,
@@ -1739,8 +1741,21 @@ func (d *ReflectionDecoder) decodeStructWithFields(
 			continue
 		}
 
-		// Use optimized field access with addressable value wrapper
-		fieldValue := result.fieldByIndex(fieldInfo.index0, fieldInfo.index, true)
+		// Defer uncommon embedded-pointer initialization until the field is
+		// actually needed. For maxsize fields, validate before that allocation.
+		fieldValue := result.fieldByIndex(fieldInfo.index0, fieldInfo.index, false)
+		if !fieldValue.IsValid() {
+			if fieldInfo.dispatch == dispatchMaxSize {
+				err = (Cursor{
+					decoder: &d.DataDecoder,
+					offset:  offset,
+				}).CheckMaxSize(fieldInfo.maxSizeKinds, fieldInfo.maxSize)
+				if err != nil {
+					return 0, d.wrapErrorWithMapKey(err, string(key))
+				}
+			}
+			fieldValue = result.fieldByIndex(fieldInfo.index0, fieldInfo.index, true)
+		}
 		if !fieldValue.IsValid() {
 			// Field access failed, skip this field
 			if d.structFieldValueIsInlineContainer(offset) {
@@ -1795,6 +1810,15 @@ func (d *ReflectionDecoder) decodeStructWithFields(
 			if !ok {
 				offset, err = d.decodeValueSkipUnmarshaler(offset, fieldValue, depth)
 			}
+		case dispatchMaxSize:
+			offset, err = d.decodeValueMaxSize(
+				offset,
+				fieldValue,
+				depth,
+				fieldInfo.maxSizeKinds,
+				fieldInfo.maxSize,
+				fieldInfo.maxSizeCustom,
+			)
 		default: // dispatchPlain
 			offset, err = d.decodeValueSkipUnmarshaler(offset, fieldValue, depth)
 		}
@@ -1822,6 +1846,94 @@ func (d *ReflectionDecoder) skipStructFields(size, offset uint) (uint, error) {
 		}
 	}
 	return offset, nil
+}
+
+//nolint:nestif // Fast string decoding and generic fallback deliberately share this dispatch.
+func (d *ReflectionDecoder) decodeValueMaxSize(
+	offset uint,
+	result addressableValue,
+	depth int,
+	expected KindSet,
+	maximum uint64,
+	customUnmarshaler bool,
+) (uint, error) {
+	if result.Kind() == reflect.Pointer ||
+		(result.CanAddr() && customUnmarshaler) {
+		return d.checkMaxSizeThenDecode(offset, result, depth, expected, maximum)
+	}
+	if depth > maximumDataStructureDepth {
+		return 0, mmdberrors.NewInvalidDatabaseError(
+			"exceeded maximum data structure depth; database is likely corrupt",
+		)
+	}
+	if result.Kind() == reflect.String && expected == NewKindSet(KindString) {
+		cursor := Cursor{
+			decoder: &d.DataDecoder,
+			offset:  offset,
+		}
+		if d.budgetRemaining != 0 && uint64(d.payloadRemaining) < maximum {
+			// Preserve maxsize error precedence when both the schema and
+			// operation limits reject the value. These checks only run after
+			// earlier payloads have brought the remaining allowance below the
+			// field limit, leaving the ordinary bounded-string path unchanged.
+			if err := cursor.CheckMaxSize(expected, maximum); err != nil {
+				return 0, err
+			}
+			if err := cursor.CheckMaxSize(expected, uint64(d.payloadRemaining)); err != nil {
+				return 0, errDecodedRecordTooLarge
+			}
+		}
+		value, next, err := cursor.ReadStringMaxSize(maximum)
+		if err != nil {
+			var mismatch UnexpectedKindError
+			if errors.As(err, &mismatch) {
+				return d.decodeValueSkipUnmarshaler(offset, result, depth)
+			}
+			return 0, err
+		}
+		if d.budgetRemaining != 0 {
+			size := uint(len(value))
+			if size > uint(d.payloadRemaining) {
+				return 0, errDecodedRecordTooLarge
+			}
+			d.payloadRemaining -= uint32(size)
+		}
+		result.SetString(value)
+		return next.offset, nil
+	}
+	typeNum, size, dataOffset, err := d.decodeCtrlData(offset)
+	if err != nil {
+		return 0, err
+	}
+	if typeNum == KindPointer {
+		return d.checkMaxSizeThenDecode(offset, result, depth, expected, maximum)
+	}
+	if expected.Contains(typeNum) && uint64(size) > maximum {
+		return 0, d.wrapError(mmdberrors.NewInvalidDatabaseError(
+			"%s size %d exceeds maxsize %d",
+			typeNum,
+			size,
+			maximum,
+		), offset)
+	}
+	return d.decodeFromType(typeNum, size, dataOffset, result, depth+1)
+}
+
+func (d *ReflectionDecoder) checkMaxSizeThenDecode(
+	offset uint,
+	result addressableValue,
+	depth int,
+	expected KindSet,
+	maximum uint64,
+) (uint, error) {
+	err := (Cursor{
+		decoder: &d.DataDecoder,
+		offset:  offset,
+	}).CheckMaxSize(expected, maximum)
+	if err != nil {
+		return 0, err
+	}
+	return d.decodeValue(offset, result, depth)
 }
 
 // tryDecodeStructWithFields returns the input offset when ok is false so its
@@ -2037,6 +2149,10 @@ const (
 	// dispatchPointerStruct: field is a pointer to a nested struct whose
 	// field set is precomputed and whose pointer chain may need allocation.
 	dispatchPointerStruct
+	// dispatchMaxSize checks a field's schema limit before invoking the general
+	// decoder. It is kept out of every unconstrained dispatch path so maxsize
+	// support adds no per-field branch to existing schemas.
+	dispatchMaxSize
 	// dispatchPlain: fallback for fields not selected for custom-unmarshaler,
 	// primitive fast, or cached nested-struct dispatch. Uses
 	// decodeValueSkipUnmarshaler.
@@ -2050,8 +2166,15 @@ type fieldInfo struct {
 	index        []int
 	index0       int
 	depth        int
-	hasTag       bool
+	maxSize      uint64
+	maxSizeKinds KindSet
 	dispatch     fieldDispatch
+	hasTag       bool
+	// maxSizeCustom caches whether maxsize must precede custom unmarshaler
+	// dispatch. Computing this from reflect.Type consults a sync.Map, so doing
+	// it while decoding every tagged field would turn a schema property into a
+	// recurring runtime cost.
+	maxSizeCustom bool
 }
 
 type fieldsType struct {
@@ -2084,7 +2207,9 @@ func fieldKeyFingerprint(key []byte) uint64 {
 	// Length plus the first and last two bytes distinguish ordinary MMDB
 	// field names cheaply. Collisions fall back to the full string map.
 	n := len(key)
-	fingerprint := uint64(n) << 32
+	// Add one to the length so the explicitly supported empty name does not
+	// collide with the zero value used to mark an unoccupied table entry.
+	fingerprint := uint64(n+1) << 32
 	if n > 0 {
 		fingerprint |= uint64(key[0]) << 24
 		fingerprint |= uint64(key[n-1]) << 16
@@ -2132,10 +2257,13 @@ func validateTag(field reflect.StructField, tag string) error {
 		return nil
 	}
 
-	if !utf8.ValidString(tag) {
-		return invalidMaxMindDBTagError(field.Name)
+	_, err := maxminddbtag.Parse(tag)
+	if err != nil {
+		if !utf8.ValidString(tag) {
+			return invalidMaxMindDBTagError(field.Name)
+		}
+		return fmt.Errorf("invalid maxminddb struct tag on field %q: %w", field.Name, err)
 	}
-
 	return nil
 }
 
@@ -2239,6 +2367,7 @@ func makeStructFields(rootType reflect.Type) *fieldsType {
 	return makeStructFieldsWithStack(rootType, map[reflect.Type]bool{rootType: true})
 }
 
+//nolint:gocyclo // Field discovery keeps validation and precedence rules in one traversal.
 func makeStructFieldsWithStack(
 	rootType reflect.Type,
 	stack map[reflect.Type]bool,
@@ -2272,19 +2401,41 @@ func makeStructFieldsWithStack(
 			// Parse maxminddb tag
 			fieldName := field.Name
 			hasTag := false
+			var tagOptions maxminddbtag.Options
 			if validationErr == nil {
 				validationErr = validateRawMaxMindDBTagValue(field, string(field.Tag))
 			}
-			if tag := field.Tag.Get("maxminddb"); tag != "" {
+			if tag, ok := field.Tag.Lookup("maxminddb"); ok {
 				if validationErr == nil {
 					validationErr = validateTag(field, tag)
 				}
+				var err error
+				tagOptions, err = maxminddbtag.Parse(tag)
+				if validationErr == nil && err != nil {
+					validationErr = fmt.Errorf(
+						"invalid maxminddb struct tag on field %q: %w",
+						field.Name,
+						err,
+					)
+				}
 
-				if tag == "-" {
+				if tagOptions.Ignored {
 					continue // Skip ignored fields
 				}
-				fieldName = tag
-				hasTag = true
+				if tagOptions.HasName {
+					fieldName = tagOptions.Name
+					hasTag = true
+				}
+			}
+
+			// Validate maxsize before embedded fields can be flattened away.
+			if tagOptions.HasMaxSize && validationErr == nil {
+				if _, supported := maxSizeKindsForType(field.Type); !supported {
+					validationErr = fmt.Errorf(
+						"invalid maxminddb struct tag on field %q: maxsize is only supported for maps, slices, strings, and bytes",
+						field.Name,
+					)
+				}
 			}
 
 			// Handle embedded structs and embedded pointers to structs
@@ -2302,8 +2453,15 @@ func makeStructFieldsWithStack(
 			unwrappedFieldType := unwrapPtrType(fieldType)
 			var dispatch fieldDispatch
 			var structFields *fieldsType
+			maxSizeCustom := mayImplementUnmarshaler(unwrappedFieldType)
+			maxSizeKinds, maxSizeSupported := maxSizeKindsForField(
+				fieldType,
+				maxSizeCustom,
+			)
 			switch {
-			case mayImplementUnmarshaler(unwrappedFieldType) ||
+			case tagOptions.HasMaxSize && maxSizeSupported:
+				dispatch = dispatchMaxSize
+			case maxSizeCustom ||
 				unwrappedFieldType.Kind() == reflect.Interface:
 				dispatch = dispatchUnmarshaler
 			case isFastDecodeType(fieldType):
@@ -2322,13 +2480,16 @@ func makeStructFieldsWithStack(
 				}
 			}
 			allFields = append(allFields, fieldInfo{
-				index:        fieldIndex, // Will be reindexed later for optimization
-				name:         fieldName,
-				hasTag:       hasTag,
-				depth:        entry.depth,
-				fieldType:    fieldType,
-				structFields: structFields,
-				dispatch:     dispatch,
+				index:         fieldIndex, // Will be reindexed later for optimization
+				name:          fieldName,
+				hasTag:        hasTag,
+				depth:         entry.depth,
+				fieldType:     fieldType,
+				structFields:  structFields,
+				dispatch:      dispatch,
+				maxSize:       tagOptions.MaxSize,
+				maxSizeKinds:  maxSizeKinds,
+				maxSizeCustom: maxSizeCustom,
 			})
 		}
 	}
@@ -2495,6 +2656,34 @@ func unwrapPtrType(t reflect.Type) reflect.Type {
 		t = t.Elem()
 	}
 	return t
+}
+
+func maxSizeKindsForType(t reflect.Type) (KindSet, bool) {
+	t = unwrapPtrType(t)
+	switch t.Kind() {
+	case reflect.Map:
+		return NewKindSet(KindMap), true
+	case reflect.Slice:
+		if t == sliceType {
+			return NewKindSet(KindBytes, KindSlice), true
+		}
+		return NewKindSet(KindSlice), true
+	case reflect.String:
+		return NewKindSet(KindString), true
+	default:
+		return 0, false
+	}
+}
+
+func maxSizeKindsForField(t reflect.Type, customUnmarshaler bool) (KindSet, bool) {
+	kinds, supported := maxSizeKindsForType(t)
+	if supported && customUnmarshaler {
+		// A custom callback may accept any MMDB encoding regardless of its Go
+		// type's underlying shape. Apply the schema limit to every size-bearing
+		// kind before transferring control to it.
+		return supportedMaxSizeKinds, true
+	}
+	return kinds, supported
 }
 
 func (d *ReflectionDecoder) decodeAny(

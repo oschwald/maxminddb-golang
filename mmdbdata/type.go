@@ -67,6 +67,7 @@ type Decoder = decoder.Decoder
 //	func (Cursor) Skip() (Cursor, error)
 //	func (Cursor) ReadBool() (bool, Cursor, error)
 //	func (Cursor) ReadString() (string, Cursor, error)
+//	func (Cursor) ReadStringMaxSize(uint64) (string, Cursor, error)
 //	func (Cursor) ReadBytes() ([]byte, Cursor, error)
 //	func (Cursor) ReadFloat32() (float32, Cursor, error)
 //	func (Cursor) ReadFloat64() (float64, Cursor, error)
@@ -78,6 +79,8 @@ type Decoder = decoder.Decoder
 //	func (Cursor) Map() (MapCursor, error)
 //	func (Cursor) MapReader() (MapReader, error)
 //	func (Cursor) Slice() (SliceCursor, error)
+//	func (Cursor) SliceMaxSize(uint64) (SliceCursor, error)
+//	func (Cursor) CheckMaxSize(expected KindSet, maximum uint64) error
 //	func (Cursor) ReadMapKey() ([]byte, Cursor, error)
 //	func (Cursor) Unmarshal(Unmarshaler) (Cursor, error)
 //	func (Cursor) UnmarshalCursor(CursorUnmarshaler) (Cursor, error)
@@ -92,9 +95,15 @@ type Decoder = decoder.Decoder
 //
 // ReadBytes and ReadMapKey return slices that alias the decoder's input buffer.
 // They must not be modified and should be copied before being retained. Other
-// scalar results do not alias the input. Unmarshal and UnmarshalCursor reject
-// nil implementations. UnmarshalCursor validates its callback's returned
-// successor; legacy Unmarshal derives a successor by rescanning the value.
+// scalar results do not alias the input. ReadStringMaxSize and SliceMaxSize
+// combine a size check with their corresponding operation. CheckMaxSize
+// supports maps, slices, strings, and bytes; expected must include every kind
+// accepted by the immediately following decode. Kinds not in expected are left
+// unchecked so the subsequent typed read can report its usual mismatch. For
+// example, a []byte decoder that accepts both Bytes and Slice must include both.
+// Unmarshal and UnmarshalCursor reject nil implementations.
+// UnmarshalCursor validates its callback's returned successor; legacy
+// Unmarshal derives a successor by rescanning the value.
 type Cursor = decoder.Cursor
 
 // MapReader provides counted map traversal. Its zero value is invalid.

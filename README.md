@@ -138,11 +138,26 @@ type City struct {
 			German  string `maxminddb:"de"`
 		} `maxminddb:"names"`
 	} `maxminddb:"country"`
+	Subdivisions []struct {
+		ISOCode string `maxminddb:"iso_code"`
+	} `maxminddb:"subdivisions,maxsize:32"`
 }
 
 var city City
 err = db.Lookup(ip).Decode(&city)
 ```
+
+The `maxsize:N` tag option rejects a matching MMDB map or array with more than
+`N` entries, or a matching string or byte value with more than `N` bytes. An
+MMDB array decoded into `[]byte` is covered as well. The check happens before
+the matching field is allocated or mutated and is supported by reflection
+decoding. Tag options use the `encoding/json/v2` comma and
+colon grammar, for example `maxminddb:"subdivisions,maxsize:32"`. Because a
+comma delimits options, quote a literal field name containing a comma with the
+same grammar, for example `maxminddb:"'city,name'"`. For a supported custom
+field type, `maxsize` checks every size-bearing MMDB kind (map, array, string,
+and bytes) before invoking the unmarshaler because the encodings accepted by a
+callback cannot be inferred from its Go type.
 
 ### High-Performance Custom Unmarshaling
 
