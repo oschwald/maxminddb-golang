@@ -5,6 +5,8 @@
 - Fixed a denial-of-service issue where a crafted database could use repeated
   pointers to cause excessive CPU and memory use during reflection decoding.
   The decoder now limits decoding work and decoded payload size.
+- Made search-tree verification visit shared subtrees only once, bounding work
+  while still rejecting cycles and overlong paths.
 
 ## 2.5.0 - 2026-08-08
 
