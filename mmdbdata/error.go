@@ -6,6 +6,12 @@ import (
 	"github.com/oschwald/maxminddb-golang/v2/internal/mmdberrors"
 )
 
+// InvalidDatabaseError is returned when database data is malformed or is
+// rejected by decoder structural, resource, or schema validation. Schema
+// policy failures such as maxsize use this category even when the rest of
+// the database is otherwise readable.
+type InvalidDatabaseError = mmdberrors.InvalidDatabaseError
+
 // NewUnmarshalTypeError reports that value cannot be represented by T. It is
 // intended for generated and handwritten decoders that perform conversions.
 func NewUnmarshalTypeError[T any](value any) error {

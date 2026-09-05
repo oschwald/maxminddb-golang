@@ -96,6 +96,28 @@ Non-embedded fields tagged `maxminddb:"-"` are ignored. Fields without a tag,
 or with an explicit empty tag, use their Go field name, matching reflection
 decoding.
 
+Tag options follow the comma-separated `encoding/json/v2` grammar. The
+`maxsize:N` option can be applied to maps, MMDB arrays decoded into slices,
+strings, and bytes:
+
+```go
+type City struct {
+	Subdivisions []Subdivision `maxminddb:"subdivisions,maxsize:32"`
+}
+```
+
+It rejects a map or array with more than `N` entries, or a string or byte value
+with more than `N` bytes, before allocating or mutating the matching field. A
+`[]byte` field accepts both the MMDB Bytes and array encodings, and the same
+limit covers both. Reflection decoding enforces the option with the same
+semantics. Because a comma delimits options, quote a literal field name
+containing a comma, for example `maxminddb:"'city,name'"`. For a supported
+custom field type, `maxsize` checks every size-bearing MMDB kind (map, array,
+string, and bytes) before invoking the unmarshaler because the encodings
+accepted by a callback cannot be inferred from its Go type. Unknown tag options
+are ignored for forward compatibility. Spelling and case variants that
+normalize to `maxsize`, such as `max_size` and `MAXSIZE`, are rejected.
+
 The generator rejects embedded fields, including those tagged `maxminddb:"-"`,
 generic structs, recursive type graphs, interfaces, unsupported map keys,
 arrays, complex numbers, channels, functions, unsafe pointers, struct types
@@ -115,6 +137,15 @@ must retain the old contents, copy its contents into a newly allocated slice
 destination from the shared backing array (for example, assign the destination
 `nil`) before decoding. Clearing or reslicing the destination does not detach
 its backing array and does not protect aliases.
+
+Generated and handwritten unmarshalers control their own traversal and do not
+inherit reflection decoding's aggregate per-record work and payload budgets.
+Generated code enforces each declared `maxsize` constraint, but schema authors
+must place constraints on fields that could otherwise amplify work. Unknown keys are skipped without following
+pointer targets. Handwritten implementations must also share an aggregate
+budget across nested calls when they traverse untrusted data. Calling
+`Reader.Verify` before decoding provides a complete-database validation
+boundary for untrusted database files.
 
 ## Ownership
 

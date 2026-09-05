@@ -150,8 +150,8 @@ err = db.Lookup(ip).Decode(&city)
 The `maxsize:N` tag option rejects a matching MMDB map or array with more than
 `N` entries, or a matching string or byte value with more than `N` bytes. An
 MMDB array decoded into `[]byte` is covered as well. The check happens before
-the matching field is allocated or mutated and is supported by reflection
-decoding. Tag options use the `encoding/json/v2` comma and
+the matching field is allocated or mutated and is supported by both reflection
+decoding and `maxminddb-gen`. Tag options use the `encoding/json/v2` comma and
 colon grammar, for example `maxminddb:"subdivisions,maxsize:32"`. Because a
 comma delimits options, quote a literal field name containing a comma with the
 same grammar, for example `maxminddb:"'city,name'"`. For a supported custom

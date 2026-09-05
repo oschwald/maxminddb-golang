@@ -17,6 +17,8 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/tools/go/packages"
+
+	"github.com/oschwald/maxminddb-golang/v2/internal/maxminddbtag"
 )
 
 const (
@@ -53,9 +55,12 @@ type structInfo struct {
 }
 
 type fieldInfo struct {
-	plan *decodePlan
-	name string
-	goID string
+	plan        *decodePlan
+	name        string
+	goID        string
+	maxSize     uint64
+	maxSizeKind decodeKind
+	hasMaxSize  bool
 }
 
 type methodKey struct {
@@ -920,12 +925,12 @@ func (g *generator) analyzeStruct(named *types.Named) error {
 		if err != nil {
 			return g.positionError(field.Pos(), "field %s: %v", field.Name(), err)
 		}
-		if tag == "-" {
+		if tag.Ignored {
 			continue
 		}
 		name := field.Name()
-		if tagged {
-			name = tag
+		if tagged && tag.HasName {
+			name = tag.Name
 		}
 		if previous, exists := seenNames[name]; exists {
 			return g.positionError(
@@ -941,9 +946,24 @@ func (g *generator) analyzeStruct(named *types.Named) error {
 		if err != nil {
 			return g.positionError(field.Pos(), "field %s: %v", field.Name(), err)
 		}
+		maxSizeKind, maxSizeSupported := maxSizeKindForPlan(plan)
+		if tag.HasMaxSize && !maxSizeSupported {
+			return g.positionError(
+				field.Pos(),
+				"field %s: maxsize is only supported for maps, slices, strings, and bytes",
+				field.Name(),
+			)
+		}
 		info.fields = append(
 			info.fields,
-			fieldInfo{plan: plan, name: name, goID: field.Name()},
+			fieldInfo{
+				plan:        plan,
+				name:        name,
+				goID:        field.Name(),
+				maxSize:     tag.MaxSize,
+				maxSizeKind: maxSizeKind,
+				hasMaxSize:  tag.HasMaxSize,
+			},
 		)
 	}
 	g.structs[named] = info
@@ -1047,7 +1067,7 @@ func supportedBasic(basic *types.Basic) error {
 	}
 }
 
-func maxminddbTag(raw string) (string, bool, error) {
+func maxminddbTag(raw string) (maxminddbtag.Options, bool, error) {
 	for raw != "" {
 		i := 0
 		for i < len(raw) && raw[i] == ' ' {
@@ -1064,7 +1084,9 @@ func maxminddbTag(raw string) (string, bool, error) {
 		}
 		if i == 0 || i+1 >= len(raw) || raw[i] != ':' || raw[i+1] != '"' {
 			if raw[:i] == maxminddbTagKey {
-				return "", false, errors.New("malformed maxminddb struct tag")
+				return maxminddbtag.Options{}, false, errors.New(
+					"malformed maxminddb struct tag",
+				)
 			}
 			next := strings.IndexByte(raw, ' ')
 			if next < 0 {
@@ -1085,7 +1107,9 @@ func maxminddbTag(raw string) (string, bool, error) {
 		}
 		if i >= len(raw) {
 			if name == maxminddbTagKey {
-				return "", false, errors.New("unterminated maxminddb struct tag")
+				return maxminddbtag.Options{}, false, errors.New(
+					"unterminated maxminddb struct tag",
+				)
 			}
 			break
 		}
@@ -1095,21 +1119,82 @@ func maxminddbTag(raw string) (string, bool, error) {
 			continue
 		}
 		if !utf8.ValidString(quotedValue) {
-			return "", false, errors.New("invalid UTF-8 maxminddb struct tag")
+			return maxminddbtag.Options{}, false, errors.New(
+				"invalid UTF-8 maxminddb struct tag",
+			)
 		}
 		value, err := strconv.Unquote(quotedValue)
 		if err != nil {
-			return "", false, fmt.Errorf("invalid maxminddb struct tag: %w", err)
+			return maxminddbtag.Options{}, false, fmt.Errorf(
+				"invalid maxminddb struct tag: %w",
+				err,
+			)
 		}
 		if !utf8.ValidString(value) {
-			return "", false, errors.New("invalid UTF-8 maxminddb struct tag")
+			return maxminddbtag.Options{}, false, errors.New(
+				"invalid UTF-8 maxminddb struct tag",
+			)
 		}
-		if value == "" {
-			return "", false, nil
+		options, err := maxminddbtag.Parse(value)
+		if err != nil {
+			return maxminddbtag.Options{}, false, fmt.Errorf(
+				"invalid maxminddb struct tag: %w",
+				err,
+			)
 		}
-		return value, true, nil
+		return options, true, nil
 	}
-	return "", false, nil
+	return maxminddbtag.Options{}, false, nil
+}
+
+func maxSizeKindForPlan(plan *decodePlan) (decodeKind, bool) {
+	for plan.kind == decodePointer {
+		plan = plan.elem
+	}
+	switch plan.kind {
+	case decodeBytes, decodeSlice, decodeMap:
+		return plan.kind, true
+	case decodeBasic:
+		if plan.basic.Kind() == types.String {
+			return decodeBasic, true
+		}
+	case decodeCursorUnmarshaler, decodeUnmarshaler:
+		return maxSizeKindForType(plan.typ)
+	default:
+	}
+	return 0, false
+}
+
+func isCustomUnmarshalerPlan(plan *decodePlan) bool {
+	for plan.kind == decodePointer {
+		plan = plan.elem
+	}
+	return plan.kind == decodeCursorUnmarshaler || plan.kind == decodeUnmarshaler
+}
+
+func maxSizeKindForType(t types.Type) (decodeKind, bool) {
+	for {
+		pointer, ok := t.(*types.Pointer)
+		if !ok {
+			break
+		}
+		t = pointer.Elem()
+	}
+	switch underlying := t.Underlying().(type) {
+	case *types.Basic:
+		if underlying.Kind() == types.String {
+			return decodeBasic, true
+		}
+	case *types.Map:
+		return decodeMap, true
+	case *types.Slice:
+		if types.Identical(t, types.NewSlice(types.Typ[types.Byte])) {
+			return decodeBytes, true
+		}
+		return decodeSlice, true
+	default:
+	}
+	return 0, false
 }
 
 func lookupUnmarshalMethod(named *types.Named) *types.Func {
@@ -1361,7 +1446,29 @@ func (g *generator) emitStruct(out *strings.Builder, info structInfo) {
 	out.WriteString("\t\tswitch string(key) {\n")
 	for _, field := range info.fields {
 		fmt.Fprintf(out, "\t\tcase %s:\n", strconv.Quote(field.name))
-		g.emitDecode(out, field.plan, "valueCursor", "out."+field.goID, "next", "err", 3)
+		if field.hasMaxSize {
+			if !g.emitMaxSizeDecode(
+				out,
+				field.plan,
+				"valueCursor",
+				"out."+field.goID,
+				"next",
+				"err",
+				3,
+				field.maxSize,
+			) {
+				fmt.Fprintf(
+					out,
+					"\t\t\tif err = valueCursor.CheckMaxSize(%s, %d); err == nil {\n",
+					g.maxSizeKindExpression(field.plan, field.maxSizeKind),
+					field.maxSize,
+				)
+				g.emitDecode(out, field.plan, "valueCursor", "out."+field.goID, "next", "err", 4)
+				out.WriteString("\t\t\t}\n")
+			}
+		} else {
+			g.emitDecode(out, field.plan, "valueCursor", "out."+field.goID, "next", "err", 3)
+		}
 		errorFormat := "decoding field " + strings.ReplaceAll(field.name, "%", "%%") + ": %w"
 		fmt.Fprintf(
 			out,
@@ -1380,6 +1487,75 @@ func (g *generator) emitStruct(out *strings.Builder, info structInfo) {
 	)
 	out.WriteString("\t}\n")
 	out.WriteString("\treturn entries.End(next)\n}\n\n")
+}
+
+func (g *generator) emitMaxSizeDecode(
+	out *strings.Builder,
+	plan *decodePlan,
+	cursor, target, next, errName string,
+	indent int,
+	maximum uint64,
+) bool {
+	switch {
+	case plan.kind == decodeBasic && plan.basic.Kind() == types.String:
+		pad := strings.Repeat("\t", indent)
+		id := g.id()
+		fmt.Fprintf(
+			out,
+			"%svar value%d string\n%svalue%d, %s, %s = %s.ReadStringMaxSize(%d)\n",
+			pad,
+			id,
+			pad,
+			id,
+			next,
+			errName,
+			cursor,
+			maximum,
+		)
+		fmt.Fprintf(
+			out,
+			"%sif %s == nil {\n%s\t%s = %s(value%d)\n%s}\n",
+			pad,
+			errName,
+			pad,
+			target,
+			g.typeString(plan.typ),
+			id,
+			pad,
+		)
+		return true
+	case plan.kind == decodeSlice:
+		g.emitSliceMaxSize(out, plan, cursor, target, next, errName, indent, maximum)
+		return true
+	default:
+		return false
+	}
+}
+
+func (g *generator) maxSizeKindExpression(plan *decodePlan, kind decodeKind) string {
+	mmdbdata := g.importNames[mmdbdataPath]
+	if isCustomUnmarshalerPlan(plan) {
+		// A custom callback may consume any MMDB encoding regardless of its Go
+		// type's underlying shape, so constrain every size-bearing input kind.
+		return mmdbdata + ".NewKindSet(" +
+			mmdbdata + ".KindMap, " +
+			mmdbdata + ".KindSlice, " +
+			mmdbdata + ".KindString, " +
+			mmdbdata + ".KindBytes)"
+	}
+	switch kind {
+	case decodeBasic:
+		return mmdbdata + ".NewKindSet(" + mmdbdata + ".KindString)"
+	case decodeBytes:
+		return mmdbdata + ".NewKindSet(" + mmdbdata + ".KindBytes, " +
+			mmdbdata + ".KindSlice)"
+	case decodeSlice:
+		return mmdbdata + ".NewKindSet(" + mmdbdata + ".KindSlice)"
+	case decodeMap:
+		return mmdbdata + ".NewKindSet(" + mmdbdata + ".KindMap)"
+	default:
+		panic("unsupported maxsize decode kind")
+	}
 }
 
 func (g *generator) emitDecode(
@@ -1721,10 +1897,39 @@ func (g *generator) emitSlice(
 	cursor, target, next, errName string,
 	indent int,
 ) {
+	g.emitSliceOpen(out, plan, cursor, target, next, errName, indent, "Slice()")
+}
+
+func (g *generator) emitSliceMaxSize(
+	out *strings.Builder,
+	plan *decodePlan,
+	cursor, target, next, errName string,
+	indent int,
+	maximum uint64,
+) {
+	g.emitSliceOpen(
+		out,
+		plan,
+		cursor,
+		target,
+		next,
+		errName,
+		indent,
+		fmt.Sprintf("SliceMaxSize(%d)", maximum),
+	)
+}
+
+func (g *generator) emitSliceOpen(
+	out *strings.Builder,
+	plan *decodePlan,
+	cursor, target, next, errName string,
+	indent int,
+	openMethod string,
+) {
 	pad := strings.Repeat("\t", indent)
 	mmdbdata := g.importNames[mmdbdataPath]
 	id := g.id()
-	fmt.Fprintf(out, "%svalues%d, openErr%d := %s.Slice()\n", pad, id, id, cursor)
+	fmt.Fprintf(out, "%svalues%d, openErr%d := %s.%s\n", pad, id, id, cursor, openMethod)
 	fmt.Fprintf(
 		out,
 		"%sif openErr%d != nil {\n%s\t%s = %s.NormalizeUnmarshalError[%s](openErr%d)\n%s} else {\n",

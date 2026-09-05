@@ -959,6 +959,410 @@ func TestGenerateRejectsMalformedMaxMindDBTags(t *testing.T) {
 	}
 }
 
+func TestGenerateSupportsQuotedCommaFieldName(t *testing.T) {
+	dir := newTestModule(t, `package fixture
+
+type Record struct {
+	Value string `+"`maxminddb:\"'city,name'\"`"+`
+}
+`)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "model_test.go"), []byte(`package fixture
+
+import (
+	"testing"
+
+	"github.com/oschwald/maxminddb-golang/v2/mmdbdata"
+)
+
+func TestQuotedCommaFieldName(t *testing.T) {
+	data := []byte{0xe1, 0x49, 'c', 'i', 't', 'y', ',', 'n', 'a', 'm', 'e', 0x41, 'x'}
+	var got Record
+	_, err := got.UnmarshalMaxMindDBCursor(mmdbdata.NewDecoder(data, 0).Cursor())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Value != "x" {
+		t.Fatalf("Value = %q, want x", got.Value)
+	}
+}
+`), 0o600))
+	t.Chdir(dir)
+	require.NoError(t, run([]string{"model.go"}))
+	generated := string(readTestFile(t, "model_maxminddb.go"))
+	require.Contains(t, generated, `case "city,name":`)
+	testGeneratedPackage(t)
+}
+
+func TestGenerateMaxSizeTags(t *testing.T) {
+	dir := newTestModule(t, `package fixture
+
+import "github.com/oschwald/maxminddb-golang/v2/mmdbdata"
+
+type LimitedString string
+
+var limitedStringCalls int
+
+func (out *LimitedString) UnmarshalMaxMindDBCursor(cursor mmdbdata.Cursor) (mmdbdata.Cursor, error) {
+	limitedStringCalls++
+	value, next, err := cursor.ReadString()
+	*out = LimitedString(value)
+	return next, err
+}
+
+type Record struct {
+	Text        string          `+"`maxminddb:\"text,maxsize:3\"`"+`
+	Bytes       []byte          `+"`maxminddb:\"bytes,maxsize:3\"`"+`
+	Values      []uint16        `+"`maxminddb:\"values,maxsize:3\"`"+`
+	Lookup      map[string]bool `+"`maxminddb:\"lookup,maxsize:2\"`"+`
+	TextPointer *string         `+"`maxminddb:\"text_pointer,maxsize:3\"`"+`
+	Custom      LimitedString   `+"`maxminddb:\"custom,maxsize:3\"`"+`
+}
+`)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "model_test.go"), []byte(`package fixture
+
+import (
+	"errors"
+	"reflect"
+	"testing"
+
+	"github.com/oschwald/maxminddb-golang/v2/mmdbdata"
+)
+
+func appendField(data []byte, key string, value []byte) []byte {
+	data = append(data, byte(0x40+len(key)))
+	data = append(data, key...)
+	return append(data, value...)
+}
+
+func TestMaxSizeExact(t *testing.T) {
+	data := []byte{0xe6}
+	data = appendField(data, "text", []byte{0x43, 'a', 'b', 'c'})
+	data = appendField(data, "bytes", []byte{0x83, 1, 2, 3})
+	data = appendField(data, "values", []byte{0x03, 0x04, 0xa0, 0xa0, 0xa0})
+	data = appendField(data, "lookup", []byte{
+		0xe2,
+		0x41, 'a', 0x00, 0x07,
+		0x41, 'b', 0x01, 0x07,
+	})
+	data = appendField(data, "text_pointer", []byte{0x43, 'd', 'e', 'f'})
+	data = appendField(data, "custom", []byte{0x43, 'g', 'h', 'i'})
+
+	limitedStringCalls = 0
+	var got Record
+	_, err := got.UnmarshalMaxMindDBCursor(mmdbdata.NewDecoder(data, 0).Cursor())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if limitedStringCalls != 1 {
+		t.Fatalf("custom unmarshaler calls = %d, want 1", limitedStringCalls)
+	}
+	wantPointer := "def"
+	want := Record{
+		Text:        "abc",
+		Bytes:       []byte{1, 2, 3},
+		Values:      []uint16{0, 0, 0},
+		Lookup:      map[string]bool{"a": false, "b": true},
+		TextPointer: &wantPointer,
+		Custom:      "ghi",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("decoded record: got %#v, want %#v", got, want)
+	}
+}
+
+func TestMaxSizeRejectsBeforeMutation(t *testing.T) {
+	mapValue := []byte{0xe3}
+	for key := byte('a'); key <= 'c'; key++ {
+		mapValue = append(mapValue, 0x41, key, 0x00, 0x07)
+	}
+	tests := []struct {
+		name  string
+		key   string
+		value []byte
+	}{
+		{name: "string", key: "text", value: []byte{0x44, 't', 'e', 'x', 't'}},
+		{name: "bytes", key: "bytes", value: []byte{0x84, 1, 2, 3, 4}},
+		{name: "bytes array", key: "bytes", value: []byte{0x04, 0x04, 0xa0, 0xa0, 0xa0, 0xa0}},
+		{name: "array", key: "values", value: []byte{0x04, 0x04, 0xa0, 0xa0, 0xa0, 0xa0}},
+		{name: "map", key: "lookup", value: mapValue},
+		{name: "pointer field", key: "text_pointer", value: []byte{0x44, 't', 'e', 'x', 't'}},
+		{name: "custom unmarshaler", key: "custom", value: []byte{0x44, 't', 'e', 'x', 't'}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			keep := "keep"
+			newRecord := func() Record {
+				return Record{
+					Text:        "keep",
+					Bytes:       []byte{9},
+					Values:      []uint16{9},
+					Lookup:      map[string]bool{"keep": true},
+					TextPointer: &keep,
+					Custom:      "keep",
+				}
+			}
+			got := newRecord()
+			want := newRecord()
+			data := appendField([]byte{0xe1}, tt.key, tt.value)
+			limitedStringCalls = 0
+			_, err := got.UnmarshalMaxMindDBCursor(mmdbdata.NewDecoder(data, 0).Cursor())
+			if err == nil {
+				t.Fatal("expected maxsize error")
+			}
+			var invalid mmdbdata.InvalidDatabaseError
+			if !errors.As(err, &invalid) {
+				t.Fatalf("error type = %T, want InvalidDatabaseError: %v", err, err)
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("destination mutated: got %#v, want %#v", got, want)
+			}
+			if tt.key == "custom" && limitedStringCalls != 0 {
+				t.Fatalf("custom unmarshaler called %d times before maxsize rejection", limitedStringCalls)
+			}
+		})
+	}
+}
+`), 0o600))
+	t.Chdir(dir)
+	require.NoError(t, run([]string{"model.go"}))
+	generated := string(readTestFile(t, "model_maxminddb.go"))
+	require.Contains(t, generated, "ReadStringMaxSize(3)")
+	require.Contains(
+		t,
+		generated,
+		"CheckMaxSize(mmdbdata.NewKindSet(mmdbdata.KindBytes, mmdbdata.KindSlice), 3)",
+	)
+	require.Contains(t, generated, "SliceMaxSize(3)")
+	require.Contains(t, generated, "CheckMaxSize(mmdbdata.NewKindSet(mmdbdata.KindMap), 2)")
+	testGeneratedPackage(t)
+}
+
+func TestGenerateMaxSizeCustomContainerTypes(t *testing.T) {
+	//nolint:dupword // The generated fixture intentionally repeats its declared type names.
+	dir := newTestModule(t, `package fixture
+
+import "github.com/oschwald/maxminddb-golang/v2/mmdbdata"
+
+type CursorMap map[string]bool
+
+var cursorMapCalls int
+
+func (out *CursorMap) UnmarshalMaxMindDBCursor(cursor mmdbdata.Cursor) (mmdbdata.Cursor, error) {
+	cursorMapCalls++
+	next, err := cursor.Skip()
+	if err == nil {
+		*out = CursorMap{"decoded": true}
+	}
+	return next, err
+}
+
+type CursorSlice []bool
+
+var cursorSliceCalls int
+
+func (out *CursorSlice) UnmarshalMaxMindDBCursor(cursor mmdbdata.Cursor) (mmdbdata.Cursor, error) {
+	cursorSliceCalls++
+	next, err := cursor.Skip()
+	if err == nil {
+		*out = CursorSlice{true, false}
+	}
+	return next, err
+}
+
+type CursorBytes []byte
+
+var cursorBytesCalls int
+
+func (out *CursorBytes) UnmarshalMaxMindDBCursor(cursor mmdbdata.Cursor) (mmdbdata.Cursor, error) {
+	cursorBytesCalls++
+	value, next, err := cursor.ReadBytes()
+	if err == nil {
+		*out = append((*out)[:0], value...)
+	}
+	return next, err
+}
+
+type LegacyMap map[string]bool
+
+var legacyMapCalls int
+
+func (out *LegacyMap) UnmarshalMaxMindDB(decoder *mmdbdata.Decoder) error {
+	legacyMapCalls++
+	if err := decoder.SkipValue(); err != nil {
+		return err
+	}
+	*out = LegacyMap{"decoded": true}
+	return nil
+}
+
+type Record struct {
+	CursorMap   CursorMap   `+"`maxminddb:\"cursor_map,maxsize:2\"`"+`
+	CursorSlice CursorSlice `+"`maxminddb:\"cursor_slice,maxsize:2\"`"+`
+	CursorBytes CursorBytes `+"`maxminddb:\"cursor_bytes,maxsize:2\"`"+`
+	LegacyMap   LegacyMap   `+"`maxminddb:\"legacy_map,maxsize:2\"`"+`
+}
+`)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "model_test.go"), []byte(`package fixture
+
+import (
+	"errors"
+	"reflect"
+	"testing"
+
+	"github.com/oschwald/maxminddb-golang/v2/mmdbdata"
+)
+
+func appendField(data []byte, key string, value []byte) []byte {
+	data = append(data, byte(0x40+len(key)))
+	data = append(data, key...)
+	return append(data, value...)
+}
+
+func mapValue(size int) []byte {
+	data := []byte{0xe0 | byte(size)}
+	for i := range size {
+		data = append(data, 0x41, byte('a'+i), 0x00, 0x07)
+	}
+	return data
+}
+
+func sliceValue(size int) []byte {
+	data := []byte{byte(size), 0x04}
+	for range size {
+		data = append(data, 0x00, 0x07)
+	}
+	return data
+}
+
+func TestMaxSizeCustomContainersExact(t *testing.T) {
+	data := []byte{0xe4}
+	data = appendField(data, "cursor_map", mapValue(2))
+	data = appendField(data, "cursor_slice", sliceValue(2))
+	data = appendField(data, "cursor_bytes", []byte{0x82, 1, 2})
+	data = appendField(data, "legacy_map", mapValue(2))
+
+	cursorMapCalls = 0
+	cursorSliceCalls = 0
+	cursorBytesCalls = 0
+	legacyMapCalls = 0
+	var got Record
+	_, err := got.UnmarshalMaxMindDBCursor(mmdbdata.NewDecoder(data, 0).Cursor())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := Record{
+		CursorMap:   CursorMap{"decoded": true},
+		CursorSlice: CursorSlice{true, false},
+		CursorBytes: CursorBytes{1, 2},
+		LegacyMap:   LegacyMap{"decoded": true},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("decoded record: got %#v, want %#v", got, want)
+	}
+	if cursorMapCalls != 1 || cursorSliceCalls != 1 || cursorBytesCalls != 1 || legacyMapCalls != 1 {
+		t.Fatalf(
+			"callback calls = (%d, %d, %d, %d), want (1, 1, 1, 1)",
+			cursorMapCalls,
+			cursorSliceCalls,
+			cursorBytesCalls,
+			legacyMapCalls,
+		)
+	}
+}
+
+func TestMaxSizeCustomContainersRejectBeforeCallback(t *testing.T) {
+	tests := []struct {
+		name  string
+		key   string
+		value []byte
+	}{
+		{name: "cursor map", key: "cursor_map", value: mapValue(3)},
+		{name: "cursor slice", key: "cursor_slice", value: sliceValue(3)},
+		{name: "cursor bytes", key: "cursor_bytes", value: []byte{0x83, 1, 2, 3}},
+		{name: "legacy map", key: "legacy_map", value: mapValue(3)},
+	}
+	newRecord := func() Record {
+		return Record{
+			CursorMap:   CursorMap{"keep": true},
+			CursorSlice: CursorSlice{true},
+			CursorBytes: CursorBytes{9},
+			LegacyMap:   LegacyMap{"keep": true},
+		}
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cursorMapCalls = 0
+			cursorSliceCalls = 0
+			cursorBytesCalls = 0
+			legacyMapCalls = 0
+			got := newRecord()
+			want := newRecord()
+			data := appendField([]byte{0xe1}, tt.key, tt.value)
+			_, err := got.UnmarshalMaxMindDBCursor(mmdbdata.NewDecoder(data, 0).Cursor())
+			var invalid mmdbdata.InvalidDatabaseError
+			if !errors.As(err, &invalid) {
+				t.Fatalf("error = %v, want InvalidDatabaseError", err)
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("destination mutated: got %#v, want %#v", got, want)
+			}
+			if cursorMapCalls != 0 || cursorSliceCalls != 0 || cursorBytesCalls != 0 || legacyMapCalls != 0 {
+				t.Fatalf(
+					"callback calls = (%d, %d, %d, %d), want (0, 0, 0, 0)",
+					cursorMapCalls,
+					cursorSliceCalls,
+					cursorBytesCalls,
+					legacyMapCalls,
+				)
+			}
+		})
+	}
+}
+`), 0o600))
+	t.Chdir(dir)
+	require.NoError(t, run([]string{"model.go"}))
+	generated := string(readTestFile(t, "model_maxminddb.go"))
+	require.Contains(
+		t,
+		generated,
+		"NewKindSet(mmdbdata.KindMap, mmdbdata.KindSlice, mmdbdata.KindString, mmdbdata.KindBytes)",
+	)
+	testGeneratedPackage(t)
+}
+
+func TestGenerateRejectsInvalidMaxSizeTags(t *testing.T) {
+	tests := []struct {
+		name    string
+		field   string
+		wantErr string
+	}{
+		{
+			name:    "unsupported type",
+			field:   "Value uint16 `maxminddb:\"value,maxsize:1\"`",
+			wantErr: "only supported",
+		},
+		{
+			name:    "underscore",
+			field:   "Value string `maxminddb:\"value,max_size:1\"`",
+			wantErr: `specify "maxsize"`,
+		},
+		{
+			name:    "equals",
+			field:   "Value string `maxminddb:\"value,maxsize=1\"`",
+			wantErr: "missing value",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := newTestModule(t, "package fixture\n\ntype Record struct {\n\t"+tt.field+"\n}\n")
+			t.Chdir(dir)
+			err := run([]string{"model.go"})
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+}
+
 func TestRunPreservesBuildConstraints(t *testing.T) {
 	source := "//go:build " + runtime.GOOS + " && !maxminddb_generator_excluded\n\n" +
 		"package fixture\n\ntype Record struct{}\n"

@@ -8,8 +8,8 @@
 - Made search-tree verification visit shared subtrees only once, bounding work
   while still rejecting cycles and overlong paths.
 - Added the `maxsize:N` struct-tag option to limit maps, arrays, strings, and
-  bytes in reflection decoding, plus bounded cursor reads. Field names
-  containing commas must now be single-quoted.
+  bytes in reflection and generated decoders, plus bounded cursor reads.
+  Field names containing commas must now be single-quoted.
 
 ## 2.5.0 - 2026-08-08
 
