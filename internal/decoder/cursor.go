@@ -882,8 +882,12 @@ func (c Cursor) unexpectedKinds(expected KindSet, actual Kind) error {
 	// validating small container contents. Scalars, however, are decoded and
 	// bounds-checked before their destination type is rejected.
 	if !actual.IsContainer() {
-		validator := ReflectionDecoder{DataDecoder: *c.decoder}
-		if _, err := validator.validateValueForAllocation(c.offset, 0, false); err != nil {
+		validator := newStructuralValidator(c.decoder)
+		if _, err := validator.validateValue(
+			c.offset,
+			0,
+			false,
+		); err != nil {
 			return c.wrapError(err)
 		}
 	}

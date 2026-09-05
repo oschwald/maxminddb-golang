@@ -496,6 +496,18 @@ func TestCursorMalformedAndWrongKinds(t *testing.T) {
 	require.ErrorContains(t, err, "pointer-to-pointer")
 }
 
+func TestCursorWrongKindDoesNotApplyExpansionBudget(t *testing.T) {
+	decoder := NewDecoder(
+		NewDataDecoder(stringLeaf(decodeExpansionBudgetBytes+1)),
+		0,
+	)
+	_, _, err := decoder.Cursor().ReadBool()
+	require.Error(t, err)
+	require.NotErrorIs(t, err, errDecodedRecordTooLarge)
+	var unexpectedKind UnexpectedKindError
+	require.ErrorAs(t, err, &unexpectedKind)
+}
+
 func TestCursorMalformedWrongKindScalarsReportDatabaseErrors(t *testing.T) {
 	t.Run("cursor value", func(t *testing.T) {
 		decoder := NewDecoder(NewDataDecoder([]byte{0x84, 1}), 0)

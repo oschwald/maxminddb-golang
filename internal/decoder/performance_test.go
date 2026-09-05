@@ -14,6 +14,8 @@ var cursorSizeSink uint
 
 var cursorSink Cursor
 
+var reflectionDecoderSink ReflectionDecoder
+
 type benchmarkUnmarshaler struct{}
 
 func (*benchmarkUnmarshaler) UnmarshalMaxMindDB(decoder *Decoder) error {
@@ -73,6 +75,38 @@ func BenchmarkCursorCustomUnmarshal(b *testing.B) {
 			var err error
 			cursorSink, err = cursor.UnmarshalCursor(&value)
 			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+}
+
+func BenchmarkReflectionDecoderConstruction(b *testing.B) {
+	data := []byte{0x00, 0x07}
+	b.ReportAllocs()
+	for b.Loop() {
+		reflectionDecoderSink = NewWithoutStringCache(data)
+	}
+}
+
+func BenchmarkReflectionCustomUnmarshal(b *testing.B) {
+	decoder := NewWithoutStringCache([]byte{0x00, 0x07})
+
+	b.Run("legacy", func(b *testing.B) {
+		b.ReportAllocs()
+		var value benchmarkUnmarshaler
+		for b.Loop() {
+			if err := decoder.Decode(0, &value); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("cursor", func(b *testing.B) {
+		b.ReportAllocs()
+		var value benchmarkCursorUnmarshaler
+		for b.Loop() {
+			if err := decoder.Decode(0, &value); err != nil {
 				b.Fatal(err)
 			}
 		}
@@ -328,6 +362,16 @@ func BenchmarkMapKeyDecoding(b *testing.B) {
 	type namedString string
 	b.Run("named-string/reused", func(b *testing.B) {
 		result := make(map[namedString]bool, size)
+		b.ReportAllocs()
+		for b.Loop() {
+			if err := d.Decode(0, &result); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+
+	b.Run("interface/reused", func(b *testing.B) {
+		result := make(map[any]bool, size)
 		b.ReportAllocs()
 		for b.Loop() {
 			if err := d.Decode(0, &result); err != nil {

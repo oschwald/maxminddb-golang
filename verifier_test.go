@@ -1,11 +1,32 @@
 package maxminddb
 
 import (
+	"bytes"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestVerifyRejectsInvalidPointerInUnknownMetadataField(t *testing.T) {
+	data, err := os.ReadFile(testFile("MaxMind-DB-test-ipv4-24.mmdb"))
+	require.NoError(t, err)
+
+	markerOffset := bytes.LastIndex(data, metadataStartMarker)
+	require.NotEqual(t, -1, markerOffset)
+	metadataOffset := markerOffset + len(metadataStartMarker)
+	require.Equal(t, byte(0xE9), data[metadataOffset])
+	data[metadataOffset] = 0xEA
+	data = append(data, 0x47)
+	data = append(data, "unknown"...)
+	data = append(data, 0x27, 0xFF)
+
+	reader, err := OpenBytes(data)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, reader.Close()) })
+	require.Error(t, reader.Verify())
+}
 
 func TestVerifyOnGoodDatabases(t *testing.T) {
 	databases := []string{

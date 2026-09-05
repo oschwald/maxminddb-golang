@@ -1,5 +1,11 @@
 # Changes
 
+## 2.6.0
+
+- Fixed a denial-of-service issue where a crafted database could use repeated
+  pointers to cause excessive CPU and memory use during reflection decoding.
+  The decoder now limits decoding work and decoded payload size.
+
 ## 2.5.0 - 2026-08-08
 
 - Deprecated the legacy `mmdbdata.Unmarshaler` callback,

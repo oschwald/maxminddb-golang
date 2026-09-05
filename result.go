@@ -29,6 +29,18 @@ type Result struct {
 //
 // If the Reader.Lookup call did not find a value for the IP address, no error
 // will be returned and v will be unchanged.
+//
+// Reflection decoding limits each operation to 32,768 declared container child
+// slots and a separate exact 2 MiB allowance for all materialized string,
+// byte-slice, and dynamic map-key payload. Maps and slices reserve their
+// children before allocation or traversal; repeated pointer targets share the
+// same limits. Decoding into any activates the limits even for a root scalar.
+// A standalone scalar decoded into a directly typed destination or a named
+// empty-interface type is decoded without them because it cannot amplify.
+// Custom unmarshalers control and must bound their own traversal and allocation.
+// Call [Reader.Verify] before using an untrusted database with custom or
+// low-level decoding, and keep the verified backing data unchanged for the
+// Reader's lifetime.
 func (r Result) Decode(v any) error {
 	if r.err != nil {
 		return r.err
@@ -62,7 +74,11 @@ func (r Result) Decode(v any) error {
 // return values from the end of the array, e.g., -1 will return the last
 // element.
 //
-// If the path is empty, the entire data structure is decoded into v.
+// If the path is empty, the entire data structure is decoded into v. A non-empty
+// path shares the operation limits described by [Result.Decode] across path
+// navigation and the selected value. Every inspected map key consumes its full
+// size from the shared payload allowance, and skipped inline containers consume
+// child slots without following pointer targets.
 //
 // To check if a path exists (rather than relying on zero values), decode
 // into a pointer and check if it remains nil:

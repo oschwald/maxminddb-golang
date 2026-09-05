@@ -16,8 +16,9 @@ func (d *ReflectionDecoder) VerifyDataSection(offsets map[uint]bool) error {
 	bufferLen := uint(len(d.buffer))
 	for offset < bufferLen {
 		var data any
-		rv := reflect.ValueOf(&data)
-		newOffset, err := d.decode(offset, rv, 0)
+		rv := addressableValue{Value: reflect.ValueOf(&data).Elem()}
+		bounded := newBudgetedDecoder(d)
+		newOffset, err := bounded.decodeValue(offset, rv, 0)
 		if err != nil {
 			return mmdberrors.NewInvalidDatabaseError(
 				"received decoding error (%v) at offset of %v",

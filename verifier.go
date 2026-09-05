@@ -1,9 +1,11 @@
 package maxminddb
 
 import (
+	"bytes"
 	"runtime"
 	"unicode/utf8"
 
+	"github.com/oschwald/maxminddb-golang/v2/internal/decoder"
 	"github.com/oschwald/maxminddb-golang/v2/internal/mmdberrors"
 )
 
@@ -27,6 +29,11 @@ type verifier struct {
 //   - Ensuring database integrity in critical applications
 //
 // Note: Verification traverses the entire database and may be slow on large files.
+// Each data record and the original metadata graph, including unknown metadata
+// fields, receives an independent set of decoder operation limits while it is
+// materialized for verification.
+// A successful result applies only while the Reader's backing file or byte
+// slice remains unchanged.
 // The method is thread-safe and can be called on an active Reader.
 func (r *Reader) Verify() error {
 	v := verifier{r}
@@ -40,6 +47,18 @@ func (r *Reader) Verify() error {
 }
 
 func (v *verifier) verifyMetadata() error {
+	if len(v.reader.buffer) != 0 {
+		markerOffset := bytes.LastIndex(v.reader.buffer, metadataStartMarker)
+		if markerOffset < 0 {
+			return mmdberrors.NewInvalidDatabaseError("metadata marker not found")
+		}
+		metadataOffset := markerOffset + len(metadataStartMarker)
+		rawDecoder := decoder.NewWithoutStringCache(v.reader.buffer[metadataOffset:])
+		if err := rawDecoder.VerifyDataSection(map[uint]bool{0: true}); err != nil {
+			return err
+		}
+	}
+
 	metadata := v.reader.Metadata
 
 	if metadata.BinaryFormatMajorVersion != 2 {

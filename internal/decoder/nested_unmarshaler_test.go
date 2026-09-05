@@ -105,12 +105,11 @@ func (u *cursorRetainingUnmarshaler) UnmarshalMaxMindDB(d *Decoder) error {
 func assertRetainedCursorReadsString(
 	t *testing.T,
 	unmarshaler cursorRetainingUnmarshaler,
-	want string,
 ) {
 	t.Helper()
 	value, _, err := unmarshaler.cursor.ReadString()
 	require.NoError(t, err)
-	require.Equal(t, want, value)
+	require.Equal(t, "Foo", value)
 }
 
 func TestLegacyUnmarshalerRetainedCursorHasStableBacking(t *testing.T) {
@@ -120,7 +119,14 @@ func TestLegacyUnmarshalerRetainedCursorHasStableBacking(t *testing.T) {
 		decoder := New(data)
 		var result cursorRetainingUnmarshaler
 		require.NoError(t, decoder.Decode(0, &result))
-		assertRetainedCursorReadsString(t, result, "Foo")
+		assertRetainedCursorReadsString(t, result)
+	})
+
+	t.Run("budgeted reflection", func(t *testing.T) {
+		decoder := New(data)
+		var result cursorRetainingUnmarshaler
+		require.NoError(t, decoder.DecodeWithBudget(0, &result))
+		assertRetainedCursorReadsString(t, result)
 	})
 
 	t.Run("nested reflection", func(t *testing.T) {
@@ -135,7 +141,7 @@ func TestLegacyUnmarshalerRetainedCursorHasStableBacking(t *testing.T) {
 		decoder := New(nestedData)
 		var result outer
 		require.NoError(t, decoder.Decode(0, &result))
-		assertRetainedCursorReadsString(t, result.Field, "Foo")
+		assertRetainedCursorReadsString(t, result.Field)
 	})
 
 	t.Run("cursor bridge", func(t *testing.T) {
@@ -144,7 +150,7 @@ func TestLegacyUnmarshalerRetainedCursorHasStableBacking(t *testing.T) {
 		next, err := decoder.Cursor().Unmarshal(&result)
 		require.NoError(t, err)
 		require.NoError(t, decoder.Advance(next))
-		assertRetainedCursorReadsString(t, result, "Foo")
+		assertRetainedCursorReadsString(t, result)
 	})
 }
 

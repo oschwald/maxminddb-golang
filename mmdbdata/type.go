@@ -54,6 +54,13 @@ type Decoder = decoder.Decoder
 // None may be used after or concurrently with the Reader's Close method.
 // Cursors obtained from NewDecoder are backed by its caller-provided buffer.
 //
+// Cursor traversal is caller-managed. This includes cursors supplied to custom
+// unmarshalers during Reader decoding and cursors obtained from NewDecoder.
+// Code that drives a cursor over an untrusted database is responsible for
+// sharing one aggregate per-record work budget across nested traversal. It
+// should bound recursion, iteration, repeated pointer targets, allocation, and
+// produced string or byte payloads.
+//
 // Cursor provides these operations:
 //
 //	func (Cursor) Kind() (Kind, error)
@@ -157,6 +164,11 @@ type DecoderOption = decoder.DecoderOption
 
 // NewDecoder creates a new Decoder with the given buffer, offset, and options.
 // Error messages include contextual offset information.
+//
+// This low-level decoder is caller-managed. Unlike reflection decoding into a
+// dynamically shaped result, it does not apply an expansion budget. Code that
+// drives it over untrusted data is responsible for bounding recursion,
+// iteration, and allocation.
 func NewDecoder(buffer []byte, offset uint, options ...DecoderOption) *Decoder {
 	d := decoder.NewDataDecoder(buffer)
 	return decoder.NewDecoder(d, offset, options...)

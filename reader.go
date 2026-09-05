@@ -238,6 +238,9 @@ func DisableStringCache() ReaderOption {
 // map on supported platforms. On platforms without memory map support, such
 // as WebAssembly or Google App Engine, or if the memory map attempt fails
 // due to lack of support from the filesystem, the database is loaded into memory.
+// Do not rewrite or truncate the opened file in place while the Reader is in
+// use; memory-mapped changes may become visible to it. Open a new Reader for an
+// updated database.
 // Use the Close method on the Reader object to return the resources to the system.
 func Open(file string, options ...ReaderOption) (*Reader, error) {
 	mapFile, err := os.Open(file)
@@ -329,7 +332,9 @@ func (r *Reader) Close() error {
 }
 
 // OpenBytes takes a byte slice corresponding to a MaxMind DB file and any
-// options. It returns a Reader structure or an error.
+// options. It returns a Reader structure or an error. The Reader retains the
+// provided slice; callers must not modify it while the Reader is in use. Copy
+// the slice before calling OpenBytes if another component may modify it.
 func OpenBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
 	var opts readerOptions
 	for _, option := range options {
@@ -348,7 +353,7 @@ func OpenBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
 	reader := &Reader{
 		decoder: decoder.NewWithoutStringCache(buffer[metadataStart:]),
 	}
-	err := reader.decoder.Decode(0, &reader.Metadata)
+	err := reader.decoder.DecodeWithBudget(0, &reader.Metadata)
 	if err != nil {
 		return nil, err
 	}
@@ -381,6 +386,7 @@ func OpenBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
 	reader.buffer = buffer
 	reader.dataSectionSize = dataSectionEnd - dataSectionStart
 	reader.decoder = d
+	reader.decoder.PrepareForConcurrentUse()
 	reader.nodeOffsetMult = reader.Metadata.RecordSize / 4
 	reader.hasMappedFile = &atomic.Bool{}
 

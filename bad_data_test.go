@@ -59,17 +59,17 @@ func TestBadDataFixtures(t *testing.T) {
 			name:             "libmaxminddb/libmaxminddb-oversized-array.mmdb",
 			verifyError:      "description - Expected: non-empty map",
 			lookupIP:         "1.1.1.1",
-			decodeError:      "unexpected end of database",
+			decodeError:      "maximum decoded record size",
 			iterateCount:     1,
-			iterateDecodeErr: "unexpected end of database",
+			iterateDecodeErr: "maximum decoded record size",
 		},
 		{
 			name:             "libmaxminddb/libmaxminddb-oversized-map.mmdb",
 			verifyError:      "description - Expected: non-empty map",
 			lookupIP:         "1.1.1.1",
-			decodeError:      "unexpected end of database",
+			decodeError:      "maximum decoded record size",
 			iterateCount:     1,
-			iterateDecodeErr: "unexpected end of database",
+			iterateDecodeErr: "maximum decoded record size",
 		},
 		{
 			name:         "libmaxminddb/libmaxminddb-uint64-max-epoch.mmdb",
@@ -86,7 +86,7 @@ func TestBadDataFixtures(t *testing.T) {
 		},
 		{
 			name:      "maxminddb-golang/invalid-data-record-offset.mmdb",
-			openError: "unexpected end of database",
+			openError: "invalid Float64 size: 6",
 		},
 		{
 			name:      "maxminddb-golang/invalid-map-key-length.mmdb",
