@@ -1620,7 +1620,6 @@ func (g *generator) emitBasic(
 	}
 }
 
-//nolint:revive // Emission context is clearer as explicit arguments.
 func (g *generator) emitInteger(
 	out *strings.Builder,
 	original types.Type,
