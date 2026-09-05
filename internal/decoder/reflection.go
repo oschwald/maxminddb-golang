@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"unicode/utf8"
 
 	"github.com/oschwald/maxminddb-golang/v2/internal/maxminddbtag"
@@ -1742,16 +1743,21 @@ func (d *ReflectionDecoder) decodeStructWithFields(
 			err error
 			key []byte
 		)
-		key, offset, err = d.decodeKey(offset)
+		var keyOffset uint
+		key, keyOffset, offset, err = d.decodeKeyAt(offset)
 		if err != nil {
 			return 0, err
 		}
 		// The string() does not create a copy due to this compiler
 		// optimization: https://github.com/golang/go/issues/3512
-		fingerprint := fieldKeyFingerprint(key)
-		fieldInfo, ok := fields.fieldForFingerprint(fingerprint)
-		if ok && (fieldInfo == nil || fieldInfo.name != string(key)) {
-			fieldInfo, ok = fields.namedFields[string(key)]
+		entry := &fields.offsetFields[keyOffset&(fieldOffsetCacheSlots-1)]
+		fieldInfo := entry.Load()
+		ok := fieldInfo != nil && fieldInfo.name == string(key)
+		if !ok {
+			fieldInfo, ok = fields.fieldForKey(key)
+			if ok && entry.Load() == nil {
+				entry.CompareAndSwap(nil, fieldInfo)
+			}
 		}
 		if !ok {
 			if d.structFieldValueIsInlineContainer(offset) {
@@ -2203,15 +2209,29 @@ type fieldInfo struct {
 	maxSizeCustom bool
 }
 
+const fieldOffsetCacheSlots = 64
+
 type fieldsType struct {
-	validationErr     error
-	namedFields       map[string]*fieldInfo // Map from field name to field info
+	validationErr error
+	namedFields   map[string]*fieldInfo // Map from field name to field info
+	// These fill-once hints avoid fingerprint lookup for recurring key offsets
+	// without writes on collisions. Schemas are shared across databases, so
+	// callers must compare the complete key with the cached field's name.
+	offsetFields      [fieldOffsetCacheSlots]atomic.Pointer[fieldInfo]
 	fingerprintFields []fingerprintField
 }
 
 type fingerprintField struct {
 	field       *fieldInfo
 	fingerprint uint64
+}
+
+func (fs *fieldsType) fieldForKey(key []byte) (*fieldInfo, bool) {
+	field, ok := fs.fieldForFingerprint(fieldKeyFingerprint(key))
+	if ok && (field == nil || field.name != string(key)) {
+		field, ok = fs.namedFields[string(key)]
+	}
+	return field, ok
 }
 
 func (fs *fieldsType) fieldForFingerprint(fingerprint uint64) (*fieldInfo, bool) {

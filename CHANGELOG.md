@@ -17,6 +17,7 @@
   - Avoided repeated reflection dispatch for pointer-backed strings.
   - Inlined compact header reads when skipping values during budgeted decoding.
   - Avoided repeated type dispatch for unsigned integers decoded into `any`.
+  - Cached validated struct-field matches to speed up repeated decoding.
 
 ## 2.5.0 - 2026-08-08
 
