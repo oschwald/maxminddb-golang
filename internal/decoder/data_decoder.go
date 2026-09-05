@@ -112,7 +112,14 @@ type DataDecoder struct {
 
 const (
 	// This is the value used in libmaxminddb.
-	maximumDataStructureDepth    = 512
+	maximumDataStructureDepth = 512
+	// Container-shaped reflection decoding receives a fixed work allowance
+	// equivalent to 2 MiB in 64-byte units while its result is materialized.
+	decodeExpansionBudgetBytes = 2 << 20
+	// String and byte payloads receive a separate exact 2 MiB allowance.
+	decodePayloadBudgetBytes = 2 << 20
+	// Container children cost one 64-byte work unit.
+	decodeBudgetUnitShift        = 6
 	containerPreflightValueCount = 1024
 	pointerBase2                 = 2048
 	pointerBase3                 = 526336
@@ -176,7 +183,6 @@ func (d *DataDecoder) decodeCtrlData(offset uint) (Kind, uint, uint, error) {
 	if endOffset > bufferLen {
 		return 0, 0, 0, mmdberrors.NewOffsetError()
 	}
-
 	switch size {
 	case 29:
 		return kindNum, 29 + uint(d.buffer[newOffset]), newOffset + 1, nil
@@ -190,6 +196,10 @@ func (d *DataDecoder) decodeCtrlData(offset uint) (Kind, uint, uint, error) {
 		return kindNum, 65821 + value, endOffset, nil
 	}
 }
+
+var errDecodedRecordTooLarge error = mmdberrors.NewInvalidDatabaseError(
+	"exceeded maximum decoded record size; database is likely corrupt",
+)
 
 // decodeBytes decodes a byte slice from the given offset with the given size.
 func (d *DataDecoder) decodeBytes(size, offset uint) ([]byte, uint, error) {
@@ -333,6 +343,18 @@ func (d *DataDecoder) decodeString(size, dataOffset uint) (string, uint, error) 
 	return value, newOffset, nil
 }
 
+// decodeCompactString decodes a string whose one-byte header and complete
+// payload have already been validated by the caller. Keeping this common case
+// separate avoids repeating the range check and header-width calculation in
+// decodeString.
+func (d *DataDecoder) decodeCompactString(size, dataOffset uint) string {
+	end := dataOffset + size
+	if d.stringCache == nil {
+		return string(d.buffer[dataOffset:end])
+	}
+	return d.stringCache.internAt(dataOffset-1, d.buffer[dataOffset:end])
+}
+
 // decodeStringValue decodes a string or one pointer to a string and returns
 // the successor in the original containing stream.
 //
@@ -349,8 +371,7 @@ func (d *DataDecoder) decodeStringValue(offset uint) (string, uint, error) {
 				dataOffset := offset + 1
 				nextOffset := dataOffset + size
 				if nextOffset <= bufferLen {
-					value, _, err := d.decodeString(size, dataOffset)
-					return value, nextOffset, err
+					return d.decodeCompactString(size, dataOffset), nextOffset, nil
 				}
 			}
 		case KindPointer:
@@ -362,8 +383,7 @@ func (d *DataDecoder) decodeStringValue(offset uint) (string, uint, error) {
 						pointedSize := uint(pointedCtrlByte & 0x1f)
 						dataOffset := pointer + 1
 						if pointedSize < 29 && dataOffset+pointedSize <= bufferLen {
-							value, _, err := d.decodeString(pointedSize, dataOffset)
-							return value, offset + 2, err
+							return d.decodeCompactString(pointedSize, dataOffset), offset + 2, nil
 						}
 					}
 				}
@@ -396,8 +416,10 @@ func (d *DataDecoder) decodeStringValue(offset uint) (string, uint, error) {
 							pointedSize := uint(pointedCtrlByte & 0x1f)
 							dataOffset := pointer + 1
 							if pointedSize < 29 && pointedSize <= bufferLen-dataOffset {
-								value, _, err := d.decodeString(pointedSize, dataOffset)
-								return value, pointerEnd, err
+								return d.decodeCompactString(
+									pointedSize,
+									dataOffset,
+								), pointerEnd, nil
 							}
 						}
 					}
@@ -597,6 +619,9 @@ func (d *DataDecoder) decodeKey(offset uint) ([]byte, uint, error) {
 // decodeStringKey validates and decodes a map key while preserving the source
 // control-record offset needed by the string cache. Returned strings never
 // alias d.buffer.
+//
+// Reflection decoding with an active expansion budget charges large keys before
+// copying or interning them. This method handles unbudgeted decoding.
 func (d *DataDecoder) decodeStringKey(offset uint) (string, uint, error) {
 	key, cacheOffset, nextOffset, err := d.decodeKeyAt(offset)
 	if err != nil {
@@ -700,8 +725,8 @@ func (d *DataDecoder) decodeKeyAt(offset uint) ([]byte, uint, uint, error) {
 //go:noinline
 func (d *DataDecoder) unexpectedMapKeyKind(offset uint, kind Kind) error {
 	if !kind.IsContainer() {
-		validator := ReflectionDecoder{DataDecoder: *d}
-		if _, err := validator.validateValueForAllocation(offset, 0, false); err != nil {
+		validator := newStructuralValidator(d)
+		if _, err := validator.validateValue(offset, 0, false); err != nil {
 			return err
 		}
 	}

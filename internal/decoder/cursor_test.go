@@ -496,6 +496,235 @@ func TestCursorMalformedAndWrongKinds(t *testing.T) {
 	require.ErrorContains(t, err, "pointer-to-pointer")
 }
 
+func TestCursorWrongKindDoesNotApplyExpansionBudget(t *testing.T) {
+	decoder := NewDecoder(
+		NewDataDecoder(stringLeaf(decodeExpansionBudgetBytes+1)),
+		0,
+	)
+	_, _, err := decoder.Cursor().ReadBool()
+	require.Error(t, err)
+	require.NotErrorIs(t, err, errDecodedRecordTooLarge)
+	var unexpectedKind UnexpectedKindError
+	require.ErrorAs(t, err, &unexpectedKind)
+}
+
+func TestCursorCheckMaxSize(t *testing.T) {
+	tests := []struct {
+		name      string
+		data      []byte
+		kind      Kind
+		maximum   uint64
+		wantError bool
+	}{
+		{name: "string exact", data: []byte{0x43, 'a', 'b', 'c'}, kind: KindString, maximum: 3},
+		{
+			name:      "string over",
+			data:      []byte{0x43, 'a', 'b', 'c'},
+			kind:      KindString,
+			maximum:   2,
+			wantError: true,
+		},
+		{
+			name:      "bytes over",
+			data:      []byte{0x83, 1, 2, 3},
+			kind:      KindBytes,
+			maximum:   2,
+			wantError: true,
+		},
+		{
+			name:      "slice over",
+			data:      []byte{0x03, 0x04, 0xa0, 0xa0, 0xa0},
+			kind:      KindSlice,
+			maximum:   2,
+			wantError: true,
+		},
+		{
+			name:      "map over",
+			data:      []byte{0xe1, 0x41, 'a', 0x00, 0x07},
+			kind:      KindMap,
+			maximum:   0,
+			wantError: true,
+		},
+		{name: "kind mismatch", data: []byte{0x43, 'a', 'b', 'c'}, kind: KindMap, maximum: 0},
+		{
+			name:      "pointer",
+			data:      []byte{0x20, 0x02, 0x43, 'a', 'b', 'c'},
+			kind:      KindString,
+			maximum:   2,
+			wantError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			decoder := NewDecoder(NewDataDecoder(tt.data), 0)
+			err := decoder.Cursor().CheckMaxSize(NewKindSet(tt.kind), tt.maximum)
+			if tt.wantError {
+				require.ErrorContains(t, err, "exceeds maxsize")
+				var invalidDatabase mmdberrors.InvalidDatabaseError
+				require.ErrorAs(t, err, &invalidDatabase)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestCursorCheckMaxSizeCompactAndExtendedContainers(t *testing.T) {
+	tests := []struct {
+		name string
+		kind Kind
+		data func(int) []byte
+	}{
+		{name: "bytes", kind: KindBytes, data: bytesLeaf},
+		{name: "map", kind: KindMap, data: mapHeader},
+	}
+
+	for _, tt := range tests {
+		for _, size := range []int{28, 29} {
+			for _, pointerBacked := range []bool{false, true} {
+				name := tt.name + " size " + strconv.Itoa(size)
+				if pointerBacked {
+					name += " pointer"
+				}
+				t.Run(name, func(t *testing.T) {
+					data := tt.data(size)
+					if pointerBacked {
+						data = append(ptr(2), data...)
+					}
+					cursor := NewDecoder(NewDataDecoder(data), 0).Cursor()
+					expected := NewKindSet(tt.kind)
+					require.NoError(t, cursor.CheckMaxSize(expected, uint64(size)))
+					requireMaxSizeError(t, cursor.CheckMaxSize(expected, uint64(size-1)))
+				})
+			}
+		}
+	}
+}
+
+func TestCursorBoundedReads(t *testing.T) {
+	t.Run("string", func(t *testing.T) {
+		decoder := NewDecoder(NewDataDecoder([]byte{0x43, 'a', 'b', 'c'}), 0)
+		value, _, err := decoder.Cursor().ReadStringMaxSize(3)
+		require.NoError(t, err)
+		require.Equal(t, "abc", value)
+
+		value, _, err = decoder.Cursor().ReadStringMaxSize(2)
+		requireMaxSizeError(t, err)
+		require.Empty(t, value)
+	})
+
+	t.Run("pointer string", func(t *testing.T) {
+		decoder := NewDecoder(NewDataDecoder([]byte{0x20, 0x02, 0x43, 'a', 'b', 'c'}), 0)
+		value, _, err := decoder.Cursor().ReadStringMaxSize(3)
+		require.NoError(t, err)
+		require.Equal(t, "abc", value)
+
+		_, _, err = decoder.Cursor().ReadStringMaxSize(2)
+		requireMaxSizeError(t, err)
+	})
+
+	t.Run("extended string", func(t *testing.T) {
+		decoder := NewDecoder(NewDataDecoder(stringLeaf(29)), 0)
+		value, _, err := decoder.Cursor().ReadStringMaxSize(29)
+		require.NoError(t, err)
+		require.Len(t, value, 29)
+
+		_, _, err = decoder.Cursor().ReadStringMaxSize(28)
+		requireMaxSizeError(t, err)
+	})
+
+	t.Run("slice", func(t *testing.T) {
+		decoder := NewDecoder(NewDataDecoder([]byte{0x03, 0x04, 0xa0, 0xa0, 0xa0}), 0)
+		values, err := decoder.Cursor().SliceMaxSize(3)
+		require.NoError(t, err)
+		size, err := values.Size()
+		require.NoError(t, err)
+		require.Equal(t, uint(3), size)
+
+		_, err = decoder.Cursor().SliceMaxSize(2)
+		requireMaxSizeError(t, err)
+	})
+
+	t.Run("extended slice", func(t *testing.T) {
+		data := append(sliceHeader(29), make([]byte, 29)...)
+		decoder := NewDecoder(NewDataDecoder(data), 0)
+		_, err := decoder.Cursor().SliceMaxSize(29)
+		require.NoError(t, err)
+
+		_, err = decoder.Cursor().SliceMaxSize(28)
+		requireMaxSizeError(t, err)
+	})
+}
+
+func TestCursorBoundedStringWidePointers(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		pointer []byte
+		target  int
+	}{
+		{"two-byte", []byte{0x29, 0, 8}, pointerBase2 + 1<<16 + 8},
+		{"three-byte", []byte{0x31, 0, 0, 8}, pointerBase3 + 1<<24 + 8},
+		{"four-byte", []byte{0x38, 0, 0, 0, 8}, 8},
+		{"four-byte ignored prefix", []byte{0x3f, 0, 0, 0, 8}, 8},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, newDecoder := range []func([]byte) DataDecoder{NewDataDecoder, NewDataDecoderWithoutStringCache} {
+				data := make([]byte, tt.target+4)
+				copy(data, tt.pointer)
+				copy(data[len(tt.pointer):], []byte{0xa1, 7})
+				copy(data[tt.target:], []byte{0x43, 'a', 'b', 'c'})
+				d := newDecoder(data)
+				cursor := NewDecoder(d, 0).Cursor()
+				for range 4 {
+					value, next, err := cursor.ReadStringMaxSize(3)
+					require.NoError(t, err)
+					require.Equal(t, "abc", value)
+					number, _, err := next.ReadUint()
+					require.NoError(t, err)
+					require.Equal(t, uint64(7), number)
+					value, _, err = cursor.ReadStringMaxSize(2)
+					requireMaxSizeError(t, err)
+					require.Empty(t, value)
+				}
+				// The fast path must fall back to full validation on a short target.
+				short := NewDecoder(newDecoder(data[:len(data)-1]), 0).Cursor()
+				_, _, err := short.ReadStringMaxSize(3)
+				requireMalformedDatabaseError(t, err)
+				require.NotContains(t, err.Error(), "exceeds maxsize")
+			}
+		})
+	}
+	for _, data := range [][]byte{
+		{0x28, 0}, {0x30, 0, 0}, {0x38, 0, 0, 0}, // Truncated pointer payloads.
+		{0x28, 0, 0},                      // Missing target.
+		{0x38, 0, 0, 0, 5, 0x20, 7, 0x40}, // Pointer to pointer.
+	} {
+		_, _, err := NewDecoder(NewDataDecoder(data), 0).Cursor().ReadStringMaxSize(3)
+		requireMalformedDatabaseError(t, err)
+	}
+	wrong := NewDecoder(NewDataDecoder([]byte{0x38, 0, 0, 0, 5, 0xa1, 7}), 0).Cursor()
+	_, _, err := wrong.ReadStringMaxSize(3)
+	var unexpected UnexpectedKindError
+	require.ErrorAs(t, err, &unexpected)
+
+	extended := append([]byte{0x38, 0, 0, 0, 5}, stringLeaf(29)...)
+	cursor := NewDecoder(NewDataDecoder(extended), 0).Cursor()
+	value, next, err := cursor.ReadStringMaxSize(29)
+	require.NoError(t, err)
+	require.Len(t, value, 29)
+	require.Equal(t, uint(5), next.offset)
+	_, _, err = cursor.ReadStringMaxSize(28)
+	requireMaxSizeError(t, err)
+}
+
+func requireMaxSizeError(t *testing.T, err error) {
+	t.Helper()
+	var invalidDatabase mmdberrors.InvalidDatabaseError
+	require.ErrorAs(t, err, &invalidDatabase)
+	require.ErrorContains(t, err, "exceeds maxsize")
+}
+
 func TestCursorMalformedWrongKindScalarsReportDatabaseErrors(t *testing.T) {
 	t.Run("cursor value", func(t *testing.T) {
 		decoder := NewDecoder(NewDataDecoder([]byte{0x84, 1}), 0)

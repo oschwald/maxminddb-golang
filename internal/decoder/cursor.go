@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 
 	"github.com/oschwald/maxminddb-golang/v2/internal/mmdberrors"
@@ -11,6 +12,10 @@ var (
 	errInvalidZeroMapCursor   = errors.New("invalid zero map cursor")
 	errInvalidZeroMapReader   = errors.New("invalid zero map reader")
 	errInvalidZeroSliceCursor = errors.New("invalid zero slice cursor")
+)
+
+const supportedMaxSizeKinds = KindSet(
+	1<<KindMap | 1<<KindSlice | 1<<KindString | 1<<KindBytes,
 )
 
 // Cursor identifies one value in the decoder's input. Cursor values are
@@ -130,6 +135,98 @@ func (c Cursor) ReadString() (string, Cursor, error) {
 		if errors.As(err, &mismatch) {
 			return "", Cursor{}, c.unexpectedKinds(mismatch.Expected, mismatch.Actual)
 		}
+		return "", Cursor{}, c.wrapError(err)
+	}
+	return value, c.successor(next), nil
+}
+
+// ReadStringMaxSize reads a string and returns its successor cursor. It
+// rejects strings larger than maximum before returning the value.
+//
+//nolint:nestif,revive // Keep compact direct and pointer encodings on the hot path.
+func (c Cursor) ReadStringMaxSize(maximum uint64) (string, Cursor, error) {
+	if err := c.validate(); err != nil {
+		return "", Cursor{}, err
+	}
+	buffer := c.decoder.buffer
+	bufferLen := uint(len(buffer))
+	if c.offset < bufferLen {
+		ctrlByte := buffer[c.offset]
+		kind := Kind(ctrlByte >> 5)
+		size := uint(ctrlByte & 0x1f)
+		switch kind {
+		case KindString:
+			if size < 29 {
+				dataOffset := c.offset + 1
+				if size <= bufferLen-dataOffset {
+					if uint64(size) > maximum {
+						return "", Cursor{}, c.maxSizeError(KindString, size, maximum)
+					}
+					var value string
+					if c.decoder.stringCache == nil {
+						value = string(buffer[dataOffset : dataOffset+size])
+					} else {
+						value = c.decoder.stringCache.internAt(
+							dataOffset-1,
+							buffer[dataOffset:dataOffset+size],
+						)
+					}
+					return value, c.successor(dataOffset + size), nil
+				}
+			}
+		case KindPointer:
+			if size < 8 && c.offset+2 <= bufferLen {
+				pointer := (size&0x7)<<8 | uint(buffer[c.offset+1])
+				if pointer < bufferLen {
+					pointedCtrlByte := buffer[pointer]
+					pointedSize := uint(pointedCtrlByte & 0x1f)
+					dataOffset := pointer + 1
+					if Kind(pointedCtrlByte>>5) == KindString && pointedSize < 29 &&
+						pointedSize <= bufferLen-dataOffset {
+						if uint64(pointedSize) > maximum {
+							return "", Cursor{}, c.maxSizeError(
+								KindString,
+								pointedSize,
+								maximum,
+							)
+						}
+						var value string
+						if c.decoder.stringCache == nil {
+							value = string(buffer[dataOffset : dataOffset+pointedSize])
+						} else {
+							value = c.decoder.stringCache.internAt(
+								dataOffset-1,
+								buffer[dataOffset:dataOffset+pointedSize],
+							)
+						}
+						return value, c.successor(c.offset + 2), nil
+					}
+				}
+			}
+			if size >= 8 {
+				value, dataOffset, nextOffset, ok := c.decoder.decodePointerKeyFast(
+					c.offset, uint(ctrlByte), bufferLen,
+				)
+				if ok {
+					if uint64(len(value)) > maximum {
+						return "", Cursor{}, c.maxSizeError(KindString, uint(len(value)), maximum)
+					}
+					return c.decoder.decodeCompactString(uint(len(value)), dataOffset),
+						c.successor(nextOffset), nil
+				}
+			}
+		default:
+		}
+	}
+	size, dataOffset, next, err := c.scalar(KindString)
+	if err != nil {
+		return "", Cursor{}, err
+	}
+	if uint64(size) > maximum {
+		return "", Cursor{}, c.maxSizeError(KindString, size, maximum)
+	}
+	value, _, err := c.decoder.decodeString(size, dataOffset)
+	if err != nil {
 		return "", Cursor{}, c.wrapError(err)
 	}
 	return value, c.successor(next), nil
@@ -577,6 +674,55 @@ func (c Cursor) Slice() (SliceCursor, error) {
 	}, nil
 }
 
+// SliceMaxSize opens the current value as a slice and rejects it when its
+// declared entry count is larger than maximum.
+func (c Cursor) SliceMaxSize(maximum uint64) (SliceCursor, error) {
+	values, err := c.Slice()
+	if err != nil {
+		return SliceCursor{}, err
+	}
+	if uint64(values.size) > maximum {
+		return SliceCursor{}, c.maxSizeError(KindSlice, values.size, maximum)
+	}
+	return values, nil
+}
+
+// CheckMaxSize rejects the current value when its kind is in expected and its
+// byte or entry count exceeds maximum. It supports maps, slices, strings, and
+// bytes, follows a pointer to the value, and performs no allocation. Expected
+// must include every kind accepted by the immediately following decode. Other
+// kinds remain unchecked so that decode can report its usual mismatch error.
+// For example, a []byte decoder that accepts both Bytes and Slice must include
+// both kinds.
+func (c Cursor) CheckMaxSize(expected KindSet, maximum uint64) error {
+	if err := c.validate(); err != nil {
+		return err
+	}
+	if expected == 0 || expected & ^supportedMaxSizeKinds != 0 {
+		return fmt.Errorf("maxsize is not supported for %s", expected)
+	}
+	if c.offset < uint(len(c.decoder.buffer)) {
+		ctrlByte := c.decoder.buffer[c.offset]
+		actual := Kind(ctrlByte >> 5)
+		size := uint(ctrlByte & 0x1f)
+		if actual != KindPointer && actual != KindExtended && size < 29 {
+			if expected.Contains(actual) && uint64(size) > maximum {
+				return c.maxSizeError(actual, size, maximum)
+			}
+			return nil
+		}
+	}
+
+	actual, size, _, _, err := c.decoder.resolveCtrlData(c.offset)
+	if err != nil {
+		return c.wrapError(err)
+	}
+	if expected.Contains(actual) && uint64(size) > maximum {
+		return c.maxSizeError(actual, size, maximum)
+	}
+	return nil
+}
+
 // Unmarshal invokes an existing custom unmarshaler at the cursor and returns
 // a validated successor cursor. It is intended for generated decoders with
 // nested fields that already implement Unmarshaler. A nil interface or an
@@ -722,6 +868,16 @@ func (c Cursor) ReadMapKey() ([]byte, Cursor, error) {
 		return nil, Cursor{}, c.wrapError(err)
 	}
 	return key, Cursor{decoder: c.decoder, offset: valueOffset}, nil
+}
+
+//go:noinline
+func (c Cursor) maxSizeError(actual Kind, size uint, maximum uint64) error {
+	return c.wrapError(mmdberrors.NewInvalidDatabaseError(
+		"%s size %d exceeds maxsize %d",
+		actual,
+		size,
+		maximum,
+	))
 }
 
 // Size validates and returns the number of elements declared by the slice.
@@ -882,8 +1038,12 @@ func (c Cursor) unexpectedKinds(expected KindSet, actual Kind) error {
 	// validating small container contents. Scalars, however, are decoded and
 	// bounds-checked before their destination type is rejected.
 	if !actual.IsContainer() {
-		validator := ReflectionDecoder{DataDecoder: *c.decoder}
-		if _, err := validator.validateValueForAllocation(c.offset, 0, false); err != nil {
+		validator := newStructuralValidator(c.decoder)
+		if _, err := validator.validateValue(
+			c.offset,
+			0,
+			false,
+		); err != nil {
 			return c.wrapError(err)
 		}
 	}
