@@ -23,7 +23,7 @@ type Result struct {
 // the database record cannot be stored in v because of type differences, an
 // UnmarshalTypeError is returned. An InvalidDatabaseError is returned when the
 // data is malformed or rejected by structural, resource, or schema validation,
-// including maxsize checks.
+// including maxsize and generated duplicate-field checks.
 //
 // An error will also be returned if there was an error during the
 // Reader.Lookup call.

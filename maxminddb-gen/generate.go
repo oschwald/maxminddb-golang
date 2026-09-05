@@ -1436,6 +1436,13 @@ func (g *generator) emitStruct(out *strings.Builder, info structInfo) {
 		info.named.Obj().Name(),
 	)
 	out.WriteString("\tnext := entries.First()\n")
+	if len(info.fields) != 0 {
+		if len(info.fields) <= 64 {
+			out.WriteString("\tvar seenFields uint64\n")
+		} else {
+			fmt.Fprintf(out, "\tvar seenFields [%d]uint64\n", (len(info.fields)+63)/64)
+		}
+	}
 	out.WriteString("\tfor range entries.Len() {\n")
 	out.WriteString("\t\tkey, valueCursor, keyErr := next.ReadMapKey()\n")
 	fmt.Fprintf(
@@ -1444,8 +1451,22 @@ func (g *generator) emitStruct(out *strings.Builder, info structInfo) {
 		mmdbdata,
 	)
 	out.WriteString("\t\tswitch string(key) {\n")
-	for _, field := range info.fields {
+	for fieldIndex, field := range info.fields {
 		fmt.Fprintf(out, "\t\tcase %s:\n", strconv.Quote(field.name))
+		seenField := "seenFields"
+		if len(info.fields) > 64 {
+			seenField = fmt.Sprintf("seenFields[%d]", fieldIndex/64)
+		}
+		fieldBit := uint64(1) << (fieldIndex % 64)
+		fmt.Fprintf(out, "\t\t\tif %s&%d != 0 {\n", seenField, fieldBit)
+		fmt.Fprintf(
+			out,
+			"\t\t\t\treturn %s.Cursor{}, %s.NewInvalidDatabaseError(\"duplicate map key %%q\", key)\n",
+			mmdbdata,
+			mmdbdata,
+		)
+		out.WriteString("\t\t\t}\n")
+		fmt.Fprintf(out, "\t\t\t%s |= %d\n", seenField, fieldBit)
 		if field.hasMaxSize {
 			if !g.emitMaxSizeDecode(
 				out,

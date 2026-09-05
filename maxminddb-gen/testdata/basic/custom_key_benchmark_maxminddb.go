@@ -15,6 +15,7 @@ func maxminddbGenDecodeBenchmarkCustomKeyRecord(cursor mmdbdata.Cursor, out *Ben
 		return mmdbdata.Cursor{}, mmdbdata.NormalizeUnmarshalError[BenchmarkCustomKeyRecord](err)
 	}
 	next := entries.First()
+	var seenFields uint64
 	for range entries.Len() {
 		key, valueCursor, keyErr := next.ReadMapKey()
 		if keyErr != nil {
@@ -22,6 +23,10 @@ func maxminddbGenDecodeBenchmarkCustomKeyRecord(cursor mmdbdata.Cursor, out *Ben
 		}
 		switch string(key) {
 		case "values":
+			if seenFields&1 != 0 {
+				return mmdbdata.Cursor{}, mmdbdata.NewInvalidDatabaseError("duplicate map key %q", key)
+			}
+			seenFields |= 1
 			entries1, openErr1 := valueCursor.MapReader()
 			if openErr1 != nil {
 				err = mmdbdata.NormalizeUnmarshalError[map[BenchmarkCustomKey]bool](openErr1)

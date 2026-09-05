@@ -17,6 +17,7 @@ func maxminddbGenDecodeByteShapes(cursor mmdbdata.Cursor, out *ByteShapes) (mmdb
 		return mmdbdata.Cursor{}, mmdbdata.NormalizeUnmarshalError[ByteShapes](err)
 	}
 	next := entries.First()
+	var seenFields uint64
 	for range entries.Len() {
 		key, valueCursor, keyErr := next.ReadMapKey()
 		if keyErr != nil {
@@ -24,6 +25,10 @@ func maxminddbGenDecodeByteShapes(cursor mmdbdata.Cursor, out *ByteShapes) (mmdb
 		}
 		switch string(key) {
 		case "pointer":
+			if seenFields&1 != 0 {
+				return mmdbdata.Cursor{}, mmdbdata.NewInvalidDatabaseError("duplicate map key %q", key)
+			}
+			seenFields |= 1
 			if out.Pointer == nil {
 				var decoded1 []byte
 				decoded1, next, err = maxminddbGen_model_5fmaxminddb_Bytes(valueCursor, decoded1)
@@ -37,6 +42,10 @@ func maxminddbGenDecodeByteShapes(cursor mmdbdata.Cursor, out *ByteShapes) (mmdb
 				return mmdbdata.Cursor{}, fmt.Errorf("decoding field pointer: %w", mmdbdata.NormalizeUnmarshalError[[]byte](err))
 			}
 		case "slices":
+			if seenFields&2 != 0 {
+				return mmdbdata.Cursor{}, mmdbdata.NewInvalidDatabaseError("duplicate map key %q", key)
+			}
+			seenFields |= 2
 			values2, openErr2 := valueCursor.Slice()
 			if openErr2 != nil {
 				err = mmdbdata.NormalizeUnmarshalError[[][]byte](openErr2)
@@ -80,6 +89,10 @@ func maxminddbGenDecodeByteShapes(cursor mmdbdata.Cursor, out *ByteShapes) (mmdb
 				return mmdbdata.Cursor{}, fmt.Errorf("decoding field slices: %w", err)
 			}
 		case "lookup":
+			if seenFields&4 != 0 {
+				return mmdbdata.Cursor{}, mmdbdata.NewInvalidDatabaseError("duplicate map key %q", key)
+			}
+			seenFields |= 4
 			entries3, openErr3 := valueCursor.Map()
 			if openErr3 != nil {
 				err = mmdbdata.NormalizeUnmarshalError[map[string][]byte](openErr3)
@@ -127,6 +140,7 @@ func maxminddbGenDecodeDualInterfaceRecord(cursor mmdbdata.Cursor, out *DualInte
 		return mmdbdata.Cursor{}, mmdbdata.NormalizeUnmarshalError[DualInterfaceRecord](err)
 	}
 	next := entries.First()
+	var seenFields uint64
 	for range entries.Len() {
 		key, valueCursor, keyErr := next.ReadMapKey()
 		if keyErr != nil {
@@ -134,6 +148,10 @@ func maxminddbGenDecodeDualInterfaceRecord(cursor mmdbdata.Cursor, out *DualInte
 		}
 		switch string(key) {
 		case "value":
+			if seenFields&1 != 0 {
+				return mmdbdata.Cursor{}, mmdbdata.NewInvalidDatabaseError("duplicate map key %q", key)
+			}
+			seenFields |= 1
 			next, err = valueCursor.UnmarshalCursor(&out.Value)
 			if err != nil {
 				return mmdbdata.Cursor{}, fmt.Errorf("decoding field value: %w", err)
@@ -154,6 +172,7 @@ func maxminddbGenDecodeFloat64Record(cursor mmdbdata.Cursor, out *Float64Record)
 		return mmdbdata.Cursor{}, mmdbdata.NormalizeUnmarshalError[Float64Record](err)
 	}
 	next := entries.First()
+	var seenFields uint64
 	for range entries.Len() {
 		key, valueCursor, keyErr := next.ReadMapKey()
 		if keyErr != nil {
@@ -161,6 +180,10 @@ func maxminddbGenDecodeFloat64Record(cursor mmdbdata.Cursor, out *Float64Record)
 		}
 		switch string(key) {
 		case "value":
+			if seenFields&1 != 0 {
+				return mmdbdata.Cursor{}, mmdbdata.NewInvalidDatabaseError("duplicate map key %q", key)
+			}
+			seenFields |= 1
 			var value4 float64
 			value4, next, err = valueCursor.ReadFloat()
 			if err == nil {
@@ -186,6 +209,7 @@ func maxminddbGenDecodeNested(cursor mmdbdata.Cursor, out *Nested) (mmdbdata.Cur
 		return mmdbdata.Cursor{}, mmdbdata.NormalizeUnmarshalError[Nested](err)
 	}
 	next := entries.First()
+	var seenFields uint64
 	for range entries.Len() {
 		key, valueCursor, keyErr := next.ReadMapKey()
 		if keyErr != nil {
@@ -193,6 +217,10 @@ func maxminddbGenDecodeNested(cursor mmdbdata.Cursor, out *Nested) (mmdbdata.Cur
 		}
 		switch string(key) {
 		case "name":
+			if seenFields&1 != 0 {
+				return mmdbdata.Cursor{}, mmdbdata.NewInvalidDatabaseError("duplicate map key %q", key)
+			}
+			seenFields |= 1
 			var value5 string
 			value5, next, err = valueCursor.ReadString()
 			if err == nil {
@@ -217,6 +245,7 @@ func maxminddbGenDecodeRecord(cursor mmdbdata.Cursor, out *Record) (mmdbdata.Cur
 		return mmdbdata.Cursor{}, mmdbdata.NormalizeUnmarshalError[Record](err)
 	}
 	next := entries.First()
+	var seenFields uint64
 	for range entries.Len() {
 		key, valueCursor, keyErr := next.ReadMapKey()
 		if keyErr != nil {
@@ -224,6 +253,10 @@ func maxminddbGenDecodeRecord(cursor mmdbdata.Cursor, out *Record) (mmdbdata.Cur
 		}
 		switch string(key) {
 		case "name":
+			if seenFields&1 != 0 {
+				return mmdbdata.Cursor{}, mmdbdata.NewInvalidDatabaseError("duplicate map key %q", key)
+			}
+			seenFields |= 1
 			var value6 string
 			value6, next, err = valueCursor.ReadString()
 			if err == nil {
@@ -233,6 +266,10 @@ func maxminddbGenDecodeRecord(cursor mmdbdata.Cursor, out *Record) (mmdbdata.Cur
 				return mmdbdata.Cursor{}, fmt.Errorf("decoding field name: %w", mmdbdata.NormalizeUnmarshalError[Label](err))
 			}
 		case "count":
+			if seenFields&2 != 0 {
+				return mmdbdata.Cursor{}, mmdbdata.NewInvalidDatabaseError("duplicate map key %q", key)
+			}
+			seenFields |= 2
 			var integerValue7 uint64
 			var integerSigned7 bool
 			integerValue7, integerSigned7, next, err = valueCursor.ReadInteger()
@@ -257,6 +294,10 @@ func maxminddbGenDecodeRecord(cursor mmdbdata.Cursor, out *Record) (mmdbdata.Cur
 				return mmdbdata.Cursor{}, fmt.Errorf("decoding field count: %w", mmdbdata.NormalizeUnmarshalError[uint8](err))
 			}
 		case "count32":
+			if seenFields&4 != 0 {
+				return mmdbdata.Cursor{}, mmdbdata.NewInvalidDatabaseError("duplicate map key %q", key)
+			}
+			seenFields |= 4
 			var integerValue8 uint64
 			var integerSigned8 bool
 			integerValue8, integerSigned8, next, err = valueCursor.ReadInteger()
@@ -281,6 +322,10 @@ func maxminddbGenDecodeRecord(cursor mmdbdata.Cursor, out *Record) (mmdbdata.Cur
 				return mmdbdata.Cursor{}, fmt.Errorf("decoding field count32: %w", mmdbdata.NormalizeUnmarshalError[uint32](err))
 			}
 		case "count64":
+			if seenFields&8 != 0 {
+				return mmdbdata.Cursor{}, mmdbdata.NewInvalidDatabaseError("duplicate map key %q", key)
+			}
+			seenFields |= 8
 			var integerValue9 uint64
 			var integerSigned9 bool
 			integerValue9, integerSigned9, next, err = valueCursor.ReadInteger()
@@ -305,6 +350,10 @@ func maxminddbGenDecodeRecord(cursor mmdbdata.Cursor, out *Record) (mmdbdata.Cur
 				return mmdbdata.Cursor{}, fmt.Errorf("decoding field count64: %w", mmdbdata.NormalizeUnmarshalError[uint64](err))
 			}
 		case "temperature":
+			if seenFields&16 != 0 {
+				return mmdbdata.Cursor{}, mmdbdata.NewInvalidDatabaseError("duplicate map key %q", key)
+			}
+			seenFields |= 16
 			var value10 float64
 			value10, next, err = valueCursor.ReadFloat()
 			if err == nil {
@@ -319,6 +368,10 @@ func maxminddbGenDecodeRecord(cursor mmdbdata.Cursor, out *Record) (mmdbdata.Cur
 				return mmdbdata.Cursor{}, fmt.Errorf("decoding field temperature: %w", mmdbdata.NormalizeUnmarshalError[float32](err))
 			}
 		case "enabled":
+			if seenFields&32 != 0 {
+				return mmdbdata.Cursor{}, mmdbdata.NewInvalidDatabaseError("duplicate map key %q", key)
+			}
+			seenFields |= 32
 			if out.Enabled == nil {
 				var decoded11 bool
 				var value12 bool
@@ -340,6 +393,10 @@ func maxminddbGenDecodeRecord(cursor mmdbdata.Cursor, out *Record) (mmdbdata.Cur
 				return mmdbdata.Cursor{}, fmt.Errorf("decoding field enabled: %w", mmdbdata.NormalizeUnmarshalError[bool](err))
 			}
 		case "values":
+			if seenFields&64 != 0 {
+				return mmdbdata.Cursor{}, mmdbdata.NewInvalidDatabaseError("duplicate map key %q", key)
+			}
+			seenFields |= 64
 			values14, openErr14 := valueCursor.Slice()
 			if openErr14 != nil {
 				err = mmdbdata.NormalizeUnmarshalError[[]uint16](openErr14)
@@ -402,6 +459,10 @@ func maxminddbGenDecodeRecord(cursor mmdbdata.Cursor, out *Record) (mmdbdata.Cur
 				return mmdbdata.Cursor{}, fmt.Errorf("decoding field values: %w", err)
 			}
 		case "lookup":
+			if seenFields&128 != 0 {
+				return mmdbdata.Cursor{}, mmdbdata.NewInvalidDatabaseError("duplicate map key %q", key)
+			}
+			seenFields |= 128
 			entries16, openErr16 := valueCursor.Map()
 			if openErr16 != nil {
 				err = mmdbdata.NormalizeUnmarshalError[map[string]string](openErr16)
@@ -438,6 +499,10 @@ func maxminddbGenDecodeRecord(cursor mmdbdata.Cursor, out *Record) (mmdbdata.Cur
 				return mmdbdata.Cursor{}, fmt.Errorf("decoding field lookup: %w", err)
 			}
 		case "names":
+			if seenFields&256 != 0 {
+				return mmdbdata.Cursor{}, mmdbdata.NewInvalidDatabaseError("duplicate map key %q", key)
+			}
+			seenFields |= 256
 			entries18, openErr18 := valueCursor.Map()
 			if openErr18 != nil {
 				err = mmdbdata.NormalizeUnmarshalError[map[Code]uint8](openErr18)
@@ -489,16 +554,28 @@ func maxminddbGenDecodeRecord(cursor mmdbdata.Cursor, out *Record) (mmdbdata.Cur
 				return mmdbdata.Cursor{}, fmt.Errorf("decoding field names: %w", err)
 			}
 		case "nested":
+			if seenFields&512 != 0 {
+				return mmdbdata.Cursor{}, mmdbdata.NewInvalidDatabaseError("duplicate map key %q", key)
+			}
+			seenFields |= 512
 			next, err = maxminddbGenDecodeNested(valueCursor, &out.Nested)
 			if err != nil {
 				return mmdbdata.Cursor{}, fmt.Errorf("decoding field nested: %w", err)
 			}
 		case "custom":
+			if seenFields&1024 != 0 {
+				return mmdbdata.Cursor{}, mmdbdata.NewInvalidDatabaseError("duplicate map key %q", key)
+			}
+			seenFields |= 1024
 			next, err = valueCursor.Unmarshal(&out.Custom)
 			if err != nil {
 				return mmdbdata.Cursor{}, fmt.Errorf("decoding field custom: %w", err)
 			}
 		case "bytes":
+			if seenFields&2048 != 0 {
+				return mmdbdata.Cursor{}, mmdbdata.NewInvalidDatabaseError("duplicate map key %q", key)
+			}
+			seenFields |= 2048
 			out.Bytes, next, err = maxminddbGen_model_5fmaxminddb_Bytes(valueCursor, out.Bytes)
 			if err != nil {
 				return mmdbdata.Cursor{}, fmt.Errorf("decoding field bytes: %w", mmdbdata.NormalizeUnmarshalError[[]byte](err))

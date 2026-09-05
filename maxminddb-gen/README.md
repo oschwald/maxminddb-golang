@@ -140,8 +140,9 @@ its backing array and does not protect aliases.
 
 Generated and handwritten unmarshalers control their own traversal and do not
 inherit reflection decoding's aggregate per-record work and payload budgets.
-Generated code enforces each declared `maxsize` constraint, but schema authors
-must place constraints on fields that could otherwise amplify work. Unknown keys are skipped without following
+Generated code rejects duplicate recognized map keys and enforces each declared
+`maxsize` constraint, but schema authors must place constraints on fields that
+could otherwise amplify work. Unknown keys are skipped without following
 pointer targets. Handwritten implementations must also share an aggregate
 budget across nested calls when they traverse untrusted data. Calling
 `Reader.Verify` before decoding provides a complete-database validation

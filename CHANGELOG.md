@@ -10,6 +10,7 @@
 - Added the `maxsize:N` struct-tag option to limit maps, arrays, strings, and
   bytes in reflection and generated decoders, plus bounded cursor reads.
   Field names containing commas must now be single-quoted.
+- Made generated decoders reject duplicate recognized map keys.
 
 ## 2.5.0 - 2026-08-08
 

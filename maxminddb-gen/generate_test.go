@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -1070,6 +1071,28 @@ func TestMaxSizeExact(t *testing.T) {
 	}
 }
 
+func TestDuplicateRecognizedField(t *testing.T) {
+	data := []byte{0xe2}
+	data = appendField(data, "text", []byte{0x43, 'o', 'n', 'e'})
+	data = appendField(data, "text", []byte{0x43, 't', 'w', 'o'})
+
+	got := Record{Bytes: []byte{9}}
+	_, err := got.UnmarshalMaxMindDBCursor(mmdbdata.NewDecoder(data, 0).Cursor())
+	if err == nil {
+		t.Fatal("expected duplicate map key error")
+	}
+	var invalid mmdbdata.InvalidDatabaseError
+	if !errors.As(err, &invalid) {
+		t.Fatalf("error type = %T, want InvalidDatabaseError: %v", err, err)
+	}
+	if got.Text != "one" {
+		t.Fatalf("duplicate field replaced first value: got %q", got.Text)
+	}
+	if !reflect.DeepEqual(got.Bytes, []byte{9}) {
+		t.Fatalf("unrelated field mutated: got %#v", got.Bytes)
+	}
+}
+
 func TestMaxSizeRejectsBeforeMutation(t *testing.T) {
 	mapValue := []byte{0xe3}
 	for key := byte('a'); key <= 'c'; key++ {
@@ -1327,6 +1350,45 @@ func TestMaxSizeCustomContainersRejectBeforeCallback(t *testing.T) {
 		generated,
 		"NewKindSet(mmdbdata.KindMap, mmdbdata.KindSlice, mmdbdata.KindString, mmdbdata.KindBytes)",
 	)
+	testGeneratedPackage(t)
+}
+
+func TestGenerateDuplicateTrackingForMoreThan64Fields(t *testing.T) {
+	var model strings.Builder
+	model.WriteString("package fixture\n\ntype Record struct {\n")
+	for fieldIndex := range 65 {
+		fmt.Fprintf(&model, "\tField%02d bool\n", fieldIndex)
+	}
+	model.WriteString("}\n")
+	dir := newTestModule(t, model.String())
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "model_test.go"), []byte(`package fixture
+
+import (
+	"errors"
+	"testing"
+
+	"github.com/oschwald/maxminddb-golang/v2/mmdbdata"
+)
+
+func TestDuplicateLastField(t *testing.T) {
+	data := []byte{0xe2, 0x47, 'F', 'i', 'e', 'l', 'd', '6', '4', 0x00, 0x07,
+		0x47, 'F', 'i', 'e', 'l', 'd', '6', '4', 0x01, 0x07}
+	var got Record
+	_, err := got.UnmarshalMaxMindDBCursor(mmdbdata.NewDecoder(data, 0).Cursor())
+	var invalid mmdbdata.InvalidDatabaseError
+	if !errors.As(err, &invalid) {
+		t.Fatalf("error = %v, want InvalidDatabaseError", err)
+	}
+	if got.Field64 {
+		t.Fatal("duplicate field replaced first value")
+	}
+}
+`), 0o600))
+	t.Chdir(dir)
+	require.NoError(t, run([]string{"model.go"}))
+	generated := string(readTestFile(t, "model_maxminddb.go"))
+	require.Contains(t, generated, "var seenFields [2]uint64")
+	require.Contains(t, generated, "seenFields[1]&1")
 	testGeneratedPackage(t)
 }
 
