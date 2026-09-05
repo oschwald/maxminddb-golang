@@ -209,8 +209,18 @@ func BenchmarkScalarDecoding(b *testing.B) {
 			newResult: func() any { return new(any) },
 		},
 		{
+			name:      "any-uint16",
+			data:      []byte{0xa2, 0, 1},
+			newResult: func() any { return new(any) },
+		},
+		{
 			name:      "any-uint32",
 			data:      []byte{0xc4, 0, 0, 0, 1},
+			newResult: func() any { return new(any) },
+		},
+		{
+			name:      "any-uint64",
+			data:      []byte{0x08, 0x02, 0, 0, 0, 0, 0, 0, 0, 1},
 			newResult: func() any { return new(any) },
 		},
 	}

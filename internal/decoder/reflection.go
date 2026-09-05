@@ -2728,6 +2728,32 @@ func (d *ReflectionDecoder) decodeAny(
 	if err != nil {
 		return err
 	}
+	// The destination is an empty interface, and a retained pointer has
+	// already been handled above. Avoid repeating destination and integer
+	// width dispatch for directly encoded unsigned scalars.
+	switch kind {
+	case KindUint16:
+		value, _, err := d.decodeUint16(size, dataOffset)
+		if err != nil {
+			return err
+		}
+		result.Set(reflect.ValueOf(uint64(value)))
+		return nil
+	case KindUint32:
+		value, _, err := d.decodeUint32(size, dataOffset)
+		if err != nil {
+			return err
+		}
+		result.Set(reflect.ValueOf(uint64(value)))
+		return nil
+	case KindUint64:
+		value, _, err := d.decodeUint64(size, dataOffset)
+		if err != nil {
+			return err
+		}
+		result.Set(reflect.ValueOf(value))
+		return nil
+	}
 	_, err = d.decodeFromType(kind, size, dataOffset, result, depth+1)
 	return err
 }
