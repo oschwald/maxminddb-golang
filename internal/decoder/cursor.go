@@ -126,18 +126,7 @@ func (c Cursor) ReadBool() (bool, Cursor, error) {
 
 // ReadString reads a string and returns its successor cursor.
 func (c Cursor) ReadString() (string, Cursor, error) {
-	if err := c.validate(); err != nil {
-		return "", Cursor{}, err
-	}
-	value, next, err := c.decoder.decodeStringValue(c.offset)
-	if err != nil {
-		var mismatch UnexpectedKindError
-		if errors.As(err, &mismatch) {
-			return "", Cursor{}, c.unexpectedKinds(mismatch.Expected, mismatch.Actual)
-		}
-		return "", Cursor{}, c.wrapError(err)
-	}
-	return value, c.successor(next), nil
+	return c.ReadStringMaxSize(maxValueSize)
 }
 
 // ReadStringMaxSize reads a string and returns its successor cursor. It
@@ -145,91 +134,122 @@ func (c Cursor) ReadString() (string, Cursor, error) {
 //
 //nolint:nestif,revive // Keep compact direct and pointer encodings on the hot path.
 func (c Cursor) ReadStringMaxSize(maximum uint64) (string, Cursor, error) {
-	if err := c.validate(); err != nil {
-		return "", Cursor{}, err
+	// Keep compact decoding here to avoid an extra call from generated decoders.
+	if c.decoder == nil {
+		return "", Cursor{}, c.validate()
 	}
-	buffer := c.decoder.buffer
-	bufferLen := uint(len(buffer))
-	if c.offset < bufferLen {
-		ctrlByte := buffer[c.offset]
+	d, offset := c.decoder, c.offset
+
+	bufferLen := uint(len(d.buffer))
+	if offset < bufferLen {
+		ctrlByte := d.buffer[offset]
 		kind := Kind(ctrlByte >> 5)
 		size := uint(ctrlByte & 0x1f)
 		switch kind {
 		case KindString:
 			if size < 29 {
-				dataOffset := c.offset + 1
-				if size <= bufferLen-dataOffset {
+				dataOffset := offset + 1
+				nextOffset := dataOffset + size
+				if nextOffset <= bufferLen {
 					if uint64(size) > maximum {
 						return "", Cursor{}, c.maxSizeError(KindString, size, maximum)
 					}
-					var value string
-					if c.decoder.stringCache == nil {
-						value = string(buffer[dataOffset : dataOffset+size])
-					} else {
-						value = c.decoder.stringCache.internAt(
-							dataOffset-1,
-							buffer[dataOffset:dataOffset+size],
-						)
-					}
-					return value, c.successor(dataOffset + size), nil
+					return d.decodeStringBytes(
+						dataOffset-1,
+						d.buffer[dataOffset:dataOffset+size],
+					), c.successor(nextOffset), nil
 				}
 			}
 		case KindPointer:
-			if size < 8 && c.offset+2 <= bufferLen {
-				pointer := (size&0x7)<<8 | uint(buffer[c.offset+1])
+			if size < 8 && offset+2 <= bufferLen {
+				pointer := (size&0x7)<<8 | uint(d.buffer[offset+1])
 				if pointer < bufferLen {
-					pointedCtrlByte := buffer[pointer]
-					pointedSize := uint(pointedCtrlByte & 0x1f)
-					dataOffset := pointer + 1
-					if Kind(pointedCtrlByte>>5) == KindString && pointedSize < 29 &&
-						pointedSize <= bufferLen-dataOffset {
-						if uint64(pointedSize) > maximum {
-							return "", Cursor{}, c.maxSizeError(
-								KindString,
-								pointedSize,
-								maximum,
-							)
-						}
-						var value string
-						if c.decoder.stringCache == nil {
-							value = string(buffer[dataOffset : dataOffset+pointedSize])
-						} else {
-							value = c.decoder.stringCache.internAt(
+					pointedCtrlByte := d.buffer[pointer]
+					if Kind(pointedCtrlByte>>5) == KindString {
+						pointedSize := uint(pointedCtrlByte & 0x1f)
+						dataOffset := pointer + 1
+						if pointedSize < 29 && dataOffset+pointedSize <= bufferLen {
+							if uint64(pointedSize) > maximum {
+								return "", Cursor{}, c.maxSizeError(
+									KindString,
+									pointedSize,
+									maximum,
+								)
+							}
+							return d.decodeStringBytes(
 								dataOffset-1,
-								buffer[dataOffset:dataOffset+pointedSize],
-							)
+								d.buffer[dataOffset:dataOffset+pointedSize],
+							), c.successor(offset + 2), nil
 						}
-						return value, c.successor(c.offset + 2), nil
 					}
 				}
 			}
 			if size >= 8 {
-				value, dataOffset, nextOffset, ok := c.decoder.decodePointerKeyFast(
-					c.offset, uint(ctrlByte), bufferLen,
-				)
-				if ok {
-					if uint64(len(value)) > maximum {
-						return "", Cursor{}, c.maxSizeError(KindString, uint(len(value)), maximum)
+				payloadOffset := offset + 1
+				pointerSize := ((size >> 3) & 0x3) + 1
+				pointerEnd := payloadOffset + pointerSize
+				if pointerEnd <= bufferLen {
+					var pointer uint
+					switch pointerSize {
+					case 2:
+						pointer = ((size&0x7)<<16 |
+							uint(d.buffer[payloadOffset])<<8 |
+							uint(d.buffer[payloadOffset+1])) + pointerBase2
+					case 3:
+						pointer = ((size&0x7)<<24 |
+							uint(d.buffer[payloadOffset])<<16 |
+							uint(d.buffer[payloadOffset+1])<<8 |
+							uint(d.buffer[payloadOffset+2])) + pointerBase3
+					case 4:
+						pointer = uint(d.buffer[payloadOffset])<<24 |
+							uint(d.buffer[payloadOffset+1])<<16 |
+							uint(d.buffer[payloadOffset+2])<<8 |
+							uint(d.buffer[payloadOffset+3])
 					}
-					return c.decoder.decodeCompactString(uint(len(value)), dataOffset),
-						c.successor(nextOffset), nil
+					if pointer < bufferLen {
+						pointedCtrlByte := d.buffer[pointer]
+						if Kind(pointedCtrlByte>>5) == KindString {
+							pointedSize := uint(pointedCtrlByte & 0x1f)
+							dataOffset := pointer + 1
+							if pointedSize < 29 && pointedSize <= bufferLen-dataOffset {
+								if uint64(pointedSize) > maximum {
+									return "", Cursor{}, c.maxSizeError(
+										KindString,
+										pointedSize,
+										maximum,
+									)
+								}
+								return d.decodeStringBytes(
+									dataOffset-1,
+									d.buffer[dataOffset:dataOffset+pointedSize],
+								), c.successor(pointerEnd), nil
+							}
+						}
+					}
 				}
 			}
 		default:
 		}
 	}
-	size, dataOffset, next, err := c.scalar(KindString)
+
+	kind, size, dataOffset, nextOffset, err := d.resolveCtrlData(offset)
 	if err != nil {
-		return "", Cursor{}, err
+		return "", Cursor{}, c.wrapError(err)
+	}
+	if nextOffset == 0 {
+		nextOffset = dataOffset + size
+	}
+	if kind != KindString {
+		return "", Cursor{}, c.unexpectedKind(KindString, kind)
 	}
 	if uint64(size) > maximum {
 		return "", Cursor{}, c.maxSizeError(KindString, size, maximum)
 	}
-	value, _, err := c.decoder.decodeString(size, dataOffset)
+	value, _, err := d.decodeString(size, dataOffset)
 	if err != nil {
 		return "", Cursor{}, c.wrapError(err)
 	}
-	return value, c.successor(next), nil
+	return value, c.successor(nextOffset), nil
 }
 
 // ReadBytes reads bytes and returns its successor cursor. The returned bytes

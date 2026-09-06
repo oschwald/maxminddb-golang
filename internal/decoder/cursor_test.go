@@ -657,6 +657,28 @@ func TestCursorBoundedReads(t *testing.T) {
 	})
 }
 
+func TestReadStringFormatMaximum(t *testing.T) {
+	// The largest size header encodes 65,821 + 0xffffff bytes.
+	const size = 16_843_036
+	data := append(stringLeaf(size), 0xa1, 7)
+	decoder := NewDecoder(NewDataDecoderWithoutStringCache(data), 0)
+	cursor := decoder.Cursor()
+
+	_, _, err := cursor.ReadStringMaxSize(size - 1)
+	requireMaxSizeError(t, err)
+
+	value, next, err := cursor.ReadString()
+	require.NoError(t, err)
+	require.Len(t, value, size)
+	number, _, err := next.ReadUint()
+	require.NoError(t, err)
+	require.Equal(t, uint64(7), number)
+
+	value, err = decoder.ReadString()
+	require.NoError(t, err)
+	require.Len(t, value, size)
+}
+
 func TestCursorBoundedStringWidePointers(t *testing.T) {
 	for _, tt := range []struct {
 		name    string

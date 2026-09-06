@@ -111,6 +111,8 @@ type DataDecoder struct {
 }
 
 const (
+	// maxValueSize is the largest byte or entry count an MMDB size header can encode.
+	maxValueSize = 65_821 + (1<<24 - 1)
 	// This is the value used in libmaxminddb.
 	maximumDataStructureDepth = 512
 	// Container-shaped reflection decoding receives a fixed work allowance
@@ -348,15 +350,20 @@ func (d *DataDecoder) decodeString(size, dataOffset uint) (string, uint, error) 
 // separate avoids repeating the range check and header-width calculation in
 // decodeString.
 func (d *DataDecoder) decodeCompactString(size, dataOffset uint) string {
-	end := dataOffset + size
+	return d.decodeStringBytes(dataOffset-1, d.buffer[dataOffset:dataOffset+size])
+}
+
+// decodeStringBytes copies or interns a validated string payload. Accepting
+// the control-record offset and payload directly keeps this helper inlinable.
+func (d *DataDecoder) decodeStringBytes(controlOffset uint, value []byte) string {
 	if d.stringCache == nil {
-		return string(d.buffer[dataOffset:end])
+		return string(value)
 	}
-	return d.stringCache.internAt(dataOffset-1, d.buffer[dataOffset:end])
+	return d.stringCache.internAt(controlOffset, value)
 }
 
 // decodeStringValue decodes a string or one pointer to a string and returns
-// the successor in the original containing stream.
+// the successor in the original containing stream for the legacy decoder.
 //
 //nolint:nestif // Keep common compact encodings inline on this hot path.
 func (d *DataDecoder) decodeStringValue(offset uint) (string, uint, error) {
@@ -371,7 +378,10 @@ func (d *DataDecoder) decodeStringValue(offset uint) (string, uint, error) {
 				dataOffset := offset + 1
 				nextOffset := dataOffset + size
 				if nextOffset <= bufferLen {
-					return d.decodeCompactString(size, dataOffset), nextOffset, nil
+					return d.decodeStringBytes(
+						dataOffset-1,
+						d.buffer[dataOffset:dataOffset+size],
+					), nextOffset, nil
 				}
 			}
 		case KindPointer:
@@ -383,7 +393,10 @@ func (d *DataDecoder) decodeStringValue(offset uint) (string, uint, error) {
 						pointedSize := uint(pointedCtrlByte & 0x1f)
 						dataOffset := pointer + 1
 						if pointedSize < 29 && dataOffset+pointedSize <= bufferLen {
-							return d.decodeCompactString(pointedSize, dataOffset), offset + 2, nil
+							return d.decodeStringBytes(
+								dataOffset-1,
+								d.buffer[dataOffset:dataOffset+pointedSize],
+							), offset + 2, nil
 						}
 					}
 				}
@@ -416,9 +429,9 @@ func (d *DataDecoder) decodeStringValue(offset uint) (string, uint, error) {
 							pointedSize := uint(pointedCtrlByte & 0x1f)
 							dataOffset := pointer + 1
 							if pointedSize < 29 && pointedSize <= bufferLen-dataOffset {
-								return d.decodeCompactString(
-									pointedSize,
-									dataOffset,
+								return d.decodeStringBytes(
+									dataOffset-1,
+									d.buffer[dataOffset:dataOffset+pointedSize],
 								), pointerEnd, nil
 							}
 						}
