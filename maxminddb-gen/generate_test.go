@@ -2771,7 +2771,7 @@ func newTestModule(t *testing.T, model string) string {
 	require.NoError(t, err)
 	module := strings.ReplaceAll(`module example.com/generatortest
 
-go 1.25.0
+go 1.26.0
 
 require github.com/oschwald/maxminddb-golang/v2 v2.5.0
 

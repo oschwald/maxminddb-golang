@@ -15,8 +15,7 @@ func TestCustomCityNormalizesKindMismatch(t *testing.T) {
 	_, err := city.UnmarshalMaxMindDBCursor(
 		mmdbdata.NewDecoder([]byte{0x40}, 0).Cursor(),
 	)
-	var typeError maxminddb.UnmarshalTypeError
-	if !errors.As(err, &typeError) {
+	if _, ok := errors.AsType[maxminddb.UnmarshalTypeError](err); !ok {
 		t.Fatalf("expected UnmarshalTypeError, got %v", err)
 	}
 }
