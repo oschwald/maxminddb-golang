@@ -1113,8 +1113,8 @@ func TestMaxSizeRejectsBeforeMutation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			keep := "keep"
 			newRecord := func() Record {
+				keep := "keep"
 				return Record{
 					Text:        "keep",
 					Bytes:       []byte{9},
