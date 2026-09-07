@@ -86,6 +86,41 @@ func (d *Decoder) Advance(next Cursor) error {
 	return nil
 }
 
+// Offset returns the current value's control-byte offset without consuming it.
+// It resolves one pointer so values in the same database can be cached by their
+// shared offset. It returns an error for a zero cursor, malformed control data,
+// or a pointer that cannot be resolved, including a pointer-to-pointer chain.
+// A successful call does not validate the value's payload.
+func (c Cursor) Offset() (uint, error) {
+	if err := c.validate(); err != nil {
+		return 0, err
+	}
+	// resolveCtrlData returns the payload offset, but cache keys need the
+	// control-byte offset, including for values with extended headers.
+	kind, size, ctrlEnd, err := c.decoder.decodeCtrlData(c.offset)
+	if err != nil {
+		return 0, c.wrapError(err)
+	}
+	if kind != KindPointer {
+		return c.offset, nil
+	}
+
+	pointer, _, err := c.decoder.decodePointer(size, ctrlEnd)
+	if err != nil {
+		return 0, c.wrapError(err)
+	}
+	kind, _, _, err = c.decoder.decodeCtrlData(pointer)
+	if err != nil {
+		return 0, c.wrapError(err)
+	}
+	if kind == KindPointer {
+		return 0, c.wrapError(
+			mmdberrors.NewInvalidDatabaseError("pointer-to-pointer chain detected"),
+		)
+	}
+	return pointer, nil
+}
+
 // Kind returns the resolved kind at the cursor without consuming it.
 func (c Cursor) Kind() (Kind, error) {
 	if err := c.validate(); err != nil {
