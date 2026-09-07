@@ -1,5 +1,9 @@
 # Changes
 
+## 2.7.0
+
+- Go 1.26 or later is now required. CI now tests Go 1.26 and 1.27.
+
 ## 2.6.0 - 2026-09-07
 
 - Fixed a denial-of-service issue where a crafted database could use repeated

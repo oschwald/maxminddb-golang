@@ -1,6 +1,6 @@
 module github.com/oschwald/maxminddb-golang/v2
 
-go 1.25.0
+go 1.26.0
 
 tool github.com/oschwald/maxminddb-golang/v2/maxminddb-gen
 

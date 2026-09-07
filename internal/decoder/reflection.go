@@ -399,8 +399,7 @@ func (d *ReflectionDecoder) nextValueOffsetBudgetedSlow(
 
 func wrapRootDecodeError(err error, offset uint) error {
 	// Check if error already has context (including path), if so just add offset if missing
-	var contextErr mmdberrors.ContextualError
-	if errors.As(err, &contextErr) {
+	if contextErr, ok := errors.AsType[mmdberrors.ContextualError](err); ok {
 		if contextErr.Offset != 0 || offset == 0 {
 			return err
 		}
@@ -600,8 +599,7 @@ func wrapErrorWithPath(err error, prepend func(*mmdberrors.PathBuilder)) error {
 		return nil
 	}
 
-	var contextErr mmdberrors.ContextualError
-	if errors.As(err, &contextErr) {
+	if contextErr, ok := errors.AsType[mmdberrors.ContextualError](err); ok {
 		pathBuilder := mmdberrors.NewPathBuilder()
 		if contextErr.Path != "" && contextErr.Path != "/" {
 			pathBuilder.ParseAndExtend(contextErr.Path)
@@ -1917,8 +1915,7 @@ func (d *ReflectionDecoder) decodeValueMaxSize(
 		}
 		value, next, err := cursor.ReadStringMaxSize(maximum)
 		if err != nil {
-			var mismatch UnexpectedKindError
-			if errors.As(err, &mismatch) {
+			if _, ok := errors.AsType[UnexpectedKindError](err); ok {
 				return d.decodeValueSkipUnmarshaler(offset, result, depth)
 			}
 			return 0, err
