@@ -11,7 +11,7 @@ unmarshaling methods continues to use the reflection decoder.
 Pin `maxminddb-golang` and declare its generator as a module tool:
 
 ```go
-require github.com/oschwald/maxminddb-golang/v2 v2.5.0
+require github.com/oschwald/maxminddb-golang/v2 v2.6.0
 
 tool github.com/oschwald/maxminddb-golang/v2/maxminddb-gen
 ```
