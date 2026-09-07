@@ -1,6 +1,6 @@
 # Changes
 
-## 2.6.0
+## 2.6.0 - 2026-09-07
 
 - Fixed a denial-of-service issue where a crafted database could use repeated
   pointers to cause excessive CPU and memory use during reflection decoding.
