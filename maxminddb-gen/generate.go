@@ -1436,11 +1436,15 @@ func (g *generator) emitStruct(out *strings.Builder, info structInfo) {
 		info.named.Obj().Name(),
 	)
 	out.WriteString("\tnext := entries.First()\n")
+	seenFields := "seenFields"
+	for suffix := 1; g.pkg.Types.Scope().Lookup(seenFields) != nil; suffix++ {
+		seenFields = "seenFields" + strconv.Itoa(suffix)
+	}
 	if len(info.fields) != 0 {
 		if len(info.fields) <= 64 {
-			out.WriteString("\tvar seenFields uint64\n")
+			fmt.Fprintf(out, "\tvar %s uint64\n", seenFields)
 		} else {
-			fmt.Fprintf(out, "\tvar seenFields [%d]uint64\n", (len(info.fields)+63)/64)
+			fmt.Fprintf(out, "\tvar %s [%d]uint64\n", seenFields, (len(info.fields)+63)/64)
 		}
 	}
 	out.WriteString("\tfor range entries.Len() {\n")
@@ -1453,9 +1457,9 @@ func (g *generator) emitStruct(out *strings.Builder, info structInfo) {
 	out.WriteString("\t\tswitch string(key) {\n")
 	for fieldIndex, field := range info.fields {
 		fmt.Fprintf(out, "\t\tcase %s:\n", strconv.Quote(field.name))
-		seenField := "seenFields"
+		seenField := seenFields
 		if len(info.fields) > 64 {
-			seenField = fmt.Sprintf("seenFields[%d]", fieldIndex/64)
+			seenField = fmt.Sprintf("%s[%d]", seenFields, fieldIndex/64)
 		}
 		fieldBit := uint64(1) << (fieldIndex % 64)
 		fmt.Fprintf(out, "\t\t\tif %s&%d != 0 {\n", seenField, fieldBit)

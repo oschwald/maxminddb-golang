@@ -744,5 +744,5 @@ func TestOversizedPointerReturnsError(t *testing.T) {
 }
 
 func testFile(file string) string {
-	return filepath.Join("..", "..", "test-data", "test-data", file)
+	return filepath.Join("..", "..", "testdata", "test-data", file)
 }

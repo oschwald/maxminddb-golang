@@ -1637,11 +1637,11 @@ func randomIPv4Address(r *rand.Rand, ip []byte) netip.Addr {
 }
 
 func testFile(file string) string {
-	return filepath.Join("test-data", "test-data", file)
+	return filepath.Join("testdata", "test-data", file)
 }
 
 func badDataFile(file string) string {
-	return filepath.Join("test-data", "bad-data", file)
+	return filepath.Join("testdata", "bad-data", file)
 }
 
 // Test custom unmarshaling through Reader.Lookup.

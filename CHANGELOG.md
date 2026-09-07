@@ -11,6 +11,9 @@
   bytes in reflection and generated decoders, plus bounded cursor reads.
   Field names containing commas must now be single-quoted.
 - Made generated decoders reject duplicate recognized map keys.
+- Added `mmdbdata.Cursor.Offset()` to retrieve a value's resolved control-byte
+  offset for caching within a database. It returns an error when resolution
+  fails; the legacy `Decoder.Offset()` retains its original-offset fallback.
 - Improved performance:
   - Reduced 28-bit search-tree lookup overhead with single-word node reads.
   - Extended bounded cursor string fast paths to wider data pointers.

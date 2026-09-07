@@ -1113,8 +1113,8 @@ func TestMaxSizeRejectsBeforeMutation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			keep := "keep"
 			newRecord := func() Record {
+				keep := "keep"
 				return Record{
 					Text:        "keep",
 					Bytes:       []byte{9},
@@ -2182,6 +2182,31 @@ type Record struct {
 
 	require.NoError(t, run([]string{"model.go"}))
 	require.Equal(t, generated, readTestFile(t, "model_maxminddb.go"))
+}
+
+func TestGeneratedSeenFieldsDoesNotShadowTypes(t *testing.T) {
+	for _, fieldCount := range []int{2, 65} {
+		t.Run(fmt.Sprintf("%d fields", fieldCount), func(t *testing.T) {
+			var model strings.Builder
+			model.WriteString(
+				"package fixture\n\ntype seenFields string\ntype seenFields1 string\n\ntype Record struct {\n",
+			)
+			model.WriteString("Value seenFields\n")
+			for i := 1; i < fieldCount; i++ {
+				fmt.Fprintf(&model, "Value%d seenFields1\n", i)
+			}
+			model.WriteString("}\n")
+			dir := newTestModule(t, model.String())
+
+			t.Chdir(dir)
+			require.NoError(t, run([]string{"model.go"}))
+			generated := readTestFile(t, "model_maxminddb.go")
+			testGeneratedPackage(t)
+
+			require.NoError(t, run([]string{"model.go"}))
+			require.Equal(t, generated, readTestFile(t, "model_maxminddb.go"))
+		})
+	}
 }
 
 func TestRunHonorsOutputOverride(t *testing.T) {

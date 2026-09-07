@@ -342,6 +342,8 @@ func (d *Decoder) PeekKind() (Kind, error) {
 // pointer and returns the offset of the actual data. This ensures
 // that multiple pointers to the same data return the same offset, which
 // is important for caching purposes.
+// If resolution fails, it returns the original offset. Use Cursor.Offset to
+// retrieve resolution errors.
 func (d *Decoder) Offset() uint {
 	dataDecoder := d.dataDecoder()
 	// This intentionally does not use resolveCtrlData: Offset must return the

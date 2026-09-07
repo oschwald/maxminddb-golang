@@ -11,7 +11,7 @@ import (
 
 // This example shows how to decode to a struct.
 func ExampleReader_Lookup_struct() {
-	db, err := maxminddb.Open("test-data/test-data/GeoIP2-City-Test.mmdb")
+	db, err := maxminddb.Open("testdata/test-data/GeoIP2-City-Test.mmdb")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -36,7 +36,7 @@ func ExampleReader_Lookup_struct() {
 
 // This example demonstrates how to decode to an any.
 func ExampleReader_Lookup_interface() {
-	db, err := maxminddb.Open("test-data/test-data/GeoIP2-City-Test.mmdb")
+	db, err := maxminddb.Open("testdata/test-data/GeoIP2-City-Test.mmdb")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func ExampleReader_Lookup_interface() {
 // This example demonstrates how to iterate over all networks in the
 // database.
 func ExampleReader_Networks() {
-	db, err := maxminddb.Open("test-data/test-data/GeoIP2-Connection-Type-Test.mmdb")
+	db, err := maxminddb.Open("testdata/test-data/GeoIP2-Connection-Type-Test.mmdb")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func ExampleReader_Networks() {
 
 // This example demonstrates how to validate a MaxMind DB file and access metadata.
 func ExampleReader_Verify() {
-	db, err := maxminddb.Open("test-data/test-data/GeoIP2-City-Test.mmdb")
+	db, err := maxminddb.Open("testdata/test-data/GeoIP2-City-Test.mmdb")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -138,7 +138,7 @@ func ExampleReader_Verify() {
 // This example demonstrates how to iterate over all networks in the
 // database which are contained within an arbitrary network.
 func ExampleReader_NetworksWithin() {
-	db, err := maxminddb.Open("test-data/test-data/GeoIP2-Connection-Type-Test.mmdb")
+	db, err := maxminddb.Open("testdata/test-data/GeoIP2-Connection-Type-Test.mmdb")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func ExampleReader_NetworksWithin() {
 // This example demonstrates how to use SkipEmptyValues to iterate only over
 // networks that have actual data, skipping those with empty maps or arrays.
 func ExampleSkipEmptyValues() {
-	db, err := maxminddb.Open("test-data/test-data/GeoIP2-Anonymous-IP-Test.mmdb")
+	db, err := maxminddb.Open("testdata/test-data/GeoIP2-Anonymous-IP-Test.mmdb")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -356,7 +356,7 @@ func (c *CustomCity) unmarshalNames(cursor mmdbdata.Cursor) (mmdbdata.Cursor, er
 // Types implementing CursorUnmarshaler automatically use custom decoding logic
 // instead of reflection, similar to how json.Unmarshaler works with encoding/json.
 func Example_cursorUnmarshaler() {
-	db, err := maxminddb.Open("test-data/test-data/GeoIP2-City-Test.mmdb")
+	db, err := maxminddb.Open("testdata/test-data/GeoIP2-City-Test.mmdb")
 	if err != nil {
 		log.Fatal(err)
 	}

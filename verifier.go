@@ -130,8 +130,7 @@ func (v *verifier) verifyMetadata() error {
 			return mmdberrors.NewInvalidDatabaseError("metadata marker not found")
 		}
 		metadataOffset := markerOffset + len(metadataStartMarker)
-		rawDecoder := decoder.NewWithoutStringCache(v.reader.buffer[metadataOffset:])
-		if err := rawDecoder.VerifyDataSection(map[uint]bool{0: true}); err != nil {
+		if err := decoder.VerifyMetadata(v.reader.buffer[metadataOffset:]); err != nil {
 			return err
 		}
 	}

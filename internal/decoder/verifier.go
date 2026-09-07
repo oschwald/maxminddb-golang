@@ -7,6 +7,17 @@ import (
 	"github.com/oschwald/maxminddb-golang/v2/internal/mmdberrors"
 )
 
+// VerifyMetadata validates the complete metadata map under one decoding budget.
+// Pointer targets may follow the map and are not search-tree data records.
+func VerifyMetadata(buffer []byte) error {
+	d := NewWithoutStringCache(buffer)
+	var metadata any
+	if err := d.DecodeWithBudget(0, &metadata); err != nil {
+		return err
+	}
+	return validateUTF8(metadata)
+}
+
 // VerifyDataSection verifies the data section against the provided
 // offsets from the tree.
 func (d *ReflectionDecoder) VerifyDataSection(offsets map[uint]bool) error {
