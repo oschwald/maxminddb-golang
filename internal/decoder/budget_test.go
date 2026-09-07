@@ -1009,6 +1009,34 @@ func TestTypedStructDoesNotChargeIgnoredPayload(t *testing.T) {
 	require.NoError(t, decodeAt(buf, 0, &out))
 }
 
+func TestVerifyMetadataBudgetsUnknownFields(t *testing.T) {
+	t.Run("container expansion", func(t *testing.T) {
+		buf := append(mapHeader(1), encodedString("unknown")...)
+		for range 20 {
+			target := len(buf) + 6
+			buf = append(buf, sliceHeader(2)...)
+			buf = append(buf, ptr(target)...)
+			buf = append(buf, ptr(target)...)
+		}
+		buf = append(buf, 0xa0)
+
+		requireExpansionLimit(t, VerifyMetadata(buf))
+	})
+
+	t.Run("payload expansion", func(t *testing.T) {
+		buf := append(mapHeader(1), encodedString("unknown")...)
+		buf = append(buf, sliceHeader(payloadFanOut)...)
+		target := len(buf) + payloadFanOut*2
+		require.Less(t, target, 2048)
+		for range payloadFanOut {
+			buf = append(buf, ptr(target)...)
+		}
+		buf = append(buf, stringLeaf(100<<10)...)
+
+		requireExpansionLimit(t, VerifyMetadata(buf))
+	})
+}
+
 func TestVerifyDataSectionBudgetsEachRecord(t *testing.T) {
 	d := New(binaryFanOut())
 	err := d.VerifyDataSection(map[uint]bool{0: true})

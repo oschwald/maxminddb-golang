@@ -168,6 +168,46 @@ func TestVerifyRejectsInvalidPointerInUnknownMetadataField(t *testing.T) {
 	require.Error(t, reader.Verify())
 }
 
+func TestVerifyMetadataPointersAfterRoot(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   []byte
+		wantErr string
+	}{
+		{name: "valid string", value: []byte{0x42, 'o', 'k'}},
+		{name: "invalid string", value: []byte{0x41, 0xff}, wantErr: "invalid UTF-8"},
+		{name: "invalid map key", value: []byte{0xe1, 0x41, 0xff, 0xe0}, wantErr: "invalid UTF-8"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data, err := os.ReadFile(testFile("MaxMind-DB-test-ipv4-24.mmdb"))
+			require.NoError(t, err)
+			markerOffset := bytes.LastIndex(data, metadataStartMarker)
+			require.NotEqual(t, -1, markerOffset)
+			metadataOffset := markerOffset + len(metadataStartMarker)
+			require.Equal(t, byte(0xe9), data[metadataOffset])
+			data[metadataOffset] = 0xea
+			data = append(data, 0x47)
+			data = append(data, "unknown"...)
+			// Point to a value stored immediately after the metadata map.
+			target := len(data) - metadataOffset + 2
+			require.Less(t, target, 2048)
+			data = append(data, 0x20|byte(target>>8), byte(target))
+			data = append(data, tt.value...)
+
+			reader, err := OpenBytes(data)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, reader.Close()) })
+			err = reader.Verify()
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestVerifyOnGoodDatabases(t *testing.T) {
 	databases := []string{
 		"GeoIP2-Anonymous-IP-Test.mmdb",
@@ -186,6 +226,7 @@ func TestVerifyOnGoodDatabases(t *testing.T) {
 		"MaxMind-DB-test-ipv6-24.mmdb",
 		"MaxMind-DB-test-ipv6-28.mmdb",
 		"MaxMind-DB-test-ipv6-32.mmdb",
+		"MaxMind-DB-test-metadata-pointers.mmdb",
 		"MaxMind-DB-test-mixed-24.mmdb",
 		"MaxMind-DB-test-mixed-28.mmdb",
 		"MaxMind-DB-test-mixed-32.mmdb",
