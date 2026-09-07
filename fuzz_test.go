@@ -360,10 +360,10 @@ func parseSimpleInt(s string) (int, bool) {
 	return num, true
 }
 
-// getAllTestMMDBFiles returns smaller MMDB files from the test-data directory.
+// getAllTestMMDBFiles returns smaller MMDB files from the testdata directory.
 // Large files are excluded to keep fuzzing fast and prevent timeouts.
 func getAllTestMMDBFiles() []string {
-	testDataDir := filepath.Join("test-data", "test-data")
+	testDataDir := filepath.Join("testdata", "test-data")
 	entries, err := os.ReadDir(testDataDir)
 	if err != nil {
 		return nil
