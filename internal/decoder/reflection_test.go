@@ -187,6 +187,29 @@ func TestDecodeAllocatesTopLevelPointerTarget(t *testing.T) {
 	assert.Equal(t, "Foo", *result)
 }
 
+func TestDecodeDynamicScalar(t *testing.T) {
+	t.Run("database pointer", func(t *testing.T) {
+		d := New([]byte{
+			0x20, 0x02, // pointer to offset 2
+			0xc1, 0x2a, // uint32(42)
+		})
+
+		var result any
+		require.NoError(t, d.Decode(0, &result))
+		assert.Equal(t, uint64(42), result)
+	})
+
+	t.Run("existing interface pointer", func(t *testing.T) {
+		d := New([]byte{0xc1, 0x2a})
+		value := uint32(0)
+		result := any(&value)
+
+		require.NoError(t, d.Decode(0, &result))
+		assert.Same(t, &value, result)
+		assert.Equal(t, uint32(42), value)
+	})
+}
+
 func TestIsEmptyValueAtFollowsPointers(t *testing.T) {
 	d := New([]byte{
 		0x20, 0x02, // pointer to offset 2
@@ -244,13 +267,13 @@ func TestDecodeRejectsOversizedContainersBeforeAllocation(t *testing.T) {
 			name:        "impossible map size",
 			data:        []byte{0xff, 0xff, 0xff, 0xff},
 			out:         new(map[string]any),
-			expectedErr: "unexpected end of database",
+			expectedErr: "maximum decoded record size",
 		},
 		{
 			name:        "impossible slice size",
 			data:        []byte{0x1f, 0x04, 0xff, 0xff, 0xff},
 			out:         new([]any),
-			expectedErr: "unexpected end of database",
+			expectedErr: "maximum decoded record size",
 		},
 		{
 			name:        "invalid map key types",
@@ -297,6 +320,17 @@ func TestMap(t *testing.T) {
 		},
 	}
 	validateDecoding(t, maps)
+}
+
+func TestEmptyStructRejectsInvalidMapKey(t *testing.T) {
+	d := New([]byte{
+		0xE1, // map with one entry
+		0xA0, // uint16 key
+		0xA0, // uint16 value
+	})
+
+	var result struct{}
+	require.ErrorContains(t, d.Decode(0, &result), "unexpected map key type: Uint16")
 }
 
 func TestDecodeStructFieldFingerprintCollisions(t *testing.T) {
@@ -661,7 +695,7 @@ func validateDecoding(t *testing.T, tests map[string]any) {
 		d := New(inputBytes)
 
 		var result any
-		_, err = d.decode(0, reflect.ValueOf(&result), 0)
+		_, err = d.decode(0, reflect.ValueOf(&result))
 		require.NoError(t, err)
 
 		if !reflect.DeepEqual(result, expected) {
@@ -687,7 +721,7 @@ func TestPointers(t *testing.T) {
 
 	for offset, expectedValue := range expected {
 		var actual map[string]string
-		_, err := d.decode(offset, reflect.ValueOf(&actual), 0)
+		_, err := d.decode(offset, reflect.ValueOf(&actual))
 		require.NoError(t, err)
 		if !reflect.DeepEqual(actual, expectedValue) {
 			t.Errorf("Decode for pointer at %d failed", offset)

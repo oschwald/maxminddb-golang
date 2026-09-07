@@ -17,7 +17,7 @@ import (
 	"strings"
 )
 
-const minimumLibrary = "v2.5.0"
+const minimumLibrary = "v2.6.0"
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {

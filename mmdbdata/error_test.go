@@ -45,6 +45,13 @@ func TestNewUnmarshalTypeError(t *testing.T) {
 	require.Equal(t, reflect.TypeFor[uint8](), typeError.Type)
 }
 
+func TestNewInvalidDatabaseError(t *testing.T) {
+	err := NewInvalidDatabaseError("duplicate map key %q", "city")
+	var invalidDatabase InvalidDatabaseError
+	require.ErrorAs(t, err, &invalidDatabase)
+	require.EqualError(t, err, `duplicate map key "city"`)
+}
+
 func TestKindSet(t *testing.T) {
 	set := NewKindSet(KindFloat32, KindFloat64)
 	require.True(t, set.Contains(KindFloat32))

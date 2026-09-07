@@ -61,6 +61,20 @@ func (*errorMapKey) UnmarshalMaxMindDBCursor(Cursor) (Cursor, error) {
 	return Cursor{}, errMapKeyCallback
 }
 
+type retainingMapKey struct {
+	value  string
+	cursor Cursor
+}
+
+func (key *retainingMapKey) UnmarshalMaxMindDBCursor(cursor Cursor) (Cursor, error) {
+	value, next, err := cursor.ReadString()
+	if err == nil {
+		key.value = value
+		key.cursor = next
+	}
+	return next, err
+}
+
 func TestMapKeyCustomUnmarshal(t *testing.T) {
 	data := []byte{
 		0xe1,
@@ -109,11 +123,31 @@ func TestMapKeyCustomUnmarshalError(t *testing.T) {
 	require.ErrorContains(t, err, "en")
 }
 
+func TestMapKeyCustomUnmarshalRetainedCursor(t *testing.T) {
+	data := []byte{
+		0xe1,
+		0x42, 'e', 'n',
+		0x00, 0x07,
+	}
+	decoder := New(data)
+	var result map[retainingMapKey]bool
+	require.NoError(t, decoder.Decode(0, &result))
+	require.Len(t, result, 1)
+
+	for key, value := range result {
+		require.Equal(t, "en", key.value)
+		require.False(t, value)
+		value, _, err := key.cursor.ReadBool()
+		require.NoError(t, err)
+		require.False(t, value)
+	}
+}
+
 func decodeMapWithTrailingValue[K ~string](t *testing.T, data []byte) map[K]bool {
 	t.Helper()
 	decoder := New(data)
 	result := make(map[K]bool)
-	next, err := decoder.decode(0, reflect.ValueOf(&result), 0)
+	next, err := decoder.decode(0, reflect.ValueOf(&result))
 	require.NoError(t, err)
 	value, _, err := (Cursor{decoder: &decoder.DataDecoder, offset: next}).ReadString()
 	require.NoError(t, err)

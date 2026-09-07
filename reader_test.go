@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"testing"
 	"time"
 
@@ -75,6 +76,48 @@ func TestOpenBytesAppliesReaderOptions(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.True(t, optionCalled)
+}
+
+func TestOpenBytesBudgetsConcreteMetadata(t *testing.T) {
+	const (
+		fanOut   = 700
+		leafSize = 100 << 10
+	)
+
+	metadata := make([]byte, 0, 2+len("languages")+4+fanOut*2+4+leafSize)
+	metadata = append(metadata, 0xE1, 0x49)
+	metadata = append(metadata, "languages"...)
+	arraySize := fanOut - 285
+	metadata = append(metadata, 0x1E, 0x04, byte(arraySize>>8), byte(arraySize))
+	leafOffset := len(metadata) + fanOut*2
+	for range fanOut {
+		metadata = append(
+			metadata,
+			0x20|byte((leafOffset>>8)&0x7),
+			byte(leafOffset),
+		)
+	}
+	payloadSize := leafSize - 65821
+	metadata = append(
+		metadata,
+		0x5F,
+		byte(payloadSize>>16),
+		byte(payloadSize>>8),
+		byte(payloadSize),
+	)
+	metadata = append(metadata, make([]byte, leafSize)...)
+
+	database := append([]byte{}, metadataStartMarker...)
+	database = append(database, metadata...)
+	reader, err := OpenBytes(database)
+	require.Nil(t, reader)
+	require.ErrorContains(t, err, "maximum decoded record size")
+}
+
+func TestOpenRejectsMetadataPayloadAmplification(t *testing.T) {
+	reader, err := Open(testFile("MaxMind-DB-test-metadata-payload-limit.mmdb"))
+	require.Nil(t, reader)
+	require.ErrorContains(t, err, "maximum decoded record size")
 }
 
 func TestDisableStringCache(t *testing.T) {
@@ -1412,7 +1455,8 @@ func BenchmarkTestDatabaseLookupPointer(b *testing.B) {
 	}
 }
 
-func BenchmarkTestDatabaseCityLookup(b *testing.B) {
+func openTestDatabaseBenchmark(b *testing.B) (*Reader, []netip.Addr) {
+	b.Helper()
 	db, err := Open(testFile("GeoIP2-City-Test.mmdb"))
 	require.NoError(b, err)
 	b.Cleanup(func() { require.NoError(b, db.Close()) })
@@ -1423,6 +1467,11 @@ func BenchmarkTestDatabaseCityLookup(b *testing.B) {
 		addresses = append(addresses, result.Prefix().Addr())
 	}
 	require.NotEmpty(b, addresses)
+	return db, addresses
+}
+
+func BenchmarkTestDatabaseCityLookup(b *testing.B) {
+	db, addresses := openTestDatabaseBenchmark(b)
 
 	var result benchmarkCity
 	var i uint
@@ -1434,6 +1483,60 @@ func BenchmarkTestDatabaseCityLookup(b *testing.B) {
 		}
 		i++
 	}
+}
+
+func BenchmarkTestDatabaseInterfaceLookup(b *testing.B) {
+	db, addresses := openTestDatabaseBenchmark(b)
+
+	var result any
+	var i uint
+	b.ResetTimer()
+	for b.Loop() {
+		lookupResult := db.Lookup(addresses[i%uint(len(addresses))])
+		if err := lookupResult.Decode(&result); err != nil {
+			b.Fatal(err)
+		}
+		i++
+	}
+}
+
+func BenchmarkTestDatabaseDecodePath(b *testing.B) {
+	db, addresses := openTestDatabaseBenchmark(b)
+
+	path := []any{"country", "iso_code"}
+	var result string
+	var i uint
+	b.ResetTimer()
+	for b.Loop() {
+		lookupResult := db.Lookup(addresses[i%uint(len(addresses))])
+		if err := lookupResult.DecodePath(&result, path...); err != nil {
+			b.Fatal(err)
+		}
+		i++
+	}
+}
+
+func TestDatabaseCityLookupAllocations(t *testing.T) {
+	db, err := Open(testFile("GeoIP2-City-Test.mmdb"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+	var address netip.Addr
+	for network := range db.Networks() {
+		require.NoError(t, network.Err())
+		address = network.Prefix().Addr()
+		break
+	}
+	require.True(t, address.IsValid())
+
+	var result benchmarkCity
+	require.NoError(t, db.Lookup(address).Decode(&result)) // warm caches
+	var decodeErr error
+	allocs := testing.AllocsPerRun(1_000, func() {
+		decodeErr = db.Lookup(address).Decode(&result)
+	})
+	require.NoError(t, decodeErr)
+	require.Zero(t, allocs)
 }
 
 func BenchmarkDecodeCountryCodeWithStruct(b *testing.B) {
@@ -1572,6 +1675,63 @@ func TestCustomUnmarshaler(t *testing.T) {
 	if len(customDecoded.Names) > 0 || len(reflectionDecoded) > 0 {
 		t.Log("Custom unmarshaler integration test passed - both decoders worked")
 	}
+}
+
+func TestReaderConcurrentCustomUnmarshaler(t *testing.T) {
+	reader, err := Open(testFile("MaxMind-DB-test-decoder.mmdb"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, reader.Close()) })
+
+	result := reader.Lookup(netip.MustParseAddr("1.1.1.1"))
+	require.NoError(t, result.Err())
+
+	const goroutineCount = 64
+	start := make(chan struct{})
+	results := make([]concurrentBoolean, goroutineCount)
+	errs := make([]error, goroutineCount)
+	var wg sync.WaitGroup
+	wg.Add(goroutineCount)
+	for i := range goroutineCount {
+		go func() {
+			defer wg.Done()
+			<-start
+			errs[i] = result.Decode(&results[i])
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	for i, err := range errs {
+		require.NoError(t, err)
+		assert.True(t, results[i].Value)
+	}
+}
+
+type concurrentBoolean struct {
+	Value bool
+}
+
+func (value *concurrentBoolean) UnmarshalMaxMindDB(d *mmdbdata.Decoder) error {
+	entries, _, err := d.ReadMap()
+	if err != nil {
+		return err
+	}
+	for key, err := range entries {
+		if err != nil {
+			return err
+		}
+		if string(key) == "boolean" {
+			value.Value, err = d.ReadBool()
+			if err != nil {
+				return err
+			}
+			continue
+		}
+		if err := d.SkipValue(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // TestCity represents a simplified city data structure for testing custom unmarshaling.
@@ -1827,4 +1987,127 @@ func BenchmarkCityLookupOnlyIPv6(b *testing.B) {
 		}
 	}
 	require.NoError(b, db.Close(), "error on close")
+}
+
+func TestPointerFanOutIsRejected(t *testing.T) {
+	// A data section of nested arrays, each holding two pointers to the node
+	// below, would cost 2**depth decode operations. The decoder bounds dynamic
+	// expansion for a single record and rejects the database.
+	tests := []struct {
+		name      string
+		file      string
+		addresses []string
+	}{
+		{
+			name:      "minimal IPv4 database",
+			file:      "MaxMind-DB-test-pointer-decoder-dos.mmdb",
+			addresses: []string{"1.2.3.4"},
+		},
+		{
+			name: "IPv6 database",
+			file: "MaxMind-DB-test-pointer-decoder-dos-ipv6.mmdb",
+			addresses: []string{
+				"1.2.3.4",
+				"2001:db8::1",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			reader, err := Open(testFile(test.file))
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, reader.Close()) })
+
+			for _, address := range test.addresses {
+				var v any
+				err = reader.Lookup(netip.MustParseAddr(address)).Decode(&v)
+				require.ErrorContains(t, err, "maximum decoded record size", address)
+			}
+		})
+	}
+}
+
+func TestPayloadAmplificationIsRejected(t *testing.T) {
+	fixtures := []struct {
+		name        string
+		concreteOut func() any
+	}{
+		{
+			name:        "MaxMind-DB-test-payload-amplification-dos.mmdb",
+			concreteOut: func() any { return new([][]byte) },
+		},
+		{
+			name:        "MaxMind-DB-test-payload-amplification-dos-worst-case.mmdb",
+			concreteOut: func() any { return new([][]byte) },
+		},
+		{
+			name:        "MaxMind-DB-test-payload-amplification-dos-string.mmdb",
+			concreteOut: func() any { return new([]string) },
+		},
+	}
+
+	for _, fixture := range fixtures {
+		t.Run(fixture.name, func(t *testing.T) {
+			reader, err := Open(testFile(fixture.name))
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, reader.Close()) })
+
+			var v any
+			err = reader.Lookup(netip.MustParseAddr("1.2.3.4")).Decode(&v)
+			require.ErrorContains(t, err, "maximum decoded record size")
+
+			err = reader.Lookup(netip.MustParseAddr("1.2.3.4")).Decode(fixture.concreteOut())
+			require.ErrorContains(t, err, "maximum decoded record size")
+		})
+	}
+}
+
+func TestDecoderPayloadBudgetBoundaries(t *testing.T) {
+	ip := netip.MustParseAddr("1.2.3.4")
+
+	reader, err := Open(testFile("MaxMind-DB-test-decoder-payload-limit.mmdb"))
+	require.NoError(t, err)
+	var exact [][]byte
+	require.NoError(t, reader.Lookup(ip).Decode(&exact))
+	require.NoError(t, reader.Close())
+	var total int
+	for _, value := range exact {
+		total += len(value)
+	}
+	require.Equal(t, 2<<20, total)
+
+	reader, err = Open(testFile("MaxMind-DB-test-decoder-payload-limit-over.mmdb"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, reader.Close()) })
+	var over [][]byte
+	require.ErrorContains(t, reader.Lookup(ip).Decode(&over), "maximum decoded record size")
+}
+
+func TestDecodePathNavigationSharesPayloadBudget(t *testing.T) {
+	reader, err := Open(testFile("MaxMind-DB-test-decode-path-shared-budget.mmdb"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, reader.Close()) })
+
+	var value string
+	err = reader.Lookup(netip.MustParseAddr("1.2.3.4")).DecodePath(&value, "target")
+	require.ErrorContains(t, err, "maximum decoded record size")
+}
+
+func TestPointerFanOutIsRejectedViaDecodePath(t *testing.T) {
+	// The value bound must also apply to path lookups, not just full decodes.
+	reader, err := Open(testFile("MaxMind-DB-test-pointer-decoder-dos.mmdb"))
+	require.NoError(t, err)
+	defer reader.Close()
+
+	var v any
+	err = reader.Lookup(netip.MustParseAddr("1.2.3.4")).DecodePath(&v, 0)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "maximum decoded record size")
+
+	// An empty path decodes the whole record, so it must be bounded too.
+	var whole any
+	err = reader.Lookup(netip.MustParseAddr("1.2.3.4")).DecodePath(&whole)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "maximum decoded record size")
 }
