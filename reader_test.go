@@ -222,6 +222,13 @@ func TestLookupNetwork(t *testing.T) {
 			ExpectedFound:   true,
 		},
 		{
+			IP:              netip.MustParseAddr("::2:0:1%lo"),
+			DBFile:          "MaxMind-DB-test-ipv6-24.mmdb",
+			ExpectedNetwork: "::2:0:0/122",
+			ExpectedRecord:  map[string]any{"ip": "::2:0:0"},
+			ExpectedFound:   true,
+		},
+		{
 			IP:              netip.MustParseAddr("1.1.1.1"),
 			DBFile:          "MaxMind-DB-test-ipv4-24.mmdb",
 			ExpectedNetwork: "1.1.1.1/32",
@@ -244,6 +251,13 @@ func TestLookupNetwork(t *testing.T) {
 		},
 		{
 			IP:              netip.MustParseAddr("::ffff:1.1.1.128"),
+			DBFile:          "MaxMind-DB-test-decoder.mmdb",
+			ExpectedNetwork: "::ffff:1.1.1.0/120",
+			ExpectedRecord:  decoderRecord,
+			ExpectedFound:   true,
+		},
+		{
+			IP:              netip.MustParseAddr("::ffff:1.1.1.192%eth0"),
 			DBFile:          "MaxMind-DB-test-decoder.mmdb",
 			ExpectedNetwork: "::ffff:1.1.1.0/120",
 			ExpectedRecord:  decoderRecord,
