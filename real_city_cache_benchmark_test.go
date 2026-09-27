@@ -26,6 +26,7 @@ func benchmarkRealCityCache(b *testing.B, metrics func() (uint64, uint64)) {
 		b.Fatal(err)
 	}
 	addresses := make([]netip.Addr, 0, 65536)
+	//nolint:gosec // A fixed seed makes benchmark traffic reproducible.
 	rng := rand.New(rand.NewPCG(1, 2))
 	for attempts := 0; len(addresses) < cap(addresses) && attempts < 1<<20; attempts++ {
 		n := rng.Uint32()
@@ -39,12 +40,17 @@ func benchmarkRealCityCache(b *testing.B, metrics func() (uint64, uint64)) {
 		}
 	}
 	if len(addresses) != cap(addresses) {
-		b.Fatalf("database supplied only %d City-bearing addresses in 1,048,576 random probes; use a full City database", len(addresses))
+		b.Fatalf(
+			"database supplied only %d City-bearing addresses in 1,048,576 random probes; use a full City database",
+			len(addresses),
+		)
 	}
 	if err := probe.Close(); err != nil {
 		b.Fatal(err)
 	}
-	rng.Shuffle(len(addresses), func(i, j int) { addresses[i], addresses[j] = addresses[j], addresses[i] })
+	rng.Shuffle(len(addresses), func(i, j int) {
+		addresses[i], addresses[j] = addresses[j], addresses[i]
+	})
 	for _, shape := range []string{"city", "iso"} {
 		for _, traffic := range []string{"random", "recurring1024"} {
 			for _, goroutines := range []int{1, 12} {
@@ -74,7 +80,8 @@ func benchmarkRealCityCache(b *testing.B, metrics func() (uint64, uint64)) {
 							Country struct {
 								ISOCode string `maxminddb:"iso_code"`
 							} `maxminddb:"country"`
-						}) error {
+						},
+						) error {
 							if shape == "city" {
 								return db.Lookup(addr).Decode(city)
 							}
@@ -86,8 +93,8 @@ func benchmarkRealCityCache(b *testing.B, metrics func() (uint64, uint64)) {
 								ISOCode string `maxminddb:"iso_code"`
 							} `maxminddb:"country"`
 						}
-						for pass := 0; pass < 2; pass++ {
-							for i := 0; i < count; i++ {
+						for range 2 {
+							for i := range count {
 								if err := decode(addresses[i], &city, &iso); err != nil {
 									b.Fatal(err)
 								}

@@ -390,10 +390,8 @@ func TestStringCacheConcurrent(t *testing.T) {
 	const goroutines = 16
 	const iterations = 5000
 	var wg sync.WaitGroup
-	wg.Add(goroutines)
 	for range goroutines {
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for iter := range iterations {
 				idx := iter % len(offsets)
 				offset := offsets[idx]
@@ -404,7 +402,7 @@ func TestStringCacheConcurrent(t *testing.T) {
 					return
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -429,10 +427,8 @@ func TestStringCacheConcurrentEviction(t *testing.T) {
 	const goroutines = 16
 	const iterations = 50_000
 	var wg sync.WaitGroup
-	wg.Add(goroutines)
 	for g := range goroutines {
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			//nolint:gosec // this is a test
 			r := rand.New(rand.NewPCG(uint64(g), 1))
 			for range iterations {
@@ -448,7 +444,7 @@ func TestStringCacheConcurrentEviction(t *testing.T) {
 					return
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 
