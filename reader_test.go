@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -107,8 +108,7 @@ func TestOpenBytesBudgetsConcreteMetadata(t *testing.T) {
 	)
 	metadata = append(metadata, make([]byte, leafSize)...)
 
-	database := append([]byte{}, metadataStartMarker...)
-	database = append(database, metadata...)
+	database := slices.Concat(metadataStartMarker, metadata)
 	reader, err := OpenBytes(database)
 	require.Nil(t, reader)
 	require.ErrorContains(t, err, "maximum decoded record size")
