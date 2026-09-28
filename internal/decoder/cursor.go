@@ -533,12 +533,13 @@ func (c Cursor) Map() (MapCursor, error) {
 		size := uint(ctrlByte & 0x1f)
 		if Kind(ctrlByte>>5) == KindMap && size < 29 {
 			dataOffset := c.offset + 1
-			if err := validateCursorContainerSize(
+			err := validateCursorContainerSize(
 				c.decoder,
 				KindMap,
 				size,
 				dataOffset,
-			); err != nil {
+			)
+			if err != nil {
 				return MapCursor{}, c.wrapError(err)
 			}
 			return MapCursor{
@@ -627,12 +628,13 @@ func (m MapReader) Size() (uint, error) {
 	if m.decoder == nil {
 		return 0, errInvalidZeroMapReader
 	}
-	if err := validateCursorContainerSize(
+	err := validateCursorContainerSize(
 		m.decoder,
 		KindMap,
 		m.size,
 		m.dataOffset,
-	); err != nil {
+	)
+	if err != nil {
 		return 0, wrapErrorAtOffset(err, m.valueOrigin)
 	}
 	return m.size, nil
@@ -940,12 +942,13 @@ func (s *SliceCursor) Size() (uint, error) {
 	if err := s.Err(); err != nil {
 		return 0, err
 	}
-	if err := validateCursorContainerSize(
+	err := validateCursorContainerSize(
 		s.decoder,
 		KindSlice,
 		s.size,
 		s.dataOffset,
-	); err != nil {
+	)
+	if err != nil {
 		s.err = wrapErrorAtOffset(err, s.valueOrigin)
 		return 0, s.err
 	}
@@ -1094,11 +1097,12 @@ func (c Cursor) unexpectedKinds(expected KindSet, actual Kind) error {
 	// bounds-checked before their destination type is rejected.
 	if !actual.IsContainer() {
 		validator := newStructuralValidator(c.decoder)
-		if _, err := validator.validateValue(
+		_, err := validator.validateValue(
 			c.offset,
 			0,
 			false,
-		); err != nil {
+		)
+		if err != nil {
 			return c.wrapError(err)
 		}
 	}

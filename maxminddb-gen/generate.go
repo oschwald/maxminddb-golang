@@ -194,7 +194,7 @@ func generatePackage(
 	if err != nil {
 		return err
 	}
-	if err := validateGeneratedPackage(
+	err = validateGeneratedPackage(
 		absOutput,
 		source,
 		generatedFiles,
@@ -203,7 +203,8 @@ func generatePackage(
 		activeGeneratedFiles,
 		typeAliases,
 		diagnostics,
-	); err != nil {
+	)
+	if err != nil {
 		return err
 	}
 	return writeAtomic(absOutput, source)
@@ -233,11 +234,12 @@ func (g *generator) addTargets(targetNames []string, diagnostics io.Writer) erro
 		}
 		if method := lookupUnmarshalMethod(named); method != nil && !g.isGeneratedMethod(method) {
 			if g.implements(named, g.unmarshaler) {
-				if _, err := fmt.Fprintf(
+				_, err := fmt.Fprintf(
 					diagnostics,
 					"maxminddb-gen: skipping %s: handwritten UnmarshalMaxMindDB method\n",
 					name,
-				); err != nil {
+				)
+				if err != nil {
 					return err
 				}
 				continue
@@ -251,11 +253,12 @@ func (g *generator) addTargets(targetNames []string, diagnostics io.Writer) erro
 		if method := lookupCursorUnmarshalMethod(named); method != nil &&
 			!g.isGeneratedMethod(method) {
 			if g.implements(named, g.cursorDecoder) {
-				if _, err := fmt.Fprintf(
+				_, err := fmt.Fprintf(
 					diagnostics,
 					"maxminddb-gen: skipping %s: handwritten UnmarshalMaxMindDBCursor method\n",
 					name,
-				); err != nil {
+				)
+				if err != nil {
 					return err
 				}
 				continue
