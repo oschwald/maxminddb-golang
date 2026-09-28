@@ -694,11 +694,12 @@ func (d *DataDecoder) decodeKeyAt(offset uint) ([]byte, uint, uint, error) {
 				}
 			}
 		}
-		if key, dataOffset, newOffset, ok := d.decodePointerKeyFast(
+		key, dataOffset, newOffset, ok := d.decodePointerKeyFast(
 			offset,
 			uint(ctrlByte),
 			bufferLen,
-		); ok {
+		)
+		if ok {
 			return key, dataOffset - 1, newOffset, nil
 		}
 	default:

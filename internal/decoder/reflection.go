@@ -1806,11 +1806,12 @@ func (d *ReflectionDecoder) decodeStructWithFields(
 		switch fieldInfo.dispatch {
 		case dispatchFast:
 			if len(fieldInfo.index) == 0 {
-				if fastOffset, ok := d.tryFastDecodeTyped(
+				fastOffset, ok := d.tryFastDecodeTyped(
 					offset,
 					fieldValue,
 					fieldInfo.fieldType,
-				); ok {
+				)
+				if ok {
 					offset = fastOffset
 					continue
 				}
