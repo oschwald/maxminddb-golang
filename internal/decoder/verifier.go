@@ -66,7 +66,7 @@ func (d *ReflectionDecoder) VerifyDataSection(offsets map[uint]bool) error {
 		)
 	}
 
-	starts, err := d.fieldStartsIn(bufferLen)
+	starts, err := d.verifyFieldPointers(bufferLen)
 	if err != nil {
 		return err
 	}
@@ -131,15 +131,47 @@ func (f fieldStarts) has(offset uint) bool {
 	return f[offset/64]&(1<<(offset%64)) != 0
 }
 
-// fieldStartsIn returns the start offset of each field in [0, end). The
-// fields must already be verified.
-func (d *DataDecoder) fieldStartsIn(end uint) (fieldStarts, error) {
+// verifyFieldPointers returns the start offset of each field in [0, end) and
+// checks that each pointer there points to the start of a field. The fields
+// must already be verified. The first pass marks the field starts and checks
+// each backward pointer. The MaxMind writers point only to data that they
+// already wrote, so the second pass, which checks forward pointers, runs only
+// if the first pass finds one.
+func (d *DataDecoder) verifyFieldPointers(end uint) (fieldStarts, error) {
 	starts := make(fieldStarts, end/64+1)
-	err := d.forEachField(end, func(offset uint, _ bool, _ uint) error {
+	var forward bool
+	err := d.forEachField(end, func(offset uint, isPointer bool, target uint) error {
 		starts.set(offset)
+		if !isPointer {
+			return nil
+		}
+		if target > offset {
+			forward = true
+			return nil
+		}
+		if !starts.has(target) {
+			return newPointerTargetError(offset, target)
+		}
+		return nil
+	})
+	if err != nil || !forward {
+		return starts, err
+	}
+	err = d.forEachField(end, func(offset uint, isPointer bool, target uint) error {
+		if isPointer && target > offset && (target >= end || !starts.has(target)) {
+			return newPointerTargetError(offset, target)
+		}
 		return nil
 	})
 	return starts, err
+}
+
+func newPointerTargetError(offset, target uint) error {
+	return mmdberrors.NewInvalidDatabaseError(
+		"pointer at offset %v does not point to the start of a field (offset %v)",
+		offset,
+		target,
+	)
 }
 
 // forEachField calls visit for each field in [0, end), in order. A map or

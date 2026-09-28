@@ -106,3 +106,37 @@ func TestVerifyDataSectionAcceptsNestedTargets(t *testing.T) {
 
 	runVerifyDataSectionTests(t, tests)
 }
+
+func TestVerifyDataSectionChecksDataPointerTargets(t *testing.T) {
+	tests := []verifyDataSectionTest{
+		{
+			// "x" at 0, then {"a": pointer to 0} at 2.
+			name:    "backward to field",
+			data:    []byte{0x41, 0x78, 0xe1, 0x41, 0x61, 0x20, 0x00},
+			targets: []uint{0, 2},
+		},
+		{
+			// {"a": pointer to 5} at 0, then "x" at 5.
+			name:    "forward to field",
+			data:    []byte{0xe1, 0x41, 0x61, 0x20, 0x05, 0x41, 0x78},
+			targets: []uint{0, 5},
+		},
+		{
+			// "AqAr" at 0, then {"a": pointer to 1} at 5. Offset 1 is in
+			// the payload of "AqAr", but it decodes as "q".
+			name:    "backward into payload",
+			data:    []byte{0x44, 0x41, 0x71, 0x41, 0x72, 0xe1, 0x41, 0x61, 0x20, 0x01},
+			targets: []uint{0, 5},
+			err:     "pointer at offset 8 does not point to the start of a field (offset 1)",
+		},
+		{
+			// {"a": pointer to 6} at 0, then "AqAr" at 5.
+			name:    "forward into payload",
+			data:    []byte{0xe1, 0x41, 0x61, 0x20, 0x06, 0x44, 0x41, 0x71, 0x41, 0x72},
+			targets: []uint{0, 5},
+			err:     "pointer at offset 3 does not point to the start of a field (offset 6)",
+		},
+	}
+
+	runVerifyDataSectionTests(t, tests)
+}

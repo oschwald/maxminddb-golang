@@ -98,7 +98,7 @@ func (w *searchTreeWalker) verifyPointer(pointer, bitDepth uint) (uint8, error) 
 //   - Data section separator: validates the 16-byte separator between tree and data
 //   - Data section: verifies all data records referenced by the search tree.
 //     A search-tree record can point to a top-level value or to a field
-//     nested in one.
+//     nested in one. Each data pointer must point to the start of a field.
 //
 // The verifier is stricter than the MaxMind DB specification and may return
 // errors on some databases that are still readable by normal operations.
