@@ -349,6 +349,8 @@ func (c Cursor) ReadFloat() (float64, Cursor, error) {
 				}
 				return value, c.successor(end), nil
 			case KindExtended:
+				// The uint8 addition can wrap, but only type byte 8 gives
+				// KindFloat32. Compare only against kinds 8 through 15 here.
 				if c.offset+1 < uint(len(buffer)) && Kind(buffer[c.offset+1]+7) == KindFloat32 {
 					value, end, err := c.decoder.decodeFloat32(size, c.offset+2)
 					if err != nil {
@@ -694,6 +696,8 @@ func (c Cursor) Slice() (SliceCursor, error) {
 	if c.offset < bufferLen && c.offset+1 < bufferLen {
 		ctrlByte := buffer[c.offset]
 		size := uint(ctrlByte & 0x1f)
+		// Only type byte 4 gives KindSlice. Use extendedKind for any other
+		// comparison.
 		if Kind(ctrlByte>>5) == KindExtended &&
 			Kind(buffer[c.offset+1])+7 == KindSlice && size < 29 {
 			dataOffset := c.offset + 2
@@ -1039,7 +1043,7 @@ func (c Cursor) scalar(expected Kind) (uint, uint, uint, error) {
 			kind := Kind(ctrlByte >> 5)
 			dataOffset := c.offset + 1
 			if kind == KindExtended && dataOffset < uint(len(buffer)) {
-				kind = Kind(buffer[dataOffset] + 7)
+				kind = extendedKind(buffer[dataOffset])
 				dataOffset++
 			}
 			if kind == expected {

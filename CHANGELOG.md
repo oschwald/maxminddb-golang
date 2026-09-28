@@ -6,6 +6,9 @@
 - Fixed `Reader.Verify()` rejecting a search-tree record that points to a value
   nested in another data record. The MaxMind DB spec permits this, and
   mmdbwriter can write such databases. GitHub #250.
+- Decoding now rejects extended type bytes 0 and 250 through 255, which the
+  MaxMind DB spec does not define. Before, they decoded as other types. For
+  example, `0x00 0xfb` decoded as a string.
 
 ## 2.6.0 - 2026-09-07
 

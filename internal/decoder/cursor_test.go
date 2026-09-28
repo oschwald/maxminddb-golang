@@ -1110,3 +1110,14 @@ func TestCursorStrictScalarReaders(t *testing.T) {
 		require.ErrorContains(t, err, "exceeds buffer length")
 	})
 }
+
+func TestCursorScalarRejectsWrappedExtendedTypes(t *testing.T) {
+	// 0xfd + 7 and 0xfc + 7 wrap to KindBytes and KindFloat64 in uint8.
+	bytesDecoder := NewDecoder(NewDataDecoder([]byte{0x01, 0xfd, 'x'}), 0)
+	_, _, err := bytesDecoder.Cursor().ReadBytes()
+	require.ErrorContains(t, err, "unknown type: 260")
+
+	floatDecoder := NewDecoder(NewDataDecoder(append([]byte{0x08, 0xfc}, make([]byte, 8)...)), 0)
+	_, _, err = floatDecoder.Cursor().ReadFloat64()
+	require.ErrorContains(t, err, "unknown type: 259")
+}
