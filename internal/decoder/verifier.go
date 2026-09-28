@@ -19,7 +19,8 @@ func VerifyMetadata(buffer []byte) error {
 }
 
 // VerifyDataSection verifies the data section against the provided
-// offsets from the tree.
+// offsets from the tree. Each top-level value must be a search-tree target.
+// A target can also be the start of a field nested in a top-level value.
 func (d *ReflectionDecoder) VerifyDataSection(offsets map[uint]bool) error {
 	pointerCount := len(offsets)
 
@@ -31,11 +32,7 @@ func (d *ReflectionDecoder) VerifyDataSection(offsets map[uint]bool) error {
 		bounded := newBudgetedDecoder(d)
 		newOffset, err := bounded.decodeValue(offset, rv, 0)
 		if err != nil {
-			return mmdberrors.NewInvalidDatabaseError(
-				"received decoding error (%v) at offset of %v",
-				err,
-				offset,
-			)
+			return newDecodingErrorAt(err, offset)
 		}
 		if err := validateUTF8(data); err != nil {
 			return mmdberrors.NewInvalidDatabaseError(
@@ -51,18 +48,13 @@ func (d *ReflectionDecoder) VerifyDataSection(offsets map[uint]bool) error {
 				newOffset,
 			)
 		}
-
-		pointer := offset
-
-		if _, ok := offsets[pointer]; !ok {
+		if _, ok := offsets[offset]; !ok {
 			return mmdberrors.NewInvalidDatabaseError(
 				"found data (%v) at %v that the search tree does not point to",
 				data,
-				pointer,
+				offset,
 			)
 		}
-		delete(offsets, pointer)
-
 		offset = newOffset
 	}
 
@@ -74,14 +66,123 @@ func (d *ReflectionDecoder) VerifyDataSection(offsets map[uint]bool) error {
 		)
 	}
 
-	if len(offsets) != 0 {
+	starts, err := d.fieldStartsIn(bufferLen)
+	if err != nil {
+		return err
+	}
+	// Report the lowest bad target, so that the error is the same on each run.
+	var missing int
+	bad := bufferLen
+	for target := range offsets {
+		if target >= bufferLen {
+			// Reader.Verify cannot reach this, because resolveDataPointer
+			// rejects a target at or past the end of the data section. It
+			// guards direct calls.
+			missing++
+		} else if !starts.has(target) && target < bad {
+			bad = target
+		}
+	}
+	if bad != bufferLen {
+		record, err := d.recordStart(bad)
+		if err != nil {
+			return err
+		}
+		return mmdberrors.NewInvalidDatabaseError(
+			"search tree points into the middle of a field in the data record at %v (offset %v)",
+			record,
+			bad,
+		)
+	}
+	if missing != 0 {
 		return mmdberrors.NewInvalidDatabaseError(
 			"found %v pointers (of %v) in the search tree that we did not see in the data section",
-			len(offsets),
+			missing,
 			pointerCount,
 		)
 	}
 	return nil
+}
+
+// recordStart returns the start of the top-level value that contains offset.
+// The data section must already be verified. It runs only to report an error.
+func (d *DataDecoder) recordStart(offset uint) (uint, error) {
+	var start uint
+	for {
+		next, err := d.nextValueOffset(start, 1)
+		if err != nil {
+			return 0, newDecodingErrorAt(err, start)
+		}
+		if next > offset {
+			return start, nil
+		}
+		start = next
+	}
+}
+
+// fieldStarts is a bitset with one bit for each byte offset.
+type fieldStarts []uint64
+
+func (f fieldStarts) set(offset uint) {
+	f[offset/64] |= 1 << (offset % 64)
+}
+
+func (f fieldStarts) has(offset uint) bool {
+	return f[offset/64]&(1<<(offset%64)) != 0
+}
+
+// fieldStartsIn returns the start offset of each field in [0, end). The
+// fields must already be verified.
+func (d *DataDecoder) fieldStartsIn(end uint) (fieldStarts, error) {
+	starts := make(fieldStarts, end/64+1)
+	err := d.forEachField(end, func(offset uint, _ bool, _ uint) error {
+		starts.set(offset)
+		return nil
+	})
+	return starts, err
+}
+
+// forEachField calls visit for each field in [0, end), in order. A map or
+// array header comes directly before its first child, so the walk also visits
+// nested fields. For a pointer, isPointer is true and target is the offset
+// that the pointer points to. The fields must already be verified. The rules
+// for the offset of the next field must match decodeCtrlData and
+// nextValueOffset.
+func (d *DataDecoder) forEachField(
+	end uint,
+	visit func(offset uint, isPointer bool, target uint) error,
+) error {
+	for offset := uint(0); offset < end; {
+		kind, size, next, err := d.decodeCtrlData(offset)
+		if err != nil {
+			return newDecodingErrorAt(err, offset)
+		}
+		var target uint
+		switch kind {
+		case KindPointer:
+			target, next, err = d.decodePointer(size, next)
+			if err != nil {
+				return newDecodingErrorAt(err, offset)
+			}
+		case KindMap, KindSlice, KindBool:
+			// Children follow the header, and a bool has no payload.
+		default:
+			next += size
+		}
+		if err := visit(offset, kind == KindPointer, target); err != nil {
+			return err
+		}
+		offset = next
+	}
+	return nil
+}
+
+func newDecodingErrorAt(err error, offset uint) error {
+	return mmdberrors.NewInvalidDatabaseError(
+		"received decoding error (%v) at offset of %v",
+		err,
+		offset,
+	)
 }
 
 func validateUTF8(data any) error {

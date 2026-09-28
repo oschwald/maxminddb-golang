@@ -3,6 +3,9 @@
 ## 2.7.0
 
 - Go 1.26 or later is now required. CI now tests Go 1.26 and 1.27.
+- Fixed `Reader.Verify()` rejecting a search-tree record that points to a value
+  nested in another data record. The MaxMind DB spec permits this, and
+  mmdbwriter can write such databases. GitHub #250.
 
 ## 2.6.0 - 2026-09-07
 
