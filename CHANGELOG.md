@@ -11,6 +11,9 @@
   example, `0x00 0xfb` decoded as a string.
 - `Reader.Verify()` now rejects a data pointer that points into the middle of a
   field.
+- `Reader.Verify()` now also checks the metadata section. Its pointers must
+  point to the start of a field, and all data after the metadata map must be
+  valid values.
 
 ## 2.6.0 - 2026-09-07
 

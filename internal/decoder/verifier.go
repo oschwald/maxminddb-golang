@@ -7,15 +7,42 @@ import (
 	"github.com/oschwald/maxminddb-golang/v2/internal/mmdberrors"
 )
 
-// VerifyMetadata validates the complete metadata map under one decoding budget.
-// Pointer targets may follow the map and are not search-tree data records.
+// VerifyMetadata validates the metadata section. The section starts with the
+// metadata map. Values that the map points to can follow it, so the rest of
+// the section must be a sequence of valid values. All values in the section
+// are decoded under one budget, so pointers cannot multiply the work. Each
+// pointer must point to the start of a field.
 func VerifyMetadata(buffer []byte) error {
 	d := NewWithoutStringCache(buffer)
 	var metadata any
-	if err := d.DecodeWithBudget(0, &metadata); err != nil {
+	rv := addressableValue{Value: reflect.ValueOf(&metadata).Elem()}
+	bounded := newBudgetedDecoder(&d)
+	offset, err := bounded.decodeValue(0, rv, 0)
+	if err != nil {
+		return wrapRootDecodeError(err, 0)
+	}
+	if err := validateUTF8(metadata); err != nil {
 		return err
 	}
-	return validateUTF8(metadata)
+	bufferLen := uint(len(buffer))
+	for offset < bufferLen {
+		var value any
+		rv := addressableValue{Value: reflect.ValueOf(&value).Elem()}
+		next, err := bounded.decodeValue(offset, rv, 0)
+		if err == nil {
+			err = validateUTF8(value)
+		}
+		if err != nil {
+			return mmdberrors.NewInvalidDatabaseError(
+				"invalid value after the metadata map (%v) at offset of %v",
+				err,
+				offset,
+			)
+		}
+		offset = next
+	}
+	_, err = d.verifyFieldPointers(bufferLen, "metadata")
+	return err
 }
 
 // VerifyDataSection verifies the data section against the provided
@@ -66,7 +93,7 @@ func (d *ReflectionDecoder) VerifyDataSection(offsets map[uint]bool) error {
 		)
 	}
 
-	starts, err := d.verifyFieldPointers(bufferLen)
+	starts, err := d.verifyFieldPointers(bufferLen, "data section")
 	if err != nil {
 		return err
 	}
@@ -133,11 +160,11 @@ func (f fieldStarts) has(offset uint) bool {
 
 // verifyFieldPointers returns the start offset of each field in [0, end) and
 // checks that each pointer there points to the start of a field. The fields
-// must already be verified. The first pass marks the field starts and checks
-// each backward pointer. The MaxMind writers point only to data that they
-// already wrote, so the second pass, which checks forward pointers, runs only
-// if the first pass finds one.
-func (d *DataDecoder) verifyFieldPointers(end uint) (fieldStarts, error) {
+// must already be verified. section names the section in errors. The first
+// pass marks the field starts and checks each backward pointer. The MaxMind
+// writers point only to data that they already wrote, so the second pass,
+// which checks forward pointers, runs only if the first pass finds one.
+func (d *DataDecoder) verifyFieldPointers(end uint, section string) (fieldStarts, error) {
 	starts := make(fieldStarts, end/64+1)
 	var forward bool
 	err := d.forEachField(end, func(offset uint, isPointer bool, target uint) error {
@@ -150,7 +177,7 @@ func (d *DataDecoder) verifyFieldPointers(end uint) (fieldStarts, error) {
 			return nil
 		}
 		if !starts.has(target) {
-			return newPointerTargetError(offset, target)
+			return newPointerTargetError(section, offset, target)
 		}
 		return nil
 	})
@@ -159,16 +186,17 @@ func (d *DataDecoder) verifyFieldPointers(end uint) (fieldStarts, error) {
 	}
 	err = d.forEachField(end, func(offset uint, isPointer bool, target uint) error {
 		if isPointer && target > offset && (target >= end || !starts.has(target)) {
-			return newPointerTargetError(offset, target)
+			return newPointerTargetError(section, offset, target)
 		}
 		return nil
 	})
 	return starts, err
 }
 
-func newPointerTargetError(offset, target uint) error {
+func newPointerTargetError(section string, offset, target uint) error {
 	return mmdberrors.NewInvalidDatabaseError(
-		"pointer at offset %v does not point to the start of a field (offset %v)",
+		"%s pointer at offset %v does not point to the start of a field (offset %v)",
+		section,
 		offset,
 		target,
 	)
