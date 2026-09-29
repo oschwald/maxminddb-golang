@@ -1,6 +1,6 @@
 # Changes
 
-## 2.7.0
+## 2.7.0 - 2026-09-29
 
 - Go 1.26 or later is now required. CI now tests Go 1.26 and 1.27.
 - Fixed `Reader.Verify()` rejecting a search-tree record that points to a value
