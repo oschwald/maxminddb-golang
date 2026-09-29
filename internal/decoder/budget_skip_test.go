@@ -42,7 +42,6 @@ func TestBudgetedSkipHeaders(t *testing.T) {
 		{"three-byte pointer", []byte{0x30, 0xff, 0xff, 0xff}, 0},
 		{"four-byte pointer", []byte{0x3f, 0xff, 0xff, 0xff, 0xff}, 0},
 		{"map", []byte{0xe1, 0x41, 'k', 0xa0}, 2},
-		{"extended map", []byte{1, 0, 0x41, 'k', 0xa0}, 2},
 		{"slice", []byte{1, 4, 0xa0}, 1},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -68,6 +67,7 @@ func TestBudgetedSkipHeaders(t *testing.T) {
 		{0xa3, 0, 0, 0}, {0xc5, 0, 0, 0, 0, 0}, // Invalid integer sizes.
 		{0x67, 0, 0, 0, 0, 0, 0, 0}, // Invalid float size.
 		{2, 7}, {0, 8}, {0, 9},      // Invalid bool, float32, and kind.
+		{1, 0, 0x41, 'k', 0xa0}, // Extended type 0 is not a map.
 	} {
 		base := NewWithoutStringCache(data)
 		d := newBudgetedDecoder(&base)
