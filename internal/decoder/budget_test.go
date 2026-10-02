@@ -576,13 +576,11 @@ func TestBoundedStringReservesPayloadBeforeMaterialization(t *testing.T) {
 
 	// A cold string read records its control-record offset as a cache miss.
 	// The aggregate payload check must reject this value before that read.
-	primary := limitedOffset & (stringCacheSlots - 1)
-	alternate := stringCacheAlternateIndex(limitedOffset, primary)
-	require.NotEqual(
-		t,
-		uint64(limitedOffset)+1,
-		decoder.stringCache.recentMisses[alternate].Load(),
+	_, recorded := stringCacheTakeMiss(
+		decoder.stringCache.recentMiss(limitedOffset).Load(),
+		stringCacheAdmissionValue(limitedOffset),
 	)
+	require.False(t, recorded)
 }
 
 func TestCitySubdivisionsRejectDeclaredSizeBeforeAllocating(t *testing.T) {

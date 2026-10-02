@@ -227,12 +227,7 @@ func TestDecodeStringKeyUsesControlOffsetForCache(t *testing.T) {
 				require.Equal(t, tt.wantNextOffset, nextOffset)
 			}
 
-			primary := tt.wantCacheOffset & (stringCacheSlots - 1)
-			alternate := stringCacheAlternateIndex(tt.wantCacheOffset, primary)
-			entry := d.stringCache.entries[primary].Load()
-			if entry == nil || entry.offset != tt.wantCacheOffset {
-				entry = d.stringCache.entries[alternate].Load()
-			}
+			entry := cachedEntry(d.stringCache, tt.wantCacheOffset)
 			require.NotNil(t, entry)
 			require.Equal(t, tt.wantCacheOffset, entry.offset)
 			require.Equal(t, "key", entry.str)
