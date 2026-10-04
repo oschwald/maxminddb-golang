@@ -712,25 +712,49 @@ func ExampleDecoder_PeekKind() {
 }
 
 func TestDecoderOptions(t *testing.T) {
-	buffer := []byte{0x44, 't', 'e', 's', 't'} // String "test"
-	dd := NewDataDecoder(buffer)
-	optionCalled := false
-	option := func(*decoderOptions) {
-		optionCalled = true
+	data := NewDataDecoder([]byte{0x44, 't', 'e', 's', 't'})
+	for range 3 {
+		_, _, err := data.decodeStringValue(0)
+		require.NoError(t, err)
 	}
-
-	// Test that options infrastructure works (even with no current options).
-	decoder1 := NewDecoder(dd, 0)
-	require.NotNil(t, decoder1)
-
-	// Test that passing options invokes each option callback.
-	decoderWithOption := NewDecoder(dd, 0, option)
-	require.NotNil(t, decoderWithOption)
-	require.True(t, optionCalled)
-
-	// Test that passing empty options slice works.
-	decoder2 := NewDecoder(dd, 0)
-	require.NotNil(t, decoder2)
+	optionCalled := false
+	option := func(*decoderOptions) { optionCalled = true }
+	for _, test := range []struct {
+		name       string
+		options    []DecoderOption
+		wantCalled bool
+	}{
+		{name: "none"},
+		{name: "empty", options: []DecoderOption{}},
+		{name: "enabled", options: []DecoderOption{WithStringCache()}},
+		{name: "repeated", options: []DecoderOption{WithStringCache(), WithStringCache()}},
+		{name: "callback", options: []DecoderOption{option}, wantCalled: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			optionCalled = false
+			d := NewDecoder(data, 0, test.options...)
+			require.Equal(t, test.wantCalled, optionCalled)
+			require.Same(t, data.stringCache, d.d.stringCache)
+			var value string
+			allocs := testing.AllocsPerRun(100, func() {
+				var err error
+				value, err = d.ReadString()
+				if err != nil {
+					t.Fatal(err)
+				}
+			})
+			require.Zero(t, allocs)
+			require.Equal(t, "test", value)
+		})
+	}
+	uncached := NewDataDecoderWithoutStringCache(data.buffer)
+	require.Nil(t, NewDecoder(uncached, 0).d.stringCache)
+	require.NotNil(t, NewDecoder(uncached, 0, WithStringCache()).d.stringCache)
+	require.Nil(
+		t,
+		uncached.stringCache,
+		"enabling caching must not change the supplied DataDecoder",
+	)
 }
 
 func TestPointerToPointerChain(t *testing.T) {

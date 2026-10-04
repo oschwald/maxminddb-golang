@@ -181,13 +181,31 @@ type DecoderOption = decoder.DecoderOption
 // NewDecoder creates a new Decoder with the given buffer, offset, and options.
 // Error messages include contextual offset information.
 //
+// By default, the decoder does not cache strings. Repeated string reads may
+// allocate new strings. Use WithStringCache for a decoder that repeatedly reads
+// the same strings. Cursors supplied by maxminddb.Reader share the Reader's
+// caching policy.
+//
 // This low-level decoder is caller-managed. Unlike reflection decoding into a
 // dynamically shaped result, it does not apply an expansion budget. Code that
 // drives it over untrusted data is responsible for bounding recursion,
 // iteration, and allocation.
 func NewDecoder(buffer []byte, offset uint, options ...DecoderOption) *Decoder {
-	d := decoder.NewDataDecoder(buffer)
+	d := decoder.NewDataDecoderWithoutStringCache(buffer)
 	return decoder.NewDecoder(d, offset, options...)
+}
+
+// WithStringCache enables a string cache shared by the decoder and its cursors.
+// Separate NewDecoder calls do not share caches. The input buffer must remain
+// unchanged while the decoder or any of its cursors are in use because cache
+// keys identify offsets in that buffer.
+//
+// Strings from 2 through 100 bytes are eligible. On 64-bit systems, enabling
+// caching allocates a 136 KiB table. Cached strings retain additional memory.
+// This can reduce allocations for repeated reads, but increases setup cost for
+// short-lived decoders.
+func WithStringCache() DecoderOption {
+	return decoder.WithStringCache()
 }
 
 // NewKindSet returns a set containing kinds.
