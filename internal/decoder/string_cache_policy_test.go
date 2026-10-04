@@ -33,6 +33,46 @@ func TestStringCacheLateMissDoesNotDuplicateResident(t *testing.T) {
 	)
 }
 
+// This test covers the duplicate scan before acquiring the writer bit. The
+// protected scan's ABA interleaving has no deterministic regression test:
+// forcing a publication between the scans would require a runtime test hook.
+func TestStringCacheLateDuplicateDoesNotAllocate(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		writer uint64
+	}{
+		{name: "idle_writer"},
+		{name: "busy_writer", writer: stringCacheWriting},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			table, bucket, value := newLateDuplicateCache()
+			referenced := uint64(1) << stringCacheReferencedShift
+			control := bucket.control.Load() &^ referenced
+			var got string
+			allocs := testing.AllocsPerRun(100, func() {
+				bucket.control.Store(control | test.writer)
+				// A prior miss permits admission, but a competing reader has published.
+				table.recentMiss(0).Store(uint64(stringCacheAdmissionValue(0)))
+				got = table.miss(bucket, 0, value)
+			})
+			require.Equal(t, "hello", got)
+			require.Zero(t, allocs, "a late duplicate must reuse the published string")
+			require.Equal(t, test.writer, bucket.control.Load()&stringCacheWriting,
+				"duplicate lookup changed writer ownership")
+			require.NotZero(t, bucket.control.Load()&referenced,
+				"duplicate lookup did not mark the resident referenced")
+			require.Zero(
+				t,
+				table.recentMiss(0).Load(),
+				"duplicate lookup did not consume the miss token",
+			)
+			if test.writer != 0 {
+				bucket.releaseWriter(control)
+			}
+		})
+	}
+}
+
 func TestStringCacheWriterPreservesReaderReference(t *testing.T) {
 	for _, publish := range []bool{false, true} {
 		name := "aborted"
@@ -113,4 +153,14 @@ func TestStringCacheAdmissionTokenWrap(t *testing.T) {
 		require.Equal(t, string(value), cache.internAt(offset, value))
 		require.Nil(t, cachedEntry(cache, offset))
 	}
+}
+
+func newLateDuplicateCache() (*stringCacheTable, *cacheBucket, []byte) {
+	cache := newStringCache()
+	value := []byte("hello")
+	for range 2 {
+		cache.internAt(0, value)
+	}
+	table := cache.initTable()
+	return table, table.bucket(0), value
 }

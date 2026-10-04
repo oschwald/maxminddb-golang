@@ -101,6 +101,7 @@ func (sc *stringCache) internAt(offset uint, value []byte) string {
 		return table.miss(bucket, offset, value)
 	}
 
+	// Keep candidate scans at their call sites to avoid a helper call on cache hits.
 	control := bucket.control.Load()
 	matches := stringCacheMatches(control, stringCacheControlByte(offset))
 	for matches != 0 {
@@ -151,12 +152,25 @@ func (table *stringCacheTable) miss(bucket *cacheBucket, offset uint, value []by
 
 	home := stringCacheHomeSlot(offset)
 	control := bucket.control.Load()
+	// Reuse a concurrently published entry before competing for the writer bit.
+	for candidates := stringCacheMatches(control, stringCacheControlByte(offset)); candidates != 0; candidates &= candidates - 1 {
+		slot := uint(bits.TrailingZeros64(candidates)) / 8
+		if cached := bucket.entries[slot].Load(); cached != nil && cached.offset == offset {
+			referenced := uint64(1) << (stringCacheReferencedShift + slot)
+			if control&referenced == 0 {
+				bucket.control.CompareAndSwap(control, control|referenced)
+			}
+			recent.CompareAndSwap(recorded, remaining)
+			return cached.str
+		}
+	}
 	// Serialize publishers so a delayed writer cannot overwrite a newer entry.
 	if control&stringCacheWriting != 0 ||
 		!bucket.control.CompareAndSwap(control, control|stringCacheWriting) {
 		return string(value)
 	}
-	// Another reader may have admitted this offset after our lookup missed.
+	// A publisher can replace an entry and restore the same control word (ABA).
+	// Check under the writer bit to avoid a rare duplicate cache slot.
 	matches := stringCacheMatches(control, stringCacheControlByte(offset))
 	for matches != 0 {
 		slot := uint(bits.TrailingZeros64(matches)) / 8
