@@ -17,12 +17,14 @@ const (
 	stringCacheBucketSlots = 7
 
 	// Group nearby offsets so strings in one record use nearby cache lines.
-	// At most seven cacheable strings can start in a 16-byte window.
+	// Non-overlapping string encodings fit within the seven home slots.
+	// Overlapping encodings remain valid and can use other slots.
 	stringCacheWindowBits = 4
 	stringCacheWindowMask = 1<<stringCacheWindowBits - 1
 	stringCachePassShift  = stringCacheWindowBits + stringCacheBucketBits
 
-	// Cacheable strings cannot start one byte apart, so omit that bit.
+	// Omit the low bit to group nearby non-overlapping strings.
+	// Overlapping strings may share a miss-history slot.
 	stringCacheMissShift = 1
 
 	// This miss table and the buckets make the cache 136 KiB on 64-bit systems.
@@ -109,7 +111,7 @@ func (sc *stringCache) internAt(offset uint, value []byte) string {
 
 // miss allocates a string and admits it only after two misses, avoiding cache
 // entries for one-off values.
-
+//
 //go:noinline
 func (sc *stringCache) miss(bucket *cacheBucket, offset uint, value []byte) string {
 	recordStringCacheMiss()
@@ -117,6 +119,9 @@ func (sc *stringCache) miss(bucket *cacheBucket, offset uint, value []byte) stri
 
 	recent := sc.recentMiss(offset)
 	admissionValue := stringCacheAdmissionValue(offset)
+	if admissionValue == 0 {
+		return str
+	}
 	recorded := recent.Load()
 	remaining, missed := stringCacheTakeMiss(recorded, admissionValue)
 	if !missed {
@@ -130,6 +135,18 @@ func (sc *stringCache) miss(bucket *cacheBucket, offset uint, value []byte) stri
 	if control&stringCacheWriting != 0 ||
 		!bucket.control.CompareAndSwap(control, control|stringCacheWriting) {
 		return str
+	}
+	// Another reader may have admitted this offset after our lookup missed.
+	matches := stringCacheMatches(control, stringCacheControlByte(offset))
+	for matches != 0 {
+		slot := uint(bits.TrailingZeros64(matches)) / 8
+		if cached := bucket.entries[slot].Load(); cached != nil && cached.offset == offset {
+			recent.CompareAndSwap(recorded, remaining)
+			referenced := uint64(1) << (stringCacheReferencedShift + slot)
+			bucket.releaseWriter(control | referenced)
+			return cached.str
+		}
+		matches &= matches - 1
 	}
 	slot, ok := stringCacheFreeSlot(control, home)
 
@@ -145,7 +162,7 @@ func (sc *stringCache) miss(bucket *cacheBucket, offset uint, value []byte) stri
 	}
 
 	if !recent.CompareAndSwap(recorded, remaining) {
-		bucket.control.Store(control)
+		bucket.releaseWriter(control)
 		return str
 	}
 	// Enable bucket scans only for an admitted off-home entry, before publishing it.
@@ -161,9 +178,22 @@ func (sc *stringCache) miss(bucket *cacheBucket, offset uint, value []byte) stri
 		str:    str,
 		offset: offset,
 	})
-	bucket.control.Store(updated)
+	bucket.releaseWriter(updated)
 
 	return str
+}
+
+// releaseWriter publishes control metadata and releases the publisher lock.
+func (bucket *cacheBucket) releaseWriter(updated uint64) {
+	// Readers can reference entries while the publisher lock is held.
+	// Preserve those hits when publishing or abandoning an admission.
+	for {
+		current := bucket.control.Load()
+		merged := updated | (current & stringCacheReferencedBits)
+		if bucket.control.CompareAndSwap(current, merged) {
+			return
+		}
+	}
 }
 
 func (sc *stringCache) bucket(offset uint) *cacheBucket {
@@ -174,7 +204,8 @@ func (sc *stringCache) recentMiss(offset uint) *atomic.Uint64 {
 	return &sc.recentMisses[(offset>>stringCacheMissShift)%stringCacheMisses]
 }
 
-// stringCacheAdmissionValue reserves zero as the empty-miss sentinel.
+// stringCacheAdmissionValue biases the truncated offset away from zero.
+// The miss path bypasses caching when the token wraps to the empty sentinel.
 func stringCacheAdmissionValue(offset uint) uint32 {
 	return uint32(offset) + 1
 }
