@@ -437,6 +437,45 @@ func TestCursorIterationProtocolViolations(t *testing.T) {
 	_, successor, err := stringDecoder.Cursor().ReadString()
 	require.NoError(t, err)
 	require.Error(t, other.Advance(successor))
+	t.Run("zero provenance", func(t *testing.T) {
+		d := NewDecoder(NewDataDecoder([]byte{0x41, 'a'}), 0)
+		for _, offset := range []uint{0, ^uint(0)} {
+			t.Run(strconv.FormatUint(uint64(offset), 10), func(t *testing.T) {
+				// Exercise the pending-value checks at the integer boundary without
+				// requiring an input buffer large enough to reach that offset.
+				t.Run("map", func(t *testing.T) {
+					entries := MapCursor{
+						decoder:   d.cursorDecoder,
+						offset:    offset,
+						remaining: 1,
+						pending:   true,
+					}
+					_, _, ok := entries.Next(d.CursorAt(0))
+					require.False(t, ok)
+					require.EqualError(
+						t,
+						entries.Err(),
+						"cursor is not the successor of the current map value",
+					)
+				})
+				t.Run("slice", func(t *testing.T) {
+					values := SliceCursor{
+						decoder:     d.cursorDecoder,
+						valueOffset: offset,
+						remaining:   1,
+						pending:     true,
+					}
+					_, _, ok := values.Next(d.CursorAt(0))
+					require.False(t, ok)
+					require.EqualError(
+						t,
+						values.Err(),
+						"cursor is not the successor of the current slice value",
+					)
+				})
+			})
+		}
+	})
 }
 
 func TestCursorKindIsNonConsuming(t *testing.T) {

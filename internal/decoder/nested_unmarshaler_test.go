@@ -308,13 +308,13 @@ func TestCursorUnmarshalerForNamedPrimitiveValuesAndPointers(t *testing.T) {
 	})
 }
 
-type invalidSuccessorCursorUnmarshaler struct {
+type returningCursorUnmarshaler struct {
 	next                Cursor
 	err                 error
 	sameDecoderUnproven bool
 }
 
-func (u *invalidSuccessorCursorUnmarshaler) UnmarshalMaxMindDBCursor(
+func (u *returningCursorUnmarshaler) UnmarshalMaxMindDBCursor(
 	cursor Cursor,
 ) (Cursor, error) {
 	if u.sameDecoderUnproven {
@@ -323,11 +323,15 @@ func (u *invalidSuccessorCursorUnmarshaler) UnmarshalMaxMindDBCursor(
 	return u.next, u.err
 }
 
-func TestTopLevelCursorUnmarshalerRejectsInvalidSuccessor(t *testing.T) {
-	data := []byte{0x43, 'F', 'o', 'o'}
+func TestCursorUnmarshalerRejectsInvalidSuccessor(t *testing.T) {
+	data := []byte{0x41, 'a', 0x41, 'b', 0x20, 0}
+	d := New(data)
 	foreign := New(data)
+	_, unrelated, err := (Cursor{decoder: d.callbackDataDecoder(), offset: 2}).ReadString()
+	require.NoError(t, err)
 	tests := []struct {
 		name                string
+		offset              uint
 		next                Cursor
 		sameDecoderUnproven bool
 		want                string
@@ -335,38 +339,75 @@ func TestTopLevelCursorUnmarshalerRejectsInvalidSuccessor(t *testing.T) {
 		{name: "zero cursor", want: "cursor from another decoder"},
 		{
 			name: "foreign cursor",
-			next: Cursor{decoder: &foreign.DataDecoder, offset: 4, originToken: 1},
+			next: Cursor{decoder: &foreign.DataDecoder, offset: 2, originToken: 1},
 			want: "cursor from another decoder",
 		},
 		{
-			name:                "same decoder without provenance",
+			name:                "unchanged direct cursor",
 			sameDecoderUnproven: true,
 			want:                "did not return the successor",
 		},
+		{
+			name:                "unchanged pointer cursor",
+			offset:              4,
+			sameDecoderUnproven: true,
+			want:                "did not return the successor",
+		},
+		{
+			name:                "unchanged maximum offset",
+			offset:              ^uint(0),
+			sameDecoderUnproven: true,
+			want:                "did not return the successor",
+		},
+		{name: "unrelated successor", next: unrelated, want: "did not return the successor"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := New(data)
-			result := invalidSuccessorCursorUnmarshaler{
-				next:                tt.next,
-				sameDecoderUnproven: tt.sameDecoderUnproven,
+			for _, path := range []string{"reflection", "cursor"} {
+				t.Run(path, func(t *testing.T) {
+					var err error
+					result := returningCursorUnmarshaler{
+						next:                tt.next,
+						sameDecoderUnproven: tt.sameDecoderUnproven,
+					}
+					if path == "reflection" {
+						err = d.Decode(tt.offset, &result)
+					} else {
+						cursor := Cursor{decoder: d.callbackDataDecoder(), offset: tt.offset}
+						var next Cursor
+						next, err = cursor.UnmarshalCursor(&result)
+						require.Zero(t, next)
+					}
+					require.ErrorContains(t, err, tt.want)
+				})
 			}
-			err := d.Decode(0, &result)
-			require.ErrorContains(t, err, tt.want)
 		})
+	}
+}
+
+func TestCursorUnmarshalerAcceptsReadSuccessor(t *testing.T) {
+	d := NewDecoder(NewDataDecoder([]byte{0x41, 'a', 0x41, 'b', 0x20, 0}), 0)
+	for _, offset := range []uint{0, 4} {
+		cursor := d.CursorAt(offset)
+		_, next, err := cursor.ReadString()
+		require.NoError(t, err)
+		value := returningCursorUnmarshaler{next: next}
+		got, err := cursor.UnmarshalCursor(&value)
+		require.NoError(t, err)
+		require.Equal(t, next, got)
 	}
 }
 
 func TestTopLevelCursorUnmarshalerPreservesError(t *testing.T) {
 	d := New([]byte{0x43, 'F', 'o', 'o'})
 	want := errors.New("custom cursor error")
-	result := invalidSuccessorCursorUnmarshaler{err: want}
+	result := returningCursorUnmarshaler{err: want}
 	require.ErrorIs(t, d.Decode(0, &result), want)
 }
 
 func TestCursorUnmarshalerRejectsInvalidSuccessorAndRollsBackPointer(t *testing.T) {
 	type outer struct {
-		Value *invalidSuccessorCursorUnmarshaler `maxminddb:"value"`
+		Value *returningCursorUnmarshaler `maxminddb:"value"`
 	}
 	data := []byte{0xe1, 0x45, 'v', 'a', 'l', 'u', 'e', 0x43, 'F', 'o', 'o'}
 

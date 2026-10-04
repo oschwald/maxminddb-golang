@@ -13,6 +13,10 @@
   decoder or its cursors. Without the option, repeated string reads can
   allocate more and run slower. Cursors supplied by a `Reader` continue to
   share its caching policy.
+- Added `mmdbdata.Decoder.CursorAt(offset)` to read independent records from
+  one buffer without changing the decoder's position. The cursors share its
+  string cache and can be read concurrently while the buffer remains valid
+  and unchanged.
 
 ## 2.7.0 - 2026-09-29
 

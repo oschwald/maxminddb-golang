@@ -291,9 +291,15 @@ regardless of the data provider.
 
 Standalone `mmdbdata.NewDecoder` calls do not cache strings by default. For a
 decoder that repeatedly reads the same strings, pass `mmdbdata.WithStringCache()`.
-The decoder and its cursors share the cache. On 64-bit systems, its table
-allocates 72 KiB when the first eligible string is read, plus memory for retained
-strings. Reader-supplied decoders and cursors use the Reader's caching policy.
+The decoder and its cursors share the cache. Use `decoder.CursorAt(offset)` to
+read different records from the same buffer without constructing a new decoder
+or changing its position. Independent cursors can be read concurrently. Keep the
+input buffer unchanged while a cached decoder or any of its cursors are in use.
+Separate `NewDecoder` calls do not share caches.
+
+On 64-bit systems, the table allocates 72 KiB when the first string of 2 through
+100 bytes is read, plus memory for retained strings. Reader-supplied decoders
+and cursors use the Reader's caching policy.
 
 ## Getting Database Files
 
