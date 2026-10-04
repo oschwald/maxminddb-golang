@@ -243,7 +243,7 @@ func DisableStringCache() ReaderOption {
 // updated database.
 // Use the Close method on the Reader object to return the resources to the system.
 func Open(file string, options ...ReaderOption) (*Reader, error) {
-	mapFile, err := os.Open(file)
+	mapFile, err := os.Open(file) // #nosec G703 -- The caller chooses the database file to open.
 	if err != nil {
 		return nil, err
 	}
