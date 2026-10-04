@@ -405,6 +405,8 @@ func searchTreeSizeBytes(nodeCount, recordSize uint) uint {
 
 // Lookup retrieves the database record for ip and returns a Result, which can
 // be used to decode the data.
+//
+// Any zone identifier in ip is ignored and has no effect on the lookup result.
 func (r *Reader) Lookup(ip netip.Addr) Result {
 	if r.buffer == nil {
 		return Result{err: errors.New("cannot call Lookup on a closed database")}

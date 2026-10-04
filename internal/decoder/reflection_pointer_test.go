@@ -66,22 +66,19 @@ func TestReflectionStringPointerFallbacks(t *testing.T) {
 		{0x20, 2, 0x43, 'a'},     // Truncated compact string.
 		{0x20, 2, 0x20, 4, 0x40}, // Pointer to pointer.
 		{0x20, 2, 0xa1, 7},       // Wrong target kind.
+		// Extended type 0xfb must not wrap to string.
+		{0x20, 2, 0x03, 0xfb, 'a', 'b', 'c'},
 	} {
 		d := New(data)
 		result := namedString("unchanged")
 		require.Error(t, d.Decode(0, &result))
 		require.Equal(t, namedString("unchanged"), result)
 	}
-	for _, target := range [][]byte{
-		stringLeaf(29),
-		{0x03, 0xfb, 'a', 'b', 'c'}, // Extended kind wraps to string; retain generic handling.
-	} {
-		d := New(append(ptr(2), target...))
-		var got, want namedString
-		require.NoError(t, d.Decode(2, &want))
-		require.NoError(t, d.Decode(0, &got))
-		require.Equal(t, want, got)
-	}
+	long := New(append(ptr(2), stringLeaf(29)...))
+	var got, want namedString
+	require.NoError(t, long.Decode(2, &want))
+	require.NoError(t, long.Decode(0, &got))
+	require.Equal(t, want, got)
 
 	d := New([]byte{0x20, 2, 0x43, 'a', 'b', 'c'})
 	var legacy markedString

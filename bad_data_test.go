@@ -86,7 +86,7 @@ func TestBadDataFixtures(t *testing.T) {
 		},
 		{
 			name:      "maxminddb-golang/invalid-data-record-offset.mmdb",
-			openError: "invalid Float64 size: 6",
+			openError: "unknown type: 263",
 		},
 		{
 			name:      "maxminddb-golang/invalid-map-key-length.mmdb",

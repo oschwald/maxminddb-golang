@@ -276,7 +276,10 @@ func (d *ReflectionDecoder) structFieldValueIsInlineContainer(offset uint) bool 
 		ctrlByte := d.buffer[offset]
 		if ctrlByte>>5 == byte(KindMap) ||
 			(ctrlByte>>5 == byte(KindExtended) && offset+1 < uint(len(d.buffer)) &&
-				(d.buffer[offset+1] == byte(KindMap-7) ||
+				// Extended type byte 0 is not a valid type, but the
+				// budgeted skip rejects it, while nextValueOffset would
+				// skip it as a scalar.
+				(d.buffer[offset+1] == 0 ||
 					d.buffer[offset+1] == byte(KindSlice-7))) {
 			return true
 		}
@@ -1018,12 +1021,9 @@ func (d *ReflectionDecoder) unmarshalPointer(
 
 	// Check for pointer-to-pointer by looking at what we're about to decode
 	// This is done efficiently by checking the control byte at the pointer location
+	// An extended type cannot encode a pointer, so only the control byte can.
 	controlByte := d.buffer[pointer]
-	kind := Kind(controlByte >> 5)
-	if kind == KindExtended && pointer+1 < uint(len(d.buffer)) {
-		kind = Kind(d.buffer[pointer+1] + 7)
-	}
-	if kind == KindPointer {
+	if Kind(controlByte>>5) == KindPointer {
 		return 0, mmdberrors.NewInvalidDatabaseError(
 			"invalid pointer to pointer at offset %d",
 			pointer,
@@ -1806,11 +1806,12 @@ func (d *ReflectionDecoder) decodeStructWithFields(
 		switch fieldInfo.dispatch {
 		case dispatchFast:
 			if len(fieldInfo.index) == 0 {
-				if fastOffset, ok := d.tryFastDecodeTyped(
+				fastOffset, ok := d.tryFastDecodeTyped(
 					offset,
 					fieldValue,
 					fieldInfo.fieldType,
-				); ok {
+				)
+				if ok {
 					offset = fastOffset
 					continue
 				}

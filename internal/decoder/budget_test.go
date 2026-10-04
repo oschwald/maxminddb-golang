@@ -46,21 +46,6 @@ func mapHeader(n int) []byte {
 	}
 }
 
-func extendedMapHeader(n int) []byte {
-	switch {
-	case n < 29:
-		return []byte{byte(n), 0x00}
-	case n < 285:
-		return []byte{0x1D, 0x00, byte(n - 29)}
-	case n < 65821:
-		v := n - 285
-		return []byte{0x1E, 0x00, byte(v >> 8), byte(v)}
-	default:
-		v := n - 65821
-		return []byte{0x1F, 0x00, byte(v >> 16), byte(v >> 8), byte(v)}
-	}
-}
-
 func bytesLeaf(size int) []byte {
 	b := make([]byte, 0, size+4)
 	switch {
@@ -973,11 +958,11 @@ func TestTypedStructBudgetsIgnoredInlineContainers(t *testing.T) {
 		requireExpansionLimit(t, decodeAt(buf, 0, &out))
 	})
 
-	t.Run("extended map", func(t *testing.T) {
+	t.Run("map", func(t *testing.T) {
 		makeBuffer := func(size int) []byte {
 			buf := mapHeader(1)
 			buf = append(buf, encodedString("unknown")...)
-			buf = append(buf, extendedMapHeader(size)...)
+			buf = append(buf, mapHeader(size)...)
 			for range size {
 				buf = append(buf, 0x40, 0xA0)
 			}
@@ -989,6 +974,18 @@ func TestTypedStructBudgetsIgnoredInlineContainers(t *testing.T) {
 
 		var over emptyRecord
 		requireExpansionLimit(t, decodeAt(makeBuffer(limit/2), 0, &over))
+	})
+
+	t.Run("extended type 0", func(t *testing.T) {
+		// The typed-struct skip must send extended type 0 to the budgeted
+		// skip, which rejects it. nextValueOffset would skip it as a scalar,
+		// and the decode would pass.
+		buf := mapHeader(1)
+		buf = append(buf, encodedString("unknown")...)
+		buf = append(buf, 0x01, 0x00, 0x40, 0xA0)
+
+		var out emptyRecord
+		require.ErrorContains(t, decodeAt(buf, 0, &out), "unknown type: 263")
 	})
 }
 

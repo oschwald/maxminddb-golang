@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -107,8 +108,7 @@ func TestOpenBytesBudgetsConcreteMetadata(t *testing.T) {
 	)
 	metadata = append(metadata, make([]byte, leafSize)...)
 
-	database := append([]byte{}, metadataStartMarker...)
-	database = append(database, metadata...)
+	database := slices.Concat(metadataStartMarker, metadata)
 	reader, err := OpenBytes(database)
 	require.Nil(t, reader)
 	require.ErrorContains(t, err, "maximum decoded record size")
@@ -222,6 +222,13 @@ func TestLookupNetwork(t *testing.T) {
 			ExpectedFound:   true,
 		},
 		{
+			IP:              netip.MustParseAddr("::2:0:1%lo"),
+			DBFile:          "MaxMind-DB-test-ipv6-24.mmdb",
+			ExpectedNetwork: "::2:0:0/122",
+			ExpectedRecord:  map[string]any{"ip": "::2:0:0"},
+			ExpectedFound:   true,
+		},
+		{
 			IP:              netip.MustParseAddr("1.1.1.1"),
 			DBFile:          "MaxMind-DB-test-ipv4-24.mmdb",
 			ExpectedNetwork: "1.1.1.1/32",
@@ -244,6 +251,13 @@ func TestLookupNetwork(t *testing.T) {
 		},
 		{
 			IP:              netip.MustParseAddr("::ffff:1.1.1.128"),
+			DBFile:          "MaxMind-DB-test-decoder.mmdb",
+			ExpectedNetwork: "::ffff:1.1.1.0/120",
+			ExpectedRecord:  decoderRecord,
+			ExpectedFound:   true,
+		},
+		{
+			IP:              netip.MustParseAddr("::ffff:1.1.1.192%eth0"),
 			DBFile:          "MaxMind-DB-test-decoder.mmdb",
 			ExpectedNetwork: "::ffff:1.1.1.0/120",
 			ExpectedRecord:  decoderRecord,
@@ -1690,13 +1704,11 @@ func TestReaderConcurrentCustomUnmarshaler(t *testing.T) {
 	results := make([]concurrentBoolean, goroutineCount)
 	errs := make([]error, goroutineCount)
 	var wg sync.WaitGroup
-	wg.Add(goroutineCount)
 	for i := range goroutineCount {
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			<-start
 			errs[i] = result.Decode(&results[i])
-		}()
+		})
 	}
 	close(start)
 	wg.Wait()

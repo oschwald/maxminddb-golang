@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -763,7 +764,7 @@ func (m *markedFloat64) UnmarshalMaxMindDB(d *Decoder) error {
 func TestFastPathPreservesUnmarshalerForNamedTypes(t *testing.T) {
 	mapPrefix := []byte{0xe1, 0x41, 'v'} // map size 1, key "v"
 	wrap := func(value ...byte) []byte {
-		return append(append([]byte{}, mapPrefix...), value...)
+		return slices.Concat(mapPrefix, value)
 	}
 
 	cases := []struct {

@@ -598,3 +598,37 @@ func TestNextValueOffsetSkipsPointerTokenOnly(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "ok", got)
 }
+
+// TestDecodeCtrlDataExtendedTypes checks that only type bytes 1 through 8
+// give known kinds. Type byte 0 and bytes 0xf9 through 0xff must not give
+// kinds 0 through 7.
+func TestDecodeCtrlDataExtendedTypes(t *testing.T) {
+	for typeByte := range 256 {
+		d := NewDataDecoder([]byte{0x01, byte(typeByte), 'x'})
+		kind, _, _, err := d.decodeCtrlData(0)
+		require.NoError(t, err)
+		if typeByte >= 1 && typeByte <= 8 {
+			require.Equal(t, Kind(typeByte)+7, kind)
+		} else {
+			require.Greater(t, kind, KindFloat32, "type byte %#x", typeByte)
+		}
+	}
+}
+
+func TestDecodeRejectsInvalidExtendedTypes(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		data []byte
+		err  string
+	}{
+		{"type 0 as map", []byte{0x01, 0x00, 0x41, 'k', 0xa0}, "unknown type: 263"},
+		// 0xfb + 7 wraps to KindString in uint8.
+		{"0xfb as string", []byte{0x01, 0xfb, 'x'}, "unknown type: 258"},
+		{"type 9 past kinds", []byte{0x01, 0x09, 'x'}, "unknown type: 16"},
+		{"type 0xff past all", []byte{0x01, 0xff, 'x'}, "unknown type: 262"},
+	} {
+		d := New(tt.data)
+		var value any
+		require.ErrorContains(t, d.Decode(0, &value), tt.err, tt.name)
+	}
+}

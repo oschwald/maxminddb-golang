@@ -2,6 +2,8 @@ package maxminddb
 
 import (
 	"bytes"
+	"encoding/hex"
+	"net/netip"
 	"os"
 	"testing"
 
@@ -206,6 +208,43 @@ func TestVerifyMetadataPointersAfterRoot(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestVerifyAcceptsNestedRecordTarget uses the database from GitHub #250. It
+// has one 24-bit node. The left record points to {"a":{"b":"c"}} at data
+// offset 0. The right record points to the nested {"b":"c"} at offset 3.
+func TestVerifyAcceptsNestedRecordTarget(t *testing.T) {
+	data, err := hex.DecodeString(
+		"00001100001400000000000000000000000000000000e14161e141624163abcdef4d" +
+			"61784d696e642e636f6de84a6e6f64655f636f756e74c1014b7265636f72645f73" +
+			"697a65a1184a69705f76657273696f6ea1044d64617461626173655f74797065" +
+			"524e65737465642d76616c75652d726570726f5b62696e6172795f666f726d6174" +
+			"5f6d616a6f725f76657273696f6ea1025b62696e6172795f666f726d61745f6d69" +
+			"6e6f725f76657273696f6ea04b6275696c645f65706f636801027b4b6465736372" +
+			"697074696f6ee142656e4c4e65737465642076616c7565",
+	)
+	require.NoError(t, err)
+	reader, err := OpenBytes(data)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, reader.Close()) })
+
+	for _, tt := range []struct {
+		ip     string
+		offset uintptr
+		value  any
+	}{
+		{ip: "0.0.0.0", offset: 0, value: map[string]any{"a": map[string]any{"b": "c"}}},
+		{ip: "128.0.0.0", offset: 3, value: map[string]any{"b": "c"}},
+	} {
+		result := reader.Lookup(netip.MustParseAddr(tt.ip))
+		require.NoError(t, result.Err())
+		assert.Equal(t, tt.offset, result.Offset(), tt.ip)
+		var value any
+		require.NoError(t, result.Decode(&value))
+		assert.Equal(t, tt.value, value, tt.ip)
+	}
+
+	require.NoError(t, reader.Verify())
 }
 
 func TestVerifyOnGoodDatabases(t *testing.T) {
