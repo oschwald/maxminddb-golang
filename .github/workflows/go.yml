@@ -34,6 +34,12 @@ jobs:
       - name: Test
         run: go test -race -v ./...
 
+      - name: Test cache metrics
+        if: matrix.platform == 'ubuntu-latest' && matrix.go-version == '1.26'
+        run: |
+          go test -race -tags cachemetrics -v ./internal/decoder
+          go test -tags cachemetrics -run '^$' ./...
+
   test-386:
     name: Test (Go 1.26, linux/386)
     runs-on: ubuntu-latest

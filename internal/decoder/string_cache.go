@@ -179,6 +179,7 @@ func (sc *stringCache) miss(bucket *cacheBucket, offset uint, value []byte) stri
 		offset: offset,
 	})
 	bucket.releaseWriter(updated)
+	recordStringCacheAdmission()
 
 	return str
 }

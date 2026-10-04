@@ -18,3 +18,9 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           version: latest
+      - name: golangci-lint (cachemetrics)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+          args: --build-tags=cachemetrics
+          skip-cache: true

@@ -469,15 +469,38 @@ func TestStringCacheConcurrentEviction(t *testing.T) {
 }
 
 func BenchmarkStringCacheHot(b *testing.B) {
-	cache := newStringCache()
-	data := []byte("hello world, this is test data")
-
-	for b.Loop() {
-		benchmarkStringCacheSink = cache.internAt(0, data[:5])
-	}
+	benchmarkStringCacheHot(b, false)
 }
 
-func BenchmarkStringCacheCold(b *testing.B) {
+func BenchmarkStringCacheHotDisplaced(b *testing.B) {
+	benchmarkStringCacheHot(b, true)
+}
+
+func benchmarkStringCacheHot(b *testing.B, displaced bool) {
+	cache := newStringCache()
+	data := []byte("hello world, this is test data")
+	var offset uint
+	for range 2 {
+		cache.internAt(offset, data[:5])
+	}
+	if displaced {
+		// A second entry with the same home slot enables bucket scans.
+		offset = 1 << stringCachePassShift
+		for range 2 {
+			cache.internAt(offset, data[:5])
+		}
+	}
+
+	b.ReportAllocs()
+	metrics := startStringCacheBenchmarkMetrics()
+	for b.Loop() {
+		benchmarkStringCacheSink = cache.internAt(offset, data[:5])
+	}
+	b.StopTimer()
+	metrics.report(b)
+}
+
+func BenchmarkStringCacheColdMillionOffsets(b *testing.B) {
 	cache := newStringCache()
 	const universe = benchmarkStringCacheUniverse
 	data := make([]byte, universe*benchmarkStringCacheSpacing+benchmarkStringCacheLength)
@@ -488,6 +511,7 @@ func BenchmarkStringCacheCold(b *testing.B) {
 	// One pass evicts the prior miss record before an offset returns.
 	var i uint
 	b.ReportAllocs()
+	metrics := startStringCacheBenchmarkMetrics()
 	for b.Loop() {
 		offset := (i % universe) * benchmarkStringCacheSpacing
 		benchmarkStringCacheSink = cache.internAt(
@@ -496,6 +520,8 @@ func BenchmarkStringCacheCold(b *testing.B) {
 		)
 		i++
 	}
+	b.StopTimer()
+	metrics.report(b)
 }
 
 const (
@@ -551,36 +577,6 @@ func (w *stringCacheWorkload) warm(cache *stringCache) {
 	}
 }
 
-// stringCacheAllocations separates misses from admissions when allocs/op
-// rounds both counts toward zero.
-type stringCacheAllocations struct {
-	stats runtime.MemStats
-}
-
-func startStringCacheAllocations() *stringCacheAllocations {
-	a := &stringCacheAllocations{}
-	runtime.ReadMemStats(&a.stats)
-	return a
-}
-
-// Distinguish string and entry allocations by their sizes.
-func (a *stringCacheAllocations) report(b *testing.B) {
-	b.Helper()
-	var stats runtime.MemStats
-	runtime.ReadMemStats(&stats)
-
-	const entrySize = unsafe.Sizeof(cacheEntry{})
-	count := float64(stats.Mallocs - a.stats.Mallocs)
-	size := float64(stats.TotalAlloc - a.stats.TotalAlloc)
-	admitted := (size - benchmarkStringCacheLength*count) /
-		float64(entrySize-benchmarkStringCacheLength)
-	admitted = min(max(admitted, 0), count)
-
-	reads := float64(b.N)
-	b.ReportMetric((count-admitted)/reads, "misses/op")
-	b.ReportMetric(admitted/reads, "admits/op")
-}
-
 // The hot set recurs; cold reads are unlikely to recur before eviction.
 var stringCacheWorkloads = []struct {
 	name       string
@@ -609,12 +605,13 @@ func BenchmarkStringCacheWorkload(b *testing.B) {
 
 			var step uint
 			b.ReportAllocs()
-			allocations := startStringCacheAllocations()
+			metrics := startStringCacheBenchmarkMetrics()
 			for b.Loop() {
 				benchmarkStringCacheSink = workload.intern(cache, step)
 				step++
 			}
-			allocations.report(b)
+			b.StopTimer()
+			metrics.report(b)
 		})
 	}
 }
@@ -628,7 +625,8 @@ func BenchmarkStringCacheWorkloadParallel(b *testing.B) {
 
 			var starts atomic.Uint64
 			b.ReportAllocs()
-			allocations := startStringCacheAllocations()
+			metrics := startStringCacheBenchmarkMetrics()
+			b.ResetTimer()
 			b.RunParallel(func(pb *testing.PB) {
 				// Stagger workers so they do not walk the sequence in lockstep.
 				step := uint(starts.Add(1)) * 104729
@@ -639,7 +637,8 @@ func BenchmarkStringCacheWorkloadParallel(b *testing.B) {
 				}
 				runtime.KeepAlive(length)
 			})
-			allocations.report(b)
+			b.StopTimer()
+			metrics.report(b)
 		})
 	}
 }
