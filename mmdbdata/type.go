@@ -200,10 +200,10 @@ func NewDecoder(buffer []byte, offset uint, options ...DecoderOption) *Decoder {
 // unchanged while the decoder or any of its cursors are in use because cache
 // keys identify offsets in that buffer.
 //
-// Strings from 2 through 100 bytes are eligible. On 64-bit systems, enabling
-// caching allocates a 136 KiB table. Cached strings retain additional memory.
-// This can reduce allocations for repeated reads, but increases setup cost for
-// short-lived decoders.
+// Strings from 2 through 100 bytes are eligible. On 64-bit systems, the table
+// allocates 72 KiB on the first eligible string read. Cached strings retain
+// additional memory. This can reduce allocations for repeated reads, but
+// increases setup cost for short-lived decoders.
 func WithStringCache() DecoderOption {
 	return decoder.WithStringCache()
 }

@@ -29,7 +29,7 @@ func TestStringCacheMetricsWriterContention(t *testing.T) {
 	cache := newStringCache()
 	const offset = 42
 	internTestValue(cache, offset)
-	bucket := cache.bucket(offset)
+	bucket := cache.initTable().bucket(offset)
 	bucket.control.Store(stringCacheWriting)
 
 	before := startStringCacheBenchmarkMetrics()
@@ -56,7 +56,8 @@ func TestStringCacheMetricsDuplicatePublication(t *testing.T) {
 	before := startStringCacheBenchmarkMetrics()
 	// These callers missed before another caller published the same offset.
 	for range 2 {
-		cache.miss(cache.bucket(offset), offset, stringCacheTestValue(offset))
+		cache.initTable().
+			miss(cache.initTable().bucket(offset), offset, stringCacheTestValue(offset))
 	}
 	after := startStringCacheBenchmarkMetrics()
 	require.Equal(t, before.hits, after.hits)

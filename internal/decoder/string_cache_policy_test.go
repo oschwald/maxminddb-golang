@@ -15,17 +15,22 @@ func TestStringCacheLateMissDoesNotDuplicateResident(t *testing.T) {
 	require.NotNil(t, resident)
 
 	// Both readers missed before another reader admitted this offset.
-	cache.miss(cache.bucket(0), 0, value)
-	cache.miss(cache.bucket(0), 0, value)
+	cache.initTable().miss(cache.initTable().bucket(0), 0, value)
+	cache.initTable().miss(cache.initTable().bucket(0), 0, value)
 	count := 0
-	for i := range cache.bucket(0).entries {
-		if entry := cache.bucket(0).entries[i].Load(); entry != nil && entry.offset == 0 {
+	for i := range cache.initTable().bucket(0).entries {
+		if entry := cache.initTable().bucket(0).entries[i].Load(); entry != nil &&
+			entry.offset == 0 {
 			count++
 		}
 	}
 	require.Equal(t, 1, count)
 	require.Same(t, resident, cachedEntry(cache, 0))
-	require.False(t, cache.searching.Load(), "duplicate admission must not enable scanning")
+	require.False(
+		t,
+		cache.initTable().searching.Load(),
+		"duplicate admission must not enable scanning",
+	)
 }
 
 func TestStringCacheWriterPreservesReaderReference(t *testing.T) {
@@ -40,8 +45,8 @@ func TestStringCacheWriterPreservesReaderReference(t *testing.T) {
 				internTestValue(cache, offset)
 				internTestValue(cache, offset)
 			}
-			cache.searching.Store(true)
-			bucket := cache.bucket(0)
+			cache.initTable().searching.Store(true)
+			bucket := cache.initTable().bucket(0)
 			control := bucket.control.Load() &^ stringCacheReferencedBits
 			bucket.control.Store(control | stringCacheWriting)
 
@@ -70,20 +75,22 @@ func TestStringCacheWriterPreservesReaderReference(t *testing.T) {
 func TestStringCacheAllHomeAgingProtectsActiveEntries(t *testing.T) {
 	cache := newStringCache()
 	// Distinct table passes put each resident at home in the same bucket.
-	residents := []uint{0, (1 << stringCachePassShift) + 3,
+	residents := []uint{
+		0, (1 << stringCachePassShift) + 3,
 		(2 << stringCachePassShift) + 5, (3 << stringCachePassShift) + 7,
 		(4 << stringCachePassShift) + 10, (5 << stringCachePassShift) + 12,
-		(6 << stringCachePassShift) + 14}
+		(6 << stringCachePassShift) + 14,
+	}
 	for _, offset := range residents {
 		internTestValue(cache, offset)
 		internTestValue(cache, offset)
 		require.NotNil(t, cachedEntry(cache, offset))
 	}
-	require.False(t, cache.searching.Load())
+	require.False(t, cache.initTable().searching.Load())
 	newcomer := uint(7 << stringCachePassShift)
 	internTestValue(cache, newcomer)
 	internTestValue(cache, newcomer)
-	require.True(t, cache.searching.Load(), "aging must enable reference tracking")
+	require.True(t, cache.initTable().searching.Load(), "aging must enable reference tracking")
 	require.Nil(t, cachedEntry(cache, newcomer))
 	for _, offset := range residents[1:] {
 		internTestValue(cache, offset)

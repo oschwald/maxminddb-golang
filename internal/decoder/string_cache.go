@@ -3,6 +3,7 @@ package decoder
 import (
 	"math"
 	"math/bits"
+	"sync"
 	"sync/atomic"
 )
 
@@ -12,7 +13,7 @@ type cacheEntry struct {
 }
 
 const (
-	stringCacheBucketBits  = 11
+	stringCacheBucketBits  = 10
 	stringCacheBuckets     = 1 << stringCacheBucketBits
 	stringCacheBucketSlots = 7
 
@@ -27,7 +28,7 @@ const (
 	// Overlapping strings may share a miss-history slot.
 	stringCacheMissShift = 1
 
-	// This miss table and the buckets make the cache 136 KiB on 64-bit systems.
+	// This miss table and the buckets make the table 72 KiB on 64-bit systems.
 	stringCacheMisses = 1008
 
 	// Each slot has a control byte; the final byte holds reference bits.
@@ -48,7 +49,13 @@ type cacheBucket struct {
 	control atomic.Uint64
 }
 
+// stringCache shares lazy initialization across copies of a DataDecoder.
 type stringCache struct {
+	table      atomic.Pointer[stringCacheTable]
+	initialize sync.Once
+}
+
+type stringCacheTable struct {
 	buckets [stringCacheBuckets]cacheBucket
 
 	// Keep this read-mostly flag off the frequently written miss table's
@@ -77,17 +84,21 @@ func (sc *stringCache) internAt(offset uint, value []byte) string {
 		return string(value)
 	}
 
-	bucket := sc.bucket(offset)
+	table := sc.table.Load()
+	if table == nil {
+		table = sc.initTable()
+	}
+	bucket := table.bucket(offset)
 
-	// Until the first displacement, every entry is at home and a miss needs
-	// no bucket scan.
-	if !sc.searching.Load() {
+	// Before displacement or aging, every entry is at home and a miss needs
+	// no bucket scan. Aging enables scans so hits update reference bits.
+	if !table.searching.Load() {
 		cached := bucket.entries[stringCacheHomeSlot(offset)].Load()
 		if cached != nil && cached.offset == offset {
 			recordStringCacheHit()
 			return cached.str
 		}
-		return sc.miss(bucket, offset, value)
+		return table.miss(bucket, offset, value)
 	}
 
 	control := bucket.control.Load()
@@ -106,27 +117,36 @@ func (sc *stringCache) internAt(offset uint, value []byte) string {
 		matches &= matches - 1
 	}
 
-	return sc.miss(bucket, offset, value)
+	return table.miss(bucket, offset, value)
 }
 
-// miss allocates a string and admits it only after two misses, avoiding cache
-// entries for one-off values.
+// initTable prevents concurrent first reads from allocating duplicate tables.
+func (sc *stringCache) initTable() *stringCacheTable {
+	sc.initialize.Do(func() { sc.table.Store(new(stringCacheTable)) })
+	return sc.table.Load()
+}
+
+func (table *stringCacheTable) bucket(offset uint) *cacheBucket {
+	return &table.buckets[(offset>>stringCacheWindowBits)&(stringCacheBuckets-1)]
+}
+
+// miss admits a string only after two misses, avoiding entries for one-off values.
+// A late duplicate reuses the published string without allocating another copy.
 //
 //go:noinline
-func (sc *stringCache) miss(bucket *cacheBucket, offset uint, value []byte) string {
+func (table *stringCacheTable) miss(bucket *cacheBucket, offset uint, value []byte) string {
 	recordStringCacheMiss()
-	str := string(value)
 
-	recent := sc.recentMiss(offset)
+	recent := table.recentMiss(offset)
 	admissionValue := stringCacheAdmissionValue(offset)
 	if admissionValue == 0 {
-		return str
+		return string(value)
 	}
 	recorded := recent.Load()
 	remaining, missed := stringCacheTakeMiss(recorded, admissionValue)
 	if !missed {
 		recent.Store(recorded<<32 | uint64(admissionValue))
-		return str
+		return string(value)
 	}
 
 	home := stringCacheHomeSlot(offset)
@@ -134,7 +154,7 @@ func (sc *stringCache) miss(bucket *cacheBucket, offset uint, value []byte) stri
 	// Serialize publishers so a delayed writer cannot overwrite a newer entry.
 	if control&stringCacheWriting != 0 ||
 		!bucket.control.CompareAndSwap(control, control|stringCacheWriting) {
-		return str
+		return string(value)
 	}
 	// Another reader may have admitted this offset after our lookup missed.
 	matches := stringCacheMatches(control, stringCacheControlByte(offset))
@@ -154,26 +174,27 @@ func (sc *stringCache) miss(bucket *cacheBucket, offset uint, value []byte) stri
 	// replace an entry that has remained unused since then.
 	if !ok {
 		// Lookups must begin tracking hits before reference bits are aged.
-		if !sc.searching.Load() {
-			sc.searching.Store(true)
+		if !table.searching.Load() {
+			table.searching.Store(true)
 		}
 		bucket.control.Store(control &^ stringCacheReferencedBits)
-		return str
+		return string(value)
 	}
 
 	if !recent.CompareAndSwap(recorded, remaining) {
 		bucket.releaseWriter(control)
-		return str
+		return string(value)
 	}
 	// Enable bucket scans only for an admitted off-home entry, before publishing it.
-	if slot != home && !sc.searching.Load() {
-		sc.searching.Store(true)
+	if slot != home && !table.searching.Load() {
+		table.searching.Store(true)
 	}
 
 	// Publish the entry before its control byte. Racing readers may miss, but
 	// offset checks prevent a false hit.
 	referenced := uint64(1) << (stringCacheReferencedShift + slot)
 	updated := control&^(0xFF<<(8*slot)) | stringCacheControlByte(offset)<<(8*slot) | referenced
+	str := string(value)
 	bucket.entries[slot].Store(&cacheEntry{
 		str:    str,
 		offset: offset,
@@ -182,6 +203,10 @@ func (sc *stringCache) miss(bucket *cacheBucket, offset uint, value []byte) stri
 	recordStringCacheAdmission()
 
 	return str
+}
+
+func (table *stringCacheTable) recentMiss(offset uint) *atomic.Uint64 {
+	return &table.recentMisses[(offset>>stringCacheMissShift)%stringCacheMisses]
 }
 
 // releaseWriter publishes control metadata and releases the publisher lock.
@@ -195,14 +220,6 @@ func (bucket *cacheBucket) releaseWriter(updated uint64) {
 			return
 		}
 	}
-}
-
-func (sc *stringCache) bucket(offset uint) *cacheBucket {
-	return &sc.buckets[(offset>>stringCacheWindowBits)&(stringCacheBuckets-1)]
-}
-
-func (sc *stringCache) recentMiss(offset uint) *atomic.Uint64 {
-	return &sc.recentMisses[(offset>>stringCacheMissShift)%stringCacheMisses]
 }
 
 // stringCacheAdmissionValue biases the truncated offset away from zero.

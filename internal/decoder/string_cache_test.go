@@ -40,14 +40,16 @@ func TestStringCacheVariousOffsets(t *testing.T) {
 }
 
 func cachedEntry(cache *stringCache, offset uint) *cacheEntry {
-	bucket := cache.bucket(offset)
-	matches := stringCacheMatches(bucket.control.Load(), stringCacheControlByte(offset))
-	for matches != 0 {
-		slot := bits.TrailingZeros64(matches) / 8
+	table := cache.table.Load()
+	if table == nil {
+		return nil
+	}
+	bucket := table.bucket(offset)
+	// Inspect residents independently of the production candidate filter.
+	for slot := range bucket.entries {
 		if entry := bucket.entries[slot].Load(); entry != nil && entry.offset == offset {
 			return entry
 		}
-		matches &= matches - 1
 	}
 	return nil
 }
@@ -77,7 +79,7 @@ func stringCacheTestOffsets(
 		if !accept(offset) {
 			continue
 		}
-		if recent := cache.recentMiss(offset); !shareMisses {
+		if recent := cache.initTable().recentMiss(offset); !shareMisses {
 			if used[recent] {
 				continue
 			}
@@ -106,7 +108,7 @@ func TestStringCacheTwoMissAdmission(t *testing.T) {
 	require.Equal(t, "hello", str1)
 	require.Nil(t, cachedEntry(cache, 0),
 		"first miss must not admit (one-off offsets should not allocate cache slots)")
-	require.Equal(t, uint64(stringCacheAdmissionValue(0)), cache.recentMiss(0).Load(),
+	require.Equal(t, uint64(stringCacheAdmissionValue(0)), cache.initTable().recentMiss(0).Load(),
 		"first miss must record the offset")
 
 	str2 := cache.internAt(0, data[:5])
@@ -115,7 +117,7 @@ func TestStringCacheTwoMissAdmission(t *testing.T) {
 	require.NotNil(t, entry, "second miss at same offset must admit")
 	require.Equal(t, uint(0), entry.offset)
 	require.Equal(t, "hello", entry.str)
-	require.Zero(t, cache.recentMiss(0).Load(),
+	require.Zero(t, cache.initTable().recentMiss(0).Load(),
 		"admission must release the recorded miss")
 
 	str3 := cache.internAt(0, data[:5])
@@ -133,9 +135,17 @@ func stringCacheOffsetsSharingMissSlot(t *testing.T, cache *stringCache, count u
 	offsets := make([]uint, count)
 	for i := range offsets {
 		offsets[i] = uint(i) * stringCacheMisses << stringCacheMissShift
-		require.Same(t, cache.recentMiss(offsets[0]), cache.recentMiss(offsets[i]))
+		require.Same(
+			t,
+			cache.initTable().recentMiss(offsets[0]),
+			cache.initTable().recentMiss(offsets[i]),
+		)
 		if i > 0 {
-			require.NotSame(t, cache.bucket(offsets[i-1]), cache.bucket(offsets[i]))
+			require.NotSame(
+				t,
+				cache.initTable().bucket(offsets[i-1]),
+				cache.initTable().bucket(offsets[i]),
+			)
 		}
 	}
 	return offsets
@@ -155,7 +165,7 @@ func TestStringCacheAdmitsOffsetsSharingMissSlot(t *testing.T) {
 	}
 
 	requireServedFromCache(t, cache, offsets)
-	require.Zero(t, cache.recentMiss(offsets[0]).Load(),
+	require.Zero(t, cache.initTable().recentMiss(offsets[0]).Load(),
 		"admission must release both recorded misses")
 }
 
@@ -184,9 +194,9 @@ func TestStringCacheLayout(t *testing.T) {
 		t.Skip("the cache is sized for 64-bit platforms")
 	}
 	require.Equal(t, uintptr(64), unsafe.Sizeof(cacheBucket{}))
-	require.Equal(t, uintptr(136<<10), unsafe.Sizeof(stringCache{}))
+	require.Equal(t, uintptr(72<<10), unsafe.Sizeof(stringCacheTable{}))
 
-	var cache stringCache
+	var cache stringCacheTable
 	reserved := unsafe.Offsetof(cache.recentMisses) - unsafe.Offsetof(cache.searching)
 	require.Equal(t, uintptr(128), reserved,
 		"searching must not share a cache line with recentMisses")
@@ -231,7 +241,7 @@ func TestStringCacheKeepsOffsetsSharingBucket(t *testing.T) {
 func TestStringCacheConfirmsOffsetWhenControlBytesMatch(t *testing.T) {
 	cache := newStringCache()
 	offsets := stringCacheTestOffsets(t, 2, true, func(offset uint) bool {
-		return cache.bucket(offset) == cache.bucket(0) &&
+		return cache.initTable().bucket(offset) == cache.initTable().bucket(0) &&
 			stringCacheControlByte(offset) == stringCacheControlByte(0)
 	})
 
@@ -347,26 +357,26 @@ func TestStringCacheReadsHomeSlotsUntilDisplacement(t *testing.T) {
 		internTestValue(cache, offset)
 		internTestValue(cache, offset)
 
-		entry := cache.bucket(offset).entries[stringCacheHomeSlot(offset)].Load()
+		entry := cache.initTable().bucket(offset).entries[stringCacheHomeSlot(offset)].Load()
 		require.NotNil(t, entry)
 		require.Equal(t, offset, entry.offset, "offset %d must be in its home slot", offset)
 	}
-	require.False(t, cache.searching.Load())
+	require.False(t, cache.initTable().searching.Load())
 	requireServedFromCache(t, cache, neighbors)
 
 	for offset := uint(1 << 20); offset < 1<<20+4096; offset += 5 {
 		internTestValue(cache, offset)
 	}
-	require.False(t, cache.searching.Load())
+	require.False(t, cache.initTable().searching.Load())
 
 	// A later table pass collides with the first entry's home slot.
 	displaced := neighbors[0] + 1<<stringCachePassShift
-	require.Same(t, cache.bucket(neighbors[0]), cache.bucket(displaced))
+	require.Same(t, cache.initTable().bucket(neighbors[0]), cache.initTable().bucket(displaced))
 	require.Equal(t, stringCacheHomeSlot(neighbors[0]), stringCacheHomeSlot(displaced))
 
 	internTestValue(cache, displaced)
 	internTestValue(cache, displaced)
-	require.True(t, cache.searching.Load())
+	require.True(t, cache.initTable().searching.Load())
 
 	requireServedFromCache(t, cache, append(neighbors, displaced))
 }
@@ -448,8 +458,8 @@ func TestStringCacheConcurrentEviction(t *testing.T) {
 	}
 	wg.Wait()
 
-	for i := range cache.buckets {
-		bucket := &cache.buckets[i]
+	for i := range cache.initTable().buckets {
+		bucket := &cache.initTable().buckets[i]
 		control := bucket.control.Load()
 		require.Zero(t, control&stringCacheWriting, "bucket writer did not finish")
 		for slot := range bucket.entries {
@@ -459,7 +469,7 @@ func TestStringCacheConcurrentEviction(t *testing.T) {
 				continue
 			}
 			require.Equal(t, string(stringCacheTestValue(entry.offset)), entry.str)
-			require.Same(t, bucket, cache.bucket(entry.offset),
+			require.Same(t, bucket, cache.initTable().bucket(entry.offset),
 				"offset %d is stored in a bucket that lookups never search", entry.offset)
 			require.Equal(t, stringCacheControlByte(entry.offset),
 				(control>>(8*slot))&0xFF,
@@ -468,7 +478,7 @@ func TestStringCacheConcurrentEviction(t *testing.T) {
 	}
 }
 
-func BenchmarkStringCacheHot(b *testing.B) {
+func BenchmarkStringCacheHotHome(b *testing.B) {
 	benchmarkStringCacheHot(b, false)
 }
 
