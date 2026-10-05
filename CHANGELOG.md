@@ -1,5 +1,23 @@
 # Changes
 
+## Unreleased
+
+- String caching now uses buckets to improve concurrent decoding. On 64-bit
+  systems, the table grows from 64 KiB to 72 KiB and is allocated only when an
+  eligible string is decoded. Entry capacity grows from 4,096 to 7,168, which
+  can also increase retained string memory. Pull request by James Ranson.
+  GitHub #252.
+- Standalone `mmdbdata.NewDecoder` calls now default to no string cache.
+  This reduces setup cost for short-lived decoders. Use the new
+  `mmdbdata.WithStringCache()` option for repeated reads through a retained
+  decoder or its cursors. Without the option, repeated string reads can
+  allocate more and run slower. Cursors supplied by a `Reader` continue to
+  share its caching policy.
+- Added `mmdbdata.Decoder.CursorAt(offset)` to read independent records from
+  one buffer without changing the decoder's position. The cursors share its
+  string cache and can be read concurrently while the buffer remains valid
+  and unchanged.
+
 ## 2.7.0 - 2026-09-29
 
 - Go 1.26 or later is now required. CI now tests Go 1.26 and 1.27.

@@ -22,8 +22,11 @@ type Unmarshaler interface {
 }
 
 // CursorUnmarshaler is implemented by decoders that can decode directly from
-// an immutable cursor and return its proven successor without acquiring a
-// stateful Decoder.
+// an immutable cursor and return its successor without acquiring a stateful
+// Decoder. Implementations must consume and validate the complete value.
+// Successor checks verify decoder identity and recorded origin. A successor from
+// MapReader.End relies on the implementation having completed that reader's
+// counted traversal.
 type CursorUnmarshaler interface {
 	UnmarshalMaxMindDBCursor(cursor Cursor) (Cursor, error)
 }
