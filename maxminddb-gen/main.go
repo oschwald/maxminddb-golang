@@ -186,7 +186,7 @@ func loadInputFile(
 	cwd, path string,
 	seenPaths map[string]bool,
 ) (*ast.File, []string, error) {
-	if filepath.Ext(path) != ".go" {
+	if filepath.Ext(path) != goFileExtension {
 		return nil, nil, fmt.Errorf("input %q is not a Go source file", path)
 	}
 	if strings.HasSuffix(filepath.Base(path), "_test.go") {
@@ -204,7 +204,12 @@ func loadInputFile(
 	}
 	seenPaths[absolute] = true
 
-	file, err := parser.ParseFile(fset, absolute, nil, parser.ParseComments)
+	file, err := parser.ParseFile(
+		fset,
+		absolute,
+		nil,
+		parser.ParseComments|parser.SkipObjectResolution,
+	)
 	if err != nil {
 		return nil, nil, err
 	}

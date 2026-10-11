@@ -17,6 +17,11 @@
   one buffer without changing the decoder's position. The cursors share its
   string cache and can be read concurrently while the buffer remains valid
   and unchanged.
+- Reduced `maxminddb-gen` generation and test time by reusing loaded dependencies
+  during output validation, avoiding duplicate syntax work, and omitting unused
+  parser metadata. Full type checking and generated-output validation remain
+  enabled. Validation normalizes paths from package loaders to avoid false
+  duplicate declarations. GitHub #256.
 - Reduced reflection decoding overhead for string struct fields, including
   fields read through database pointers, while retaining existing validation
   and custom unmarshaling behavior.
