@@ -24,6 +24,17 @@
 - Fixed `Reader.Verify()` accepting invalid UTF-8 values overwritten by
   duplicate map keys. Verification now checks every encoded string in the data
   and metadata sections, including overwritten values.
+- Fixed `maxminddb-gen` rejecting fields that use type aliases of supported
+  types, including aliases in nested containers.
+- Fixed `maxminddb-gen` panicking when a byte slice or its elements use an
+  imported type alias.
+- Fixed `maxminddb-gen` emitting inaccessible type names for imported container
+  aliases with private element or map key types. Generated helpers infer those
+  types while retaining allocation, overflow, and size checks.
+- Fixed `maxminddb-gen` emitting private byte aliases in constraints for nested
+  byte slice aliases.
+- Fixed `maxminddb-gen` emitting inaccessible types for imported aliases whose
+  generic arguments contain private types, fields, or methods.
 
 ## 2.7.0 - 2026-09-29
 

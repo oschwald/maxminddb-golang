@@ -41,6 +41,7 @@ type generator struct {
 	unmarshaler     *types.Interface
 	cursorDecoder   *types.Interface
 	byteSlicePlan   *decodePlan
+	inferred        []*inferredDecoder
 	helperNamespace string
 	targets         []*types.Named
 	nextID          int
@@ -87,13 +88,15 @@ const (
 )
 
 type decodePlan struct {
-	typ     types.Type
-	key     types.Type
-	keyPlan *decodePlan
-	basic   *types.Basic
-	elem    *decodePlan
-	named   *types.Named
-	kind    decodeKind
+	inferred      *inferredDecoder
+	unmarshalType *types.TypeParam
+	typ           types.Type
+	key           types.Type
+	keyPlan       *decodePlan
+	basic         *types.Basic
+	elem          *decodePlan
+	named         *types.Named
+	kind          decodeKind
 }
 
 func generatePackage(
@@ -957,6 +960,7 @@ func (g *generator) analyzeStruct(named *types.Named) error {
 				field.Name(),
 			)
 		}
+		g.prepareInferredDecoder(plan)
 		info.fields = append(
 			info.fields,
 			fieldInfo{
@@ -974,6 +978,14 @@ func (g *generator) analyzeStruct(named *types.Named) error {
 }
 
 func (g *generator) analyzeType(t types.Type) (*decodePlan, error) {
+	if alias, ok := t.(*types.Alias); ok {
+		plan, err := g.analyzeType(types.Unalias(alias))
+		if plan != nil {
+			// An exported alias can name an unexported type in another package.
+			plan.typ = t
+		}
+		return plan, err
+	}
 	if pointer, ok := t.(*types.Pointer); ok {
 		elem, err := g.analyzeType(pointer.Elem())
 		return &decodePlan{typ: t, kind: decodePointer, elem: elem}, err
@@ -1321,6 +1333,11 @@ func (g *generator) validateHelperNames() error {
 			return err
 		}
 	}
+	for _, helper := range g.inferred {
+		if err := reserve(helper.name, token.NoPos); err != nil {
+			return err
+		}
+	}
 	for _, info := range g.structs {
 		for _, field := range info.fields {
 			if plan := findDecodeBytesPlan(field.plan); plan != nil {
@@ -1333,6 +1350,12 @@ func (g *generator) validateHelperNames() error {
 		}
 	}
 	if g.byteSlicePlan != nil {
+		// The shared helper operates on []byte, regardless of field aliases.
+		byteType := types.Universe.Lookup("byte").Type().(*types.Basic)
+		g.byteSlicePlan = &decodePlan{
+			typ: types.NewSlice(byteType), kind: decodeBytes,
+			elem: &decodePlan{typ: byteType, kind: decodeBasic, basic: byteType},
+		}
 		for _, name := range []string{g.bytesHelperName(), g.byteSliceHelperName()} {
 			if err := reserve(name, token.NoPos); err != nil {
 				return err
@@ -1374,6 +1397,9 @@ func (g *generator) render(buildConstraint string) ([]byte, error) {
 	})
 	for _, info := range infos {
 		g.emitStruct(&body, info)
+	}
+	for _, helper := range g.inferred {
+		g.emitInferredDecoder(&body, helper)
 	}
 	if g.byteSlicePlan != nil {
 		g.emitByteSliceHelper(&body)
@@ -1524,6 +1550,9 @@ func (g *generator) emitMaxSizeDecode(
 	indent int,
 	maximum uint64,
 ) bool {
+	if plan.inferred != nil {
+		return false
+	}
 	switch {
 	case plan.kind == decodeBasic && plan.basic.Kind() == types.String:
 		pad := strings.Repeat("\t", indent)
@@ -1593,6 +1622,19 @@ func (g *generator) emitDecode(
 	indent int,
 ) {
 	pad := strings.Repeat("\t", indent)
+	if plan.inferred != nil {
+		fmt.Fprintf(
+			out,
+			"%s%s, %s = %s(%s, &%s)\n",
+			pad,
+			next,
+			errName,
+			plan.inferred.name,
+			cursor,
+			target,
+		)
+		return
+	}
 	switch plan.kind {
 	case decodePointer:
 		id := g.id()
@@ -1629,17 +1671,25 @@ func (g *generator) emitDecode(
 		)
 		fmt.Fprintf(out, "%s}\n", pad)
 	case decodeCursorUnmarshaler:
+		argument := "&" + target
+		if plan.unmarshalType != nil {
+			argument = g.typeString(plan.unmarshalType) + "(" + argument + ")"
+		}
 		fmt.Fprintf(
 			out,
-			"%s%s, %s = %s.UnmarshalCursor(&%s)\n",
+			"%s%s, %s = %s.UnmarshalCursor(%s)\n",
 			pad,
 			next,
 			errName,
 			cursor,
-			target,
+			argument,
 		)
 	case decodeUnmarshaler:
-		fmt.Fprintf(out, "%s%s, %s = %s.Unmarshal(&%s)\n", pad, next, errName, cursor, target)
+		argument := "&" + target
+		if plan.unmarshalType != nil {
+			argument = g.typeString(plan.unmarshalType) + "(" + argument + ")"
+		}
+		fmt.Fprintf(out, "%s%s, %s = %s.Unmarshal(%s)\n", pad, next, errName, cursor, argument)
 	case decodeStruct:
 		fmt.Fprintf(
 			out,
@@ -2338,6 +2388,9 @@ func (g *generator) emitCustomKeyMap(
 }
 
 func (g *generator) errorExpression(plan *decodePlan, name string) string {
+	if plan.inferred != nil {
+		return name
+	}
 	for plan.kind == decodePointer {
 		plan = plan.elem
 	}
@@ -2443,7 +2496,15 @@ func planUsesFloat32(plan *decodePlan) bool {
 }
 
 func (g *generator) collectPlanImports(plan *decodePlan, typeRequired bool) {
-	if typeRequired || plan.kind == decodeBasic || plan.kind == decodeSlice ||
+	if helper := plan.inferred; helper != nil {
+		g.collectPlanImports(helper.plan, false)
+		for _, parameter := range helper.params {
+			g.collectTypeImports(parameter.Constraint())
+		}
+		return
+	}
+	if typeRequired || plan.kind == decodeBasic || plan.kind == decodeBytes ||
+		plan.kind == decodeSlice ||
 		plan.kind == decodeMap {
 		g.collectTypeImports(plan.typ)
 	}

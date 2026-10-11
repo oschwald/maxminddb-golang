@@ -88,6 +88,8 @@ The initial generator supports:
   `mmdbdata.Unmarshaler` remains supported throughout v2, and cursor unmarshaling
   takes precedence when both are present
 
+Fields can use type aliases of the supported types.
+
 Named-string map keys may also implement either custom unmarshaling interface.
 Their callback receives the original MMDB key, and cursor unmarshaling takes
 precedence when both interfaces are implemented.
