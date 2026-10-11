@@ -107,6 +107,353 @@ type Bad struct {
 	require.ErrorContains(t, err, "field Unsupported: unsupported type chan int")
 }
 
+func TestGenerateSupportsAliasFields(t *testing.T) {
+	dir := newTestModule(t, `package fixture
+
+import "example.com/generatortest/custom"
+
+type Text = string
+type Pointer = *Text
+type List[T any] = []T
+type Texts = List[Text]
+type Lookup = map[Text]Texts
+type Raw = []byte
+type Nested struct { Value Text }
+type NestedAlias = Nested
+type External = custom.Text
+type Custom = custom.Value
+
+type Record struct {
+	Scalar Text
+	PointerValue Pointer
+	Values Texts
+	Mapping Lookup
+	Bytes Raw
+	Child NestedAlias
+	Imported External
+	Callback Custom
+	Bounded Text `+"`maxminddb:\"bounded,maxsize:1\"`"+`
+}
+
+`)
+	writeTestPackage(t, dir, "custom", `package custom
+
+import "github.com/oschwald/maxminddb-golang/v2/mmdbdata"
+
+type text string
+type Text = text
+type Value string
+
+func (v *Value) UnmarshalMaxMindDBCursor(c mmdbdata.Cursor) (mmdbdata.Cursor, error) {
+	s, next, err := c.ReadString()
+	if err == nil { *v = Value("custom:" + s) }
+	return next, err
+}
+`)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "record_test.go"), []byte(`package fixture
+
+import (
+	"reflect"
+	"strings"
+	"testing"
+
+	"github.com/oschwald/maxminddb-golang/v2/mmdbdata"
+)
+
+func TestAliases(t *testing.T) {
+	data := []byte{0xe9}
+	for _, field := range []struct { key string; value []byte }{
+		{"Scalar", []byte{0x41, 'a'}},
+		{"PointerValue", []byte{0x41, 'b'}},
+		{"Values", []byte{0x01, 0x04, 0x41, 'c'}},
+		{"Mapping", []byte{0xe1, 0x41, 'k', 0x01, 0x04, 0x41, 'd'}},
+		{"Bytes", []byte{0x81, 0xff}},
+		{"Child", []byte{0xe1, 0x45, 'V', 'a', 'l', 'u', 'e', 0x41, 'e'}},
+		{"Imported", []byte{0x41, 'f'}},
+		{"Callback", []byte{0x41, 'g'}},
+		{"bounded", []byte{0x41, 'h'}},
+	} {
+		data = append(data, 0x40|byte(len(field.key)))
+		data = append(data, field.key...)
+		data = append(data, field.value...)
+	}
+	var got Record
+	if _, err := got.UnmarshalMaxMindDBCursor(mmdbdata.NewDecoder(data, 0).Cursor()); err != nil {
+		t.Fatal(err)
+	}
+	pointer := "b"
+	want := Record{
+		Scalar: "a", PointerValue: &pointer, Values: Texts{"c"},
+		Mapping: Lookup{"k": Texts{"d"}}, Bytes: Raw{0xff}, Child: Nested{Value: "e"},
+		Imported: "f", Callback: "custom:g", Bounded: "h",
+	}
+	if !reflect.DeepEqual(want, got) { t.Fatalf("got %#v, want %#v", got, want) }
+	data[len(data)-2] = 0x42
+	data = append(data, 'i')
+	_, err := got.UnmarshalMaxMindDBCursor(mmdbdata.NewDecoder(data, 0).Cursor())
+	if err == nil || !strings.Contains(err.Error(), "maxsize 1") || got.Bounded != "h" {
+		t.Fatalf("maxsize did not reject the alias before mutation: value %q, error %v", got.Bounded, err)
+	}
+}
+`), 0o600))
+
+	t.Chdir(dir)
+	require.NoError(t, run([]string{"model.go"}))
+	first := readTestFile(t, "model_maxminddb.go")
+	require.NoError(t, run([]string{"model.go"}))
+	require.Equal(t, string(first), string(readTestFile(t, "model_maxminddb.go")))
+	testGeneratedPackage(t)
+}
+
+func TestGenerateImportedByteAliases(t *testing.T) {
+	for _, fieldType := range []string{"custom.Raw", "[]custom.Byte", "[]custom.Raw"} {
+		t.Run(fieldType, func(t *testing.T) {
+			dir := newTestModule(t, `package fixture
+
+import "example.com/generatortest/custom"
+
+type Record struct { Value `+fieldType+` }
+`)
+			writeTestPackage(t, dir, "custom", `package custom
+
+type Raw = []byte
+type Byte = byte
+`)
+			payload := "[]byte{0x82, 1, 2}"
+			want := fieldType + "{1, 2}"
+			if fieldType == "[]custom.Raw" {
+				payload = "[]byte{1, 4, 0x82, 1, 2}"
+				want = "[]custom.Raw{{1, 2}}"
+			}
+			require.NoError(
+				t,
+				os.WriteFile(filepath.Join(dir, "record_test.go"), []byte(`package fixture
+
+import (
+	"reflect"
+	"testing"
+
+	"example.com/generatortest/custom"
+	"github.com/oschwald/maxminddb-golang/v2/mmdbdata"
+)
+
+func TestBytes(t *testing.T) {
+	data := append([]byte{0xe1, 0x45, 'V', 'a', 'l', 'u', 'e'}, `+payload+`...)
+	var record Record
+	if _, err := record.UnmarshalMaxMindDBCursor(mmdbdata.NewDecoder(data, 0).Cursor()); err != nil { t.Fatal(err) }
+	if want := (`+want+`); !reflect.DeepEqual(record.Value, want) { t.Fatalf("got %v, want %v", record.Value, want) }
+}
+`), 0o600),
+			)
+			t.Chdir(dir)
+			require.NoError(t, run([]string{"model.go"}))
+			testGeneratedPackage(t)
+		})
+	}
+}
+
+func TestGenerateImportedAliasesWithPrivateElements(t *testing.T) {
+	dir := newTestModule(t, `package fixture
+
+import "example.com/generatortest/custom"
+
+type _maxminddbgenType0 string
+
+type Record struct {
+	Texts custom.Texts
+	Pointer custom.Pointer
+	Nested custom.Nested
+	Callbacks custom.Callbacks
+	Legacy custom.Legacy
+	Raw custom.Raws
+	Small custom.Small
+	Floats custom.Floats
+	Bounded custom.Texts `+"`maxminddb:\"Bounded,maxsize:1\"`"+`
+}
+`)
+	writeTestPackage(t, dir, "custom", `package custom
+
+import "github.com/oschwald/maxminddb-golang/v2/mmdbdata"
+
+type text string
+type Texts = []text
+type Pointer = *text
+type Nested = map[text][]*text
+type small uint8
+type Small = *small
+type narrowFloat float32
+type Floats = []narrowFloat
+type callback string
+type Callbacks = map[callback][]*callback
+type b = byte
+type raw = []b
+type Raws = []raw
+type legacy struct { Text string }
+type Legacy = []*legacy
+
+func (*callback) UnmarshalMaxMindDB(*mmdbdata.Decoder) error { panic("cursor callback must take precedence") }
+
+func (v *legacy) UnmarshalMaxMindDB(d *mmdbdata.Decoder) error {
+	s, err := d.ReadString()
+	if err == nil { v.Text = "legacy:" + s }
+	return err
+}
+
+func (v *callback) UnmarshalMaxMindDBCursor(c mmdbdata.Cursor) (mmdbdata.Cursor, error) {
+	s, next, err := c.ReadString()
+	if err == nil { *v = callback("custom:" + s) }
+	return next, err
+}
+`)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "record_test.go"), []byte(`package fixture
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/oschwald/maxminddb-golang/v2/mmdbdata"
+)
+
+func decodeField(record *Record, key string, payload []byte) error {
+	data := append([]byte{0xe1, 0x40|byte(len(key))}, key...)
+	data = append(data, payload...)
+	_, err := record.UnmarshalMaxMindDBCursor(mmdbdata.NewDecoder(data, 0).Cursor())
+	return err
+}
+
+func TestPrivateElements(t *testing.T) {
+	var record Record
+	for _, field := range []struct { key string; value []byte }{
+		{"Texts", []byte{1, 4, 0x41, 'a'}},
+		{"Pointer", []byte{0x41, 'b'}},
+		{"Nested", []byte{0xe1, 0x41, 'k', 1, 4, 0x41, 'c'}},
+		{"Callbacks", []byte{0xe1, 0x41, 'k', 1, 4, 0x41, 'd'}},
+		{"Legacy", []byte{1, 4, 0x41, 'l'}},
+		{"Raw", []byte{1, 4, 0x81, 0xff}},
+		{"Bounded", []byte{1, 4, 0x41, 'e'}},
+	} {
+		if err := decodeField(&record, field.key, field.value); err != nil { t.Fatal(err) }
+	}
+	if len(record.Texts) != 1 || record.Texts[0] != "a" || record.Pointer == nil || *record.Pointer != "b" ||
+		len(record.Nested["k"]) != 1 || *record.Nested["k"][0] != "c" ||
+		len(record.Callbacks["custom:k"]) != 1 || *record.Callbacks["custom:k"][0] != "custom:d" ||
+		len(record.Legacy) != 1 || record.Legacy[0].Text != "legacy:l" ||
+		len(record.Raw) != 1 || len(record.Raw[0]) != 1 || record.Raw[0][0] != 0xff {
+		t.Fatalf("unexpected record: %#v", record)
+	}
+	pointer := record.Pointer
+	if err := decodeField(&record, "Pointer", []byte{0x41, 'f'}); err != nil || record.Pointer != pointer || *pointer != "f" {
+		t.Fatalf("pointer reuse failed: %#v, %v", record.Pointer, err)
+	}
+	if err := decodeField(&record, "Small", []byte{0xa2, 1, 0}); err == nil || record.Small != nil {
+		t.Fatalf("overflow allocated or changed the destination: %#v, %v", record.Small, err)
+	}
+	if err := decodeField(&record, "Floats", []byte{1, 4, 0x68, 0x7f, 0xef, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}); err == nil {
+		t.Fatal("accepted float32 overflow")
+	}
+	if err := decodeField(&record, "Raw", []byte{1, 4, 1, 4, 0xa1, 42}); err != nil || record.Raw[0][0] != 42 {
+		t.Fatalf("byte array decoding failed: %#v, %v", record.Raw, err)
+	}
+	if err := decodeField(&record, "Bounded", []byte{2, 4, 0x41, 'x', 0x41, 'y'}); err == nil ||
+		!strings.Contains(err.Error(), "maxsize 1") || len(record.Bounded) != 1 || record.Bounded[0] != "e" {
+		t.Fatalf("maxsize mutated the destination: %#v, %v", record.Bounded, err)
+	}
+	if err := decodeField(&record, "Texts", []byte{1, 4, 0x41}); err == nil {
+		t.Fatal("accepted truncated string")
+	}
+}
+`), 0o600))
+	t.Chdir(dir)
+	require.NoError(t, run([]string{"model.go"}))
+	first := readTestFile(t, "model_maxminddb.go")
+	require.NoError(t, run([]string{"model.go"}))
+	require.Equal(t, string(first), string(readTestFile(t, "model_maxminddb.go")))
+	testGeneratedPackage(t)
+}
+
+func TestGenerateImportedAliasesWithCompositeArguments(t *testing.T) {
+	for _, argument := range []string{
+		"[1]text",
+		"struct { secret string }",
+		"struct { Value text }",
+		"chan text",
+		"func(text)",
+		"func() text",
+		"interface { secret() }",
+		"interface { Value() text }",
+		"interface { private }",
+		"[1]struct { Values map[string][]*text }",
+		"struct { Value string }",
+		"interface { Public }",
+	} {
+		t.Run(argument, func(t *testing.T) {
+			dir := newTestModule(t, `package fixture
+
+import "example.com/generatortest/custom"
+
+type Record struct { Value custom.Texts }
+`)
+			writeTestPackage(t, dir, "custom", `package custom
+
+type text string
+type private interface { secret() }
+type Public = private
+type Text[T any] string
+type Texts = []Text[`+argument+`]
+`)
+			require.NoError(
+				t,
+				os.WriteFile(filepath.Join(dir, "record_test.go"), []byte(`package fixture
+
+import (
+	"testing"
+
+	"github.com/oschwald/maxminddb-golang/v2/mmdbdata"
+)
+
+func TestCompositeArgument(t *testing.T) {
+	data := []byte{0xe1, 0x45, 'V', 'a', 'l', 'u', 'e', 1, 4, 0x41, 'a'}
+	var record Record
+	if _, err := record.UnmarshalMaxMindDBCursor(mmdbdata.NewDecoder(data, 0).Cursor()); err != nil { t.Fatal(err) }
+	if len(record.Value) != 1 || record.Value[0] != "a" { t.Fatalf("unexpected value: %v", record.Value) }
+}
+`), 0o600),
+			)
+			t.Chdir(dir)
+			require.NoError(t, run([]string{"model.go"}))
+			testGeneratedPackage(t)
+		})
+	}
+}
+
+func TestGenerateRejectsUnsupportedAliasFields(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		decl string
+		err  string
+	}{
+		{name: "channel", decl: "type Alias = chan int", err: "unsupported type chan int"},
+		{name: "interface", decl: "type Alias = any", err: "interface type"},
+		{
+			name: "recursive", decl: "type Recursive []Alias; type Alias = Recursive",
+			err: "recursive type graph through Recursive is not supported",
+		},
+		{
+			name: "generic struct", decl: "type generic[T any] struct { Value T }; type Alias = generic[string]",
+			err: "generic struct generic is not supported",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := newTestModule(
+				t,
+				"package fixture\n\n"+tt.decl+"\n\ntype Record struct { Value Alias }\n",
+			)
+			t.Chdir(dir)
+			require.ErrorContains(t, run([]string{"model.go"}), tt.err)
+		})
+	}
+}
+
 func TestGenerateRejectsInterfaceFieldsBeforeCustomUnmarshalerDetection(t *testing.T) {
 	tests := []struct {
 		name      string
