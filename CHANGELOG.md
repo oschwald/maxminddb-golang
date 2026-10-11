@@ -18,8 +18,9 @@
   string cache and can be read concurrently while the buffer remains valid
   and unchanged.
 - Reduced `maxminddb-gen` generation and test time by reusing loaded dependencies
-  during output validation and avoiding duplicate syntax work. Full type checking
-  and generated-output validation remain enabled. GitHub #256.
+  during output validation, avoiding duplicate syntax work, and omitting unused
+  parser metadata. Full type checking and generated-output validation remain
+  enabled. GitHub #256.
 
 ## 2.7.0 - 2026-09-29
 

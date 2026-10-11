@@ -300,7 +300,7 @@ func findGeneratedFiles(path string) ([]priorGeneratedFile, error) {
 	path = filepath.Clean(path)
 	contents, err := os.ReadFile(path)
 	if err == nil {
-		file, generated, parseErr := parseGeneratedFile(path, contents)
+		file, generated, parseErr := parseGeneratedFile(token.NewFileSet(), path, contents)
 		if parseErr != nil {
 			return nil, parseErr
 		}
@@ -336,7 +336,7 @@ func findGeneratedFiles(path string) ([]priorGeneratedFile, error) {
 		if !strings.Contains(string(contents), generatedPrefix) {
 			continue
 		}
-		file, generated, err := parseGeneratedFile(candidate, contents)
+		file, generated, err := parseGeneratedFile(token.NewFileSet(), candidate, contents)
 		if err != nil {
 			return nil, err
 		}
@@ -446,12 +446,12 @@ func receiverTypes(typeSpecs map[string]*ast.TypeSpec) (map[string]bool, map[str
 }
 
 func parsePackageFile(fset *token.FileSet, filename string, source []byte) (*ast.File, error) {
-	// The type checker resolves identifiers; the parser's object map is unused.
+	// Package type checking uses neither comment nodes nor the parser's object map.
 	return parser.ParseFile(
 		fset,
 		filename,
 		source,
-		parser.AllErrors|parser.ParseComments|parser.SkipObjectResolution,
+		parser.AllErrors|parser.SkipObjectResolution,
 	)
 }
 
@@ -632,9 +632,13 @@ func canonicalTypeName(name string, aliases map[string]string) string {
 	}
 }
 
-func parseGeneratedFile(path string, contents []byte) (*ast.File, bool, error) {
+func parseGeneratedFile(
+	fset *token.FileSet,
+	path string,
+	contents []byte,
+) (*ast.File, bool, error) {
 	file, err := parser.ParseFile(
-		token.NewFileSet(),
+		fset,
 		path,
 		contents,
 		parser.ParseComments|parser.SkipObjectResolution,
@@ -784,7 +788,7 @@ func (g *generator) validateGeneratedPackage(
 	typeAliases map[string]string,
 	diagnostics io.Writer,
 ) error {
-	file, generated, err := parseGeneratedFile(path, source)
+	file, generated, err := parseGeneratedFile(g.pkg.Fset, path, source)
 	if err != nil {
 		return err
 	}
@@ -813,6 +817,7 @@ func (g *generator) validateGeneratedPackage(
 	handled, err := validateLoadedPackage(
 		g.pkg,
 		g.mmdbdata,
+		file,
 		path,
 		overlay,
 		diagnostics,

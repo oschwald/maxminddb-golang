@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"go/ast"
 	"go/token"
 	"go/types"
 	"os"
@@ -12,6 +13,32 @@ import (
 	"golang.org/x/tools/go/gcexportdata"
 	"golang.org/x/tools/go/packages"
 )
+
+func TestPackageParsingPreservesDirectives(t *testing.T) {
+	for _, tt := range []struct {
+		name, source, want string
+	}{
+		{
+			"language version",
+			"//go:build go1.22\n\npackage fixture\nfunc f() { for range func(func(int) bool) {} {} }\n",
+			"requires go1.23",
+		},
+		{
+			"line directive",
+			"package fixture\n//line original.go:123\nvar value int = \"invalid\"\n",
+			"original.go:123",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			fset := token.NewFileSet()
+			file, err := parsePackageFile(fset, "model.go", []byte(tt.source))
+			require.NoError(t, err)
+			config := types.Config{GoVersion: "go1.26"}
+			_, err = config.Check("fixture", fset, []*ast.File{file}, nil)
+			require.ErrorContains(t, err, tt.want)
+		})
+	}
+}
 
 func TestLoadedValidationChecksBodiesSizesAndLanguageVersion(t *testing.T) {
 	dir := newTestModule(t, "package fixture\n\ntype Record struct{}\n")
@@ -49,8 +76,10 @@ func TestLoadedValidationChecksBodiesSizesAndLanguageVersion(t *testing.T) {
 			pkg.Module = &module
 			path := filepath.Join(dir, "generated.go")
 			overlay := map[string][]byte{path: []byte("package fixture\n\n" + tt.source + "\n")}
+			file, _, err := parseGeneratedFile(pkg.Fset, path, overlay[path])
+			require.NoError(t, err)
 			var diagnostics bytes.Buffer
-			handled, err := validateLoadedPackage(&pkg, mmdbdata, path, overlay, &diagnostics)
+			handled, err := validateLoadedPackage(&pkg, mmdbdata, file, path, overlay, &diagnostics)
 			require.True(t, handled)
 			require.ErrorContains(t, err, "validating generated package")
 			require.Contains(t, diagnostics.String(), tt.want)

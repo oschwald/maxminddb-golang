@@ -22,6 +22,7 @@ import (
 func validateLoadedPackage(
 	pkg *packages.Package,
 	mmdbdata *packages.Package,
+	generated *ast.File,
 	path string,
 	overlay map[string][]byte,
 	diagnostics io.Writer,
@@ -35,10 +36,6 @@ func validateLoadedPackage(
 		strings.HasPrefix(name, "_") || strings.HasSuffix(name, "_test.go") || suffix != "" {
 		return false, nil
 	}
-	generated, err := parsePackageFile(pkg.Fset, path, overlay[path])
-	if err != nil {
-		return true, err
-	}
 	if generatedBuildConstraints(generated) != "" {
 		return false, nil
 	}
@@ -50,6 +47,7 @@ func validateLoadedPackage(
 		}
 		file := pkg.Syntax[i]
 		if source, ok := overlay[filename]; ok {
+			var err error
 			file, err = parsePackageFile(pkg.Fset, filename, source)
 			if err != nil {
 				return true, err

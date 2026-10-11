@@ -204,7 +204,12 @@ func loadInputFile(
 	}
 	seenPaths[absolute] = true
 
-	file, err := parser.ParseFile(fset, absolute, nil, parser.ParseComments)
+	file, err := parser.ParseFile(
+		fset,
+		absolute,
+		nil,
+		parser.ParseComments|parser.SkipObjectResolution,
+	)
 	if err != nil {
 		return nil, nil, err
 	}
