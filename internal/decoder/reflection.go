@@ -1635,10 +1635,7 @@ func (d *ReflectionDecoder) decodeBudgetedStringKey(offset uint) (string, uint, 
 	if err := d.reserveExactPayload(uint(len(key))); err != nil {
 		return "", 0, err
 	}
-	if d.stringCache == nil {
-		return string(key), nextOffset, nil
-	}
-	return d.stringCache.internAt(cacheOffset, key), nextOffset, nil
+	return d.decodeStringBytes(cacheOffset, key), nextOffset, nil
 }
 
 // unmarshalValidatedMapKey invokes a custom map-key decoder after decodeKey

@@ -20,6 +20,7 @@
 - Reduced reflection decoding overhead for string struct fields, including
   fields read through database pointers, while retaining existing validation
   and custom unmarshaling behavior.
+- Shared string-cache handling between map keys and decoded string values.
 
 ## 2.7.0 - 2026-09-29
 
