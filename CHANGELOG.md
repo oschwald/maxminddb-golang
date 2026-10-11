@@ -17,6 +17,9 @@
   one buffer without changing the decoder's position. The cursors share its
   string cache and can be read concurrently while the buffer remains valid
   and unchanged.
+- Reduced reflection decoding overhead for string struct fields, including
+  fields read through database pointers, while retaining existing validation
+  and custom unmarshaling behavior.
 
 ## 2.7.0 - 2026-09-29
 
