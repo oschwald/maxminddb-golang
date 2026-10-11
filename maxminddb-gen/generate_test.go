@@ -91,6 +91,20 @@ func TestRunWritesPackageErrorsToDiagnostics(t *testing.T) {
 		require.ErrorContains(t, err, "loading target package")
 		require.Contains(t, diagnostics.String(), "undefined: Missing")
 	})
+
+	t.Run("function body type loading", func(t *testing.T) {
+		dir := newTestModule(t, `package fixture
+
+type Record struct{}
+func broken() int { return "invalid" }
+`)
+		t.Chdir(dir)
+		var diagnostics bytes.Buffer
+		err := runWithIO([]string{"model.go"}, io.Discard, &diagnostics)
+		require.ErrorContains(t, err, "loading target package")
+		require.Contains(t, diagnostics.String(), "cannot use")
+		require.Contains(t, diagnostics.String(), "as int value in return statement")
+	})
 }
 
 func TestGenerateRejectsUnsupportedTypeWithPosition(t *testing.T) {
