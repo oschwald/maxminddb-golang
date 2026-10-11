@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 2.8.0 - 2026-10-11
 
 - String caching now uses buckets to improve concurrent decoding. On 64-bit
   systems, the table grows from 64 KiB to 72 KiB and is allocated only when an
