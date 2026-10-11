@@ -13,6 +13,22 @@ import (
 
 var verifiedOffsetsSink map[uint]bool
 
+func BenchmarkVerify(b *testing.B) {
+	for _, name := range []string{"GeoIP2-City-Test.mmdb", "GeoIP2-Country-Test.mmdb"} {
+		b.Run(name, func(b *testing.B) {
+			reader, err := Open(testFile(name))
+			require.NoError(b, err)
+			b.Cleanup(func() { require.NoError(b, reader.Close()) })
+			b.ReportAllocs()
+			for b.Loop() {
+				if err := reader.Verify(); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
 func amplifyingSearchTree(nodeCount uint) []byte {
 	buffer := make([]byte, 0, int(nodeCount*6))
 	appendPointer := func(pointer uint) {
@@ -168,6 +184,24 @@ func TestVerifyRejectsInvalidPointerInUnknownMetadataField(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, reader.Close()) })
 	require.Error(t, reader.Verify())
+}
+
+func TestVerifyRejectsOverwrittenMetadataString(t *testing.T) {
+	data, err := os.ReadFile(testFile("MaxMind-DB-test-ipv4-24.mmdb"))
+	require.NoError(t, err)
+	markerOffset := bytes.LastIndex(data, metadataStartMarker)
+	require.NotEqual(t, -1, markerOffset)
+	metadataOffset := markerOffset + len(metadataStartMarker)
+	require.Equal(t, byte(0xe9), data[metadataOffset])
+	data[metadataOffset] = 0xea
+	data = append(data, 0x47)
+	data = append(data, "unknown"...)
+	data = append(data, 0xe2, 0x41, 'a', 0x41, 0xff, 0x41, 'a', 0x41, 'x')
+
+	reader, err := OpenBytes(data)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, reader.Close()) })
+	require.ErrorContains(t, reader.Verify(), "invalid UTF-8")
 }
 
 func TestVerifyMetadataPointersAfterRoot(t *testing.T) {

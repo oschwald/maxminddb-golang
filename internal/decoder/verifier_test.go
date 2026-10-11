@@ -26,6 +26,39 @@ func TestVerifyDataSectionRejectsInvalidUTF8(t *testing.T) {
 	}
 }
 
+func TestVerifyOverwrittenUTF8(t *testing.T) {
+	tests := []struct {
+		name  string
+		value []byte
+		valid bool
+	}{
+		{name: "valid string", value: []byte{0x42, 0xc3, 0xa9}, valid: true},
+		{name: "bytes", value: []byte{0x81, 0xff}, valid: true},
+		{name: "invalid string", value: []byte{0x41, 0xff}},
+		{name: "invalid nested key", value: []byte{0xe1, 0x41, 0xff, 0xe0}},
+		{name: "invalid array element", value: []byte{0x01, 0x04, 0x41, 0xff}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// The second "a" overwrites the first value in a decoded Go map.
+			data := append([]byte{0xe2, 0x41, 'a'}, tt.value...)
+			data = append(data, 0x41, 'a', 0x41, 'x')
+			d := New(data)
+			for name, err := range map[string]error{
+				"data":           d.VerifyDataSection(map[uint]bool{0: true, 3: true}),
+				"metadata":       VerifyMetadata(data),
+				"after metadata": VerifyMetadata(append([]byte{0xe0}, data...)),
+			} {
+				if tt.valid {
+					require.NoError(t, err, name)
+				} else {
+					require.ErrorContains(t, err, "invalid UTF-8", name)
+				}
+			}
+		})
+	}
+}
+
 // verifyDataSectionTest is one VerifyDataSection case. An empty err means
 // that verification must pass.
 type verifyDataSectionTest struct {
@@ -209,7 +242,7 @@ func TestVerifyMetadataChecksPointerTargets(t *testing.T) {
 		{
 			name:     "invalid UTF-8 after map",
 			metadata: []byte{0xe1, 0x41, 'a', 0x41, 'x', 0x41, 0xff},
-			err:      "invalid value after the metadata map (invalid UTF-8 string) at offset of 5",
+			err:      "invalid UTF-8 string at offset 5",
 		},
 		{
 			name:     "pointer to pointer after map",

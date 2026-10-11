@@ -21,6 +21,9 @@
   fields read through database pointers, while retaining existing validation
   and custom unmarshaling behavior.
 - Shared string-cache handling between map keys and decoded string values.
+- Fixed `Reader.Verify()` accepting invalid UTF-8 values overwritten by
+  duplicate map keys. Verification now checks every encoded string in the data
+  and metadata sections, including overwritten values.
 
 ## 2.7.0 - 2026-09-29
 
