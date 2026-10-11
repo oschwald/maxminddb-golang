@@ -27,6 +27,7 @@ func validateLoadedPackage(
 	overlay map[string][]byte,
 	diagnostics io.Writer,
 ) (bool, error) {
+	path = filepath.Clean(path)
 	name := filepath.Base(path)
 	_, suffix, _ := splitBuildSuffix(name)
 	if pkg.Module == nil || pkg.Module.GoVersion == "" || len(pkg.CompiledGoFiles) == 0 ||
@@ -42,6 +43,7 @@ func validateLoadedPackage(
 
 	files := make([]*ast.File, 0, len(pkg.Syntax)+1)
 	for i, filename := range pkg.CompiledGoFiles {
+		filename = filepath.Clean(filename)
 		if filename == path {
 			continue
 		}

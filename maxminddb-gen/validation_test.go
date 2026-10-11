@@ -7,6 +7,7 @@ import (
 	"go/types"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -42,24 +43,7 @@ func TestPackageParsingPreservesDirectives(t *testing.T) {
 
 func TestLoadedValidationChecksBodiesSizesAndLanguageVersion(t *testing.T) {
 	dir := newTestModule(t, "package fixture\n\ntype Record struct{}\n")
-	pkgs, err := packages.Load(&packages.Config{
-		Dir: dir,
-		Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
-			packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesSizes | packages.NeedModule |
-			packages.NeedImports | packages.NeedExportFile,
-	}, ".", mmdbdataPath)
-	require.NoError(t, err)
-	require.Zero(t, writePackageErrors(nil, pkgs))
-	var target, mmdbdata *packages.Package
-	for _, pkg := range pkgs {
-		if pkg.PkgPath == mmdbdataPath {
-			mmdbdata = pkg
-		} else {
-			target = pkg
-		}
-	}
-	require.NotNil(t, target)
-	require.NotNil(t, mmdbdata)
+	target, mmdbdata := loadValidationPackages(t, dir)
 	for _, tt := range []struct {
 		name, source, version, want string
 	}{
@@ -85,6 +69,79 @@ func TestLoadedValidationChecksBodiesSizesAndLanguageVersion(t *testing.T) {
 			require.Contains(t, diagnostics.String(), tt.want)
 		})
 	}
+}
+
+func TestLoadedValidationNormalizesPaths(t *testing.T) {
+	dir := newTestModule(t, "package fixture\n\ntype Record struct{}\n")
+	output := filepath.Join(dir, "generated.go")
+	other := filepath.Join(dir, "other.go")
+	require.NoError(
+		t,
+		os.WriteFile(output, []byte("package fixture\nfunc (*Record) Decode() {}\n"), 0o600),
+	)
+	require.NoError(
+		t,
+		os.WriteFile(other, []byte("package fixture\nfunc (*Record) Other() {}\n"), 0o600),
+	)
+	target, mmdbdata := loadValidationPackages(t, dir)
+	overlay := map[string][]byte{
+		output: []byte("package fixture\nfunc (*Record) Decode() {}\nfunc (*Record) Other() {}\n"),
+		other:  []byte("package fixture\n"),
+	}
+	for _, tt := range []struct {
+		name, loadedFile string
+	}{
+		{"prior output", output},
+		{"other generated file", other},
+		{"output argument", ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			pkg := *target
+			pkg.CompiledGoFiles = slices.Clone(target.CompiledGoFiles)
+			path := output
+			separator := string(filepath.Separator)
+			for i, filename := range pkg.CompiledGoFiles {
+				if filename == tt.loadedFile {
+					pkg.CompiledGoFiles[i] = dir + separator + "." + separator + filepath.Base(
+						filename,
+					)
+				}
+			}
+			pkg.GoFiles = slices.Clone(pkg.CompiledGoFiles)
+			if tt.loadedFile == "" {
+				path = dir + separator + "." + separator + filepath.Base(output)
+			}
+			file, _, err := parseGeneratedFile(pkg.Fset, path, overlay[output])
+			require.NoError(t, err)
+			var diagnostics bytes.Buffer
+			handled, err := validateLoadedPackage(&pkg, mmdbdata, file, path, overlay, &diagnostics)
+			require.True(t, handled)
+			require.NoError(t, err, "%s", &diagnostics)
+		})
+	}
+}
+
+func loadValidationPackages(t *testing.T, dir string) (*packages.Package, *packages.Package) {
+	t.Helper()
+	pkgs, err := packages.Load(&packages.Config{
+		Dir: dir,
+		Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
+			packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesSizes | packages.NeedModule |
+			packages.NeedImports | packages.NeedExportFile,
+	}, ".", mmdbdataPath)
+	require.NoError(t, err)
+	require.Zero(t, writePackageErrors(nil, pkgs))
+	var target, mmdbdata *packages.Package
+	for _, pkg := range pkgs {
+		if pkg.PkgPath == mmdbdataPath {
+			mmdbdata = pkg
+		} else {
+			target = pkg
+		}
+	}
+	require.NotNil(t, target)
+	require.NotNil(t, mmdbdata)
+	return target, mmdbdata
 }
 
 func TestGeneratedImportRetainsInternalPackageChecks(t *testing.T) {
