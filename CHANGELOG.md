@@ -10,6 +10,8 @@
     pointers or decoded into Go pointer fields.
   - Reduced slice decoding overhead and temporary allocations when growing or
     shrinking slices.
+  - Reduced struct field matching and access overhead, including scalar fields
+    in embedded structs.
 - Reflection decoding now enforces the 512-level depth limit for scalar values,
   including in `DecodePath`. Some scalar values at depth 513 were previously
   accepted.
