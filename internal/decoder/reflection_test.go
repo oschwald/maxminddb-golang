@@ -3,6 +3,7 @@ package decoder
 import (
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -238,6 +239,242 @@ func TestFastDecodePointerFieldDoesNotAllocateOnTypeError(t *testing.T) {
 	require.Error(t, err)
 	assert.Nil(t, result.S)
 	assert.Contains(t, err.Error(), "cannot unmarshal 1 (uint64) into type string")
+}
+
+func TestPreparedSliceCapacityMatchesLength(t *testing.T) {
+	type record struct {
+		Nums []uint32 `maxminddb:"nums"`
+	}
+	// Map {"nums": [uint32(10), uint32(20), uint32(30)]}
+	data := []byte{
+		0xe1,
+		0x44, 'n', 'u', 'm', 's',
+		0x03, 0x04,
+		0xc1, 10,
+		0xc1, 20,
+		0xc1, 30,
+	}
+	d := New(data)
+
+	// Fresh nil slice in struct field (dispatchSlice)
+	var rec record
+	require.NoError(t, d.Decode(0, &rec))
+	require.Equal(t, []uint32{10, 20, 30}, rec.Nums)
+	require.Equal(t, len(rec.Nums), cap(rec.Nums))
+
+	// Under-capacity slice grows to exact len == cap
+	rec.Nums = make([]uint32, 1)
+	rec.Nums[0] = 99
+	require.NoError(t, d.Decode(0, &rec))
+	require.Equal(t, []uint32{10, 20, 30}, rec.Nums)
+	require.Equal(t, len(rec.Nums), cap(rec.Nums))
+
+	// Over-capacity slice preserves existing capacity and zeroes tail
+	backing := make([]uint32, 5, 8)
+	for i := range backing {
+		backing[i] = 77
+	}
+	rec.Nums = backing
+	require.NoError(t, d.Decode(0, &rec))
+	require.Equal(t, []uint32{10, 20, 30}, rec.Nums)
+	require.Equal(t, 8, cap(rec.Nums))
+	require.Equal(t, []uint32{10, 20, 30, 0, 0}, rec.Nums[:5])
+
+	// Top-level slice decode (decodeSlice)
+	var topSlice []uint32
+	require.NoError(t, d.Decode(6, &topSlice))
+	require.Equal(t, []uint32{10, 20, 30}, topSlice)
+	require.Equal(t, len(topSlice), cap(topSlice))
+}
+
+func TestTryDecodeSliceWithInfoActivatesBudget(t *testing.T) {
+	type record struct {
+		Items []string `maxminddb:"items"`
+	}
+	fields := cachedFieldsForType(reflect.TypeFor[record]())
+	info := fields.namedFields["items"]
+	require.NotNil(t, info)
+
+	// Valid slice [ "ok" ] decoded with unbudgeted decoder (budgetRemaining == 0)
+	d := New([]byte{0x01, 0x04, 0x42, 'o', 'k'})
+	var items []string
+	nextOffset, ok, err := d.tryDecodeSliceWithInfo(
+		0,
+		addressableValue{Value: reflect.ValueOf(&items).Elem()},
+		0,
+		info,
+	)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, uint(5), nextOffset)
+	require.Equal(t, []string{"ok"}, items)
+}
+
+func TestStructSliceMaxDepthBoundary(t *testing.T) {
+	for _, pointer := range []bool{false, true} {
+		name := "struct"
+		elem := reflect.TypeFor[struct{}]()
+		if pointer {
+			name = "pointer_struct"
+			elem = reflect.PointerTo(elem)
+		}
+		t.Run(name, func(t *testing.T) {
+			typ := reflect.StructOf([]reflect.StructField{
+				{
+					Name: "Items",
+					Type: reflect.SliceOf(elem),
+					Tag:  `maxminddb:"items"`,
+				},
+			})
+			data := make([]byte, 0, 1030)
+			for range 510 {
+				typ = reflect.SliceOf(typ)
+				data = append(data, 0x01, 0x04)
+			}
+			data = append(data, 0xe1, 0x45, 'i', 't', 'e', 'm', 's', 0x01, 0x04, 0xe0)
+			d := New(data)
+			require.NoError(t, d.Decode(0, reflect.New(typ).Interface()))
+		})
+	}
+}
+
+func TestStructFieldDispatchDepthLimits(t *testing.T) {
+	type leaf struct {
+		U uint32 `maxminddb:"u"`
+	}
+	cases := []struct {
+		name      string
+		fieldType reflect.Type
+		encoded   []byte
+		extra     int // additional depth steps consumed inside the field value
+	}{
+		{
+			name:      "dispatchFast_uint32",
+			fieldType: reflect.TypeFor[uint32](),
+			encoded:   []byte{0xc1, 42},
+			extra:     0,
+		},
+		{
+			name:      "dispatchString",
+			fieldType: reflect.TypeFor[string](),
+			encoded:   []byte{0x42, 'h', 'i'},
+			extra:     0,
+		},
+		{
+			name:      "dispatchPlain_int16",
+			fieldType: reflect.TypeFor[int16](),
+			encoded:   []byte{0x01, 0x01, 7},
+			extra:     0,
+		},
+		{
+			name:      "dispatchUnmarshaler_any",
+			fieldType: reflect.TypeFor[any](),
+			encoded:   []byte{0xc1, 42},
+			extra:     0,
+		},
+		{
+			name:      "dispatchStruct_nonempty",
+			fieldType: reflect.TypeFor[leaf](),
+			encoded:   []byte{0xe1, 0x41, 'u', 0xc1, 7},
+			extra:     1,
+		},
+		{
+			name:      "dispatchPointerStruct_nonempty",
+			fieldType: reflect.TypeFor[*leaf](),
+			encoded:   []byte{0xe1, 0x41, 'u', 0xc1, 7},
+			extra:     1,
+		},
+		{
+			name:      "dispatchSlice_nonempty",
+			fieldType: reflect.TypeFor[[]uint32](),
+			encoded:   []byte{0x01, 0x04, 0xc1, 7},
+			extra:     1,
+		},
+	}
+
+	for _, tc := range cases {
+		for _, fieldDepth := range []int{510, 511, 512, 513, 514} {
+			t.Run(fmt.Sprintf("%s/%d", tc.name, fieldDepth), func(t *testing.T) {
+				typ := reflect.StructOf([]reflect.StructField{
+					{
+						Name: "V",
+						Type: tc.fieldType,
+						Tag:  `maxminddb:"v"`,
+					},
+				})
+				// Wrap in (fieldDepth - 1) outer 1-element slices so the struct map
+				// is entered at depth (fieldDepth - 1) and its field V is decoded at
+				// depth == fieldDepth.
+				data := make([]byte, 0, fieldDepth*2+16)
+				for range fieldDepth - 1 {
+					typ = reflect.SliceOf(typ)
+					data = append(data, 0x01, 0x04)
+				}
+				data = append(data, 0xe1, 0x41, 'v')
+				data = append(data, tc.encoded...)
+
+				d := New(data)
+				err := d.Decode(0, reflect.New(typ).Interface())
+				if fieldDepth+tc.extra <= maximumDataStructureDepth {
+					require.NoError(t, err, "fieldDepth=%d extra=%d", fieldDepth, tc.extra)
+				} else {
+					require.ErrorContains(
+						t,
+						err,
+						"exceeded maximum data structure depth",
+						"fieldDepth=%d extra=%d",
+						fieldDepth,
+						tc.extra,
+					)
+				}
+			})
+		}
+	}
+}
+
+func TestContainerValueDepthLimits(t *testing.T) {
+	cases := []struct {
+		name    string
+		want    any
+		encoded []byte
+	}{
+		{
+			name:    "slice",
+			want:    []uint32{42},
+			encoded: []byte{0x01, 0x04, 0xc1, 42},
+		},
+		{
+			name:    "map",
+			want:    map[string]string{"v": "hi"},
+			encoded: []byte{0xe1, 0x41, 'v', 0x42, 'h', 'i'},
+		},
+	}
+	for _, tc := range cases {
+		for _, valueDepth := range []int{510, 511, 512, 513, 514} {
+			t.Run(fmt.Sprintf("%s/%d", tc.name, valueDepth), func(t *testing.T) {
+				typ := reflect.TypeOf(tc.want)
+				data := make([]byte, 0, valueDepth*2+len(tc.encoded))
+				for range valueDepth - 1 {
+					typ = reflect.SliceOf(typ)
+					data = append(data, 0x01, 0x04)
+				}
+				data = append(data, tc.encoded...)
+				d := New(data)
+				result := reflect.New(typ)
+				err := d.Decode(0, result.Interface())
+				if valueDepth > maximumDataStructureDepth {
+					require.ErrorContains(t, err, "exceeded maximum data structure depth")
+					return
+				}
+				require.NoError(t, err)
+				value := result.Elem()
+				for range valueDepth - 1 {
+					value = value.Index(0)
+				}
+				require.Equal(t, tc.want, value.Interface())
+			})
+		}
+	}
 }
 
 func TestDecodeAllocatesTopLevelPointerTarget(t *testing.T) {

@@ -8,6 +8,8 @@
   - Reduced reflection overhead when decoding records into structs.
   - Reduced reflection overhead for scalar values read through database
     pointers or decoded into Go pointer fields.
+  - Reduced slice decoding overhead and temporary allocations when growing or
+    shrinking slices.
 - Reflection decoding now enforces the 512-level depth limit for scalar values,
   including in `DecodePath`. Some scalar values at depth 513 were previously
   accepted.
