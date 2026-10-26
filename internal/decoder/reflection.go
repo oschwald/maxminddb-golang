@@ -141,12 +141,7 @@ func (d *ReflectionDecoder) Decode(offset uint, v any) error {
 	default:
 	}
 
-	result := addressableValue{Value: rv.Elem()}
-	_, err := d.decodeValue(offset, result, 0)
-	if err != nil {
-		return wrapRootDecodeError(err, offset)
-	}
-	return nil
+	return d.decodeRootValue(offset, addressableValue{Value: rv.Elem()})
 }
 
 // DecodeWithBudget supplies a fresh expansion budget for destinations that use
@@ -176,6 +171,39 @@ func (d *ReflectionDecoder) DecodePath(
 // reaches stable storage and before it is published for concurrent use.
 func (d *ReflectionDecoder) PrepareForConcurrentUse() {
 	d.callbackDecoder = &d.DataDecoder
+}
+
+func (d *ReflectionDecoder) decodeRootValue(offset uint, result addressableValue) error {
+	var (
+		ok  bool
+		err error
+	)
+	if result.Kind() == reflect.Struct && result.Type() != bigIntType {
+		if fields := cachedFields(result.Value); !fields.customUnmarshaler {
+			ok, err = d.tryDecodeRootStruct(offset, result, fields)
+		}
+	}
+	if !ok {
+		_, err = d.decodeValue(offset, result, 0)
+	}
+	if err != nil {
+		return wrapRootDecodeError(err, offset)
+	}
+	return nil
+}
+
+func (d *ReflectionDecoder) tryDecodeRootStruct(
+	offset uint,
+	result addressableValue,
+	fields *fieldsType,
+) (bool, error) {
+	if d.budgetRemaining == 0 {
+		bounded := newBudgetedDecoder(d)
+		_, ok, err := bounded.tryDecodeStructWithFields(offset, result, 0, fields)
+		return ok, err
+	}
+	_, ok, err := d.tryDecodeStructWithFields(offset, result, 0, fields)
+	return ok, err
 }
 
 func newBudgetedDecoder(d *ReflectionDecoder) ReflectionDecoder {
@@ -2226,6 +2254,7 @@ type fieldsType struct {
 	// callers must compare the complete key with the cached field's name.
 	offsetFields      [fieldOffsetCacheSlots]atomic.Pointer[fieldInfo]
 	fingerprintFields []fingerprintField
+	customUnmarshaler bool
 }
 
 type fingerprintField struct {
@@ -2609,6 +2638,7 @@ func makeStructFieldsWithStack(
 		namedFields:       namedFields,
 		fingerprintFields: makeFingerprintFields(namedFields),
 		validationErr:     validationErr,
+		customUnmarshaler: mayImplementUnmarshaler(rootType),
 	}
 
 	// Reindex all fields for optimized access

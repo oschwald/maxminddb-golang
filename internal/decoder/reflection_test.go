@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"encoding/hex"
+	"errors"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -157,6 +158,71 @@ func TestReflectUintFromMultipleSourceKinds(t *testing.T) {
 			require.Equal(t, tc.want, result.N)
 		})
 	}
+}
+
+var errCustomRootUnmarshaler = errors.New("custom root unmarshaler rejected record")
+
+type (
+	namedRootLegacyRecord  struct{}
+	namedRootLegacyPointer *namedRootLegacyRecord
+	namedRootCursorRecord  struct{}
+	namedRootCursorPointer *namedRootCursorRecord
+)
+
+func (*namedRootLegacyRecord) UnmarshalMaxMindDB(*Decoder) error {
+	return errCustomRootUnmarshaler
+}
+
+func (*namedRootCursorRecord) UnmarshalMaxMindDBCursor(Cursor) (Cursor, error) {
+	return Cursor{}, errCustomRootUnmarshaler
+}
+
+func TestNamedRootPointerCustomUnmarshaler(t *testing.T) {
+	cases := []struct {
+		name string
+		data []byte
+	}{
+		{name: "map", data: []byte{0xe0}},
+		{name: "pointer_map", data: []byte{0x20, 0x02, 0xe0}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := New(tc.data)
+
+			var legacy namedRootLegacyRecord
+			require.ErrorIs(
+				t,
+				d.Decode(0, namedRootLegacyPointer(&legacy)),
+				errCustomRootUnmarshaler,
+			)
+
+			var cursor namedRootCursorRecord
+			require.ErrorIs(
+				t,
+				d.Decode(0, namedRootCursorPointer(&cursor)),
+				errCustomRootUnmarshaler,
+			)
+		})
+	}
+}
+
+func TestDecodeRootStructPreservesActiveBudget(t *testing.T) {
+	type record struct {
+		Name string `maxminddb:"name"`
+	}
+
+	data := []byte{0xe1, 0x44, 'n', 'a', 'm', 'e', 0x43, 'f', 'o', 'o'}
+	base := NewWithoutStringCache(data)
+	bounded := newBudgetedDecoder(&base)
+	initialBudget := bounded.budgetRemaining
+	initialPayload := bounded.payloadRemaining
+
+	var got record
+	require.NoError(t, bounded.Decode(0, &got))
+	require.Equal(t, "foo", got.Name)
+	require.Equal(t, initialBudget-2, bounded.budgetRemaining)
+	require.Equal(t, initialPayload-3, bounded.payloadRemaining)
 }
 
 func TestFastDecodePointerFieldDoesNotAllocateOnTypeError(t *testing.T) {

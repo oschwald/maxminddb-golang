@@ -5,6 +5,7 @@
 - Improved lookup and decoding performance:
   - Reduced IPv6 search-tree traversal overhead.
   - Reduced integer, database pointer, and map key decoding overhead.
+  - Reduced reflection overhead when decoding records into structs.
 
 ## 2.8.0 - 2026-10-11
 
