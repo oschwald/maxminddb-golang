@@ -2,6 +2,7 @@ package decoder
 
 import (
 	"encoding/hex"
+	"errors"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -155,6 +156,53 @@ func TestReflectUintFromMultipleSourceKinds(t *testing.T) {
 			var result record
 			require.NoError(t, d.Decode(0, &result))
 			require.Equal(t, tc.want, result.N)
+		})
+	}
+}
+
+var errCustomRootUnmarshaler = errors.New("custom root unmarshaler rejected record")
+
+type (
+	namedRootLegacyRecord  struct{}
+	namedRootLegacyPointer *namedRootLegacyRecord
+	namedRootCursorRecord  struct{}
+	namedRootCursorPointer *namedRootCursorRecord
+)
+
+func (*namedRootLegacyRecord) UnmarshalMaxMindDB(*Decoder) error {
+	return errCustomRootUnmarshaler
+}
+
+func (*namedRootCursorRecord) UnmarshalMaxMindDBCursor(Cursor) (Cursor, error) {
+	return Cursor{}, errCustomRootUnmarshaler
+}
+
+func TestNamedRootPointerCustomUnmarshaler(t *testing.T) {
+	cases := []struct {
+		name string
+		data []byte
+	}{
+		{name: "map", data: []byte{0xe0}},
+		{name: "pointer_map", data: []byte{0x20, 0x02, 0xe0}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := New(tc.data)
+
+			var legacy namedRootLegacyRecord
+			require.ErrorIs(
+				t,
+				d.Decode(0, namedRootLegacyPointer(&legacy)),
+				errCustomRootUnmarshaler,
+			)
+
+			var cursor namedRootCursorRecord
+			require.ErrorIs(
+				t,
+				d.Decode(0, namedRootCursorPointer(&cursor)),
+				errCustomRootUnmarshaler,
+			)
 		})
 	}
 }
