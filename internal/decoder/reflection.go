@@ -1684,6 +1684,30 @@ func (d *ReflectionDecoder) unmarshalValidatedMapKey(
 	return err
 }
 
+func prepareSlice(result addressableValue, sliceLen int) {
+	switch {
+	case result.IsNil() || result.Cap() < sliceLen:
+		if sliceLen == 0 {
+			result.Set(reflect.MakeSlice(result.Type(), 0, 0))
+			return
+		}
+		if !result.IsNil() {
+			result.SetZero()
+		}
+		result.Grow(sliceLen)
+		result.SetLen(sliceLen)
+	case result.Len() > sliceLen:
+		// Clear [0:oldLen] before shrinking so both the active prefix and the
+		// now-hidden tail (sliceLen:oldLen] are zeroed without allocating a
+		// temporary sub-slice Value.
+		result.Clear()
+		result.SetLen(sliceLen)
+	default:
+		result.SetLen(sliceLen)
+		result.Clear()
+	}
+}
+
 func (d *ReflectionDecoder) decodeSlice(
 	size uint,
 	offset uint,
@@ -1692,29 +1716,20 @@ func (d *ReflectionDecoder) decodeSlice(
 ) (uint, error) {
 	elemType := result.Type().Elem()
 	elemMayUnmarshal := typeMayImplementUnmarshaler(elemType)
-	elemFast := !elemMayUnmarshal && isFastDecodeType(elemType)
-	sliceLen := int(size)
-	if result.IsNil() || result.Cap() < sliceLen {
-		result.Set(reflect.MakeSlice(result.Type(), sliceLen, sliceLen))
-	} else {
-		// Reuse the caller's backing array. Two clears are needed: the first
-		// zeroes [0:sliceLen] so element fields not present in the new data
-		// (e.g., omitted struct keys) don't carry forward; the second zeroes
-		// (sliceLen:oldLen] so the now-hidden tail drops any pointer-like
-		// references it held, letting the GC reclaim them.
-		oldLen := result.Len()
-		result.SetLen(sliceLen)
-		result.Clear()
-		if oldLen > sliceLen {
-			result.Slice(sliceLen, oldLen).Clear()
-		}
-	}
+	elemString := !elemMayUnmarshal && elemType.Kind() == reflect.String
+	elemFast := !elemMayUnmarshal && !elemString && isFastDecodeType(elemType)
+	prepareSlice(result, int(size))
 
 	for i := range size {
 		var err error
 		elemValue := addressableValue{Value: result.Index(int(i))}
 		decoded := false
-		if elemFast {
+		if elemString {
+			if fastOffset, ok := d.tryFastDecodeString(offset, elemValue, depth); ok {
+				offset = fastOffset
+				decoded = true
+			}
+		} else if elemFast {
 			if fastOffset, ok := d.tryFastDecodeTyped(offset, elemValue, depth); ok {
 				offset = fastOffset
 				decoded = true
@@ -1781,13 +1796,7 @@ func (d *ReflectionDecoder) decodeStructWithFields(
 			}
 		}
 		if !ok {
-			if d.structFieldValueIsInlineContainer(offset) {
-				offset, err = d.nextValueOffsetBudgetedSlow(offset, 1)
-			} else {
-				// Scalars consume work proportional to their inline encoding, and
-				// pointer tokens are skipped without expanding their targets.
-				offset, err = d.nextValueOffset(offset, 1)
-			}
+			offset, err = d.skipStructFieldValue(offset)
 			if err != nil {
 				return 0, err
 			}
@@ -1811,11 +1820,7 @@ func (d *ReflectionDecoder) decodeStructWithFields(
 		}
 		if !fieldValue.IsValid() {
 			// Field access failed, skip this field
-			if d.structFieldValueIsInlineContainer(offset) {
-				offset, err = d.nextValueOffsetBudgetedSlow(offset, 1)
-			} else {
-				offset, err = d.nextValueOffset(offset, 1)
-			}
+			offset, err = d.skipStructFieldValue(offset)
 			if err != nil {
 				return 0, err
 			}
@@ -1870,6 +1875,17 @@ func (d *ReflectionDecoder) decodeStructWithFields(
 			if !ok {
 				offset, err = d.decodeValueSkipUnmarshaler(offset, fieldValue, depth)
 			}
+		case dispatchSlice:
+			var ok bool
+			offset, ok, err = d.tryDecodeSliceWithInfo(
+				offset,
+				fieldValue,
+				depth,
+				fieldInfo,
+			)
+			if !ok {
+				offset, err = d.decodeValueSkipUnmarshaler(offset, fieldValue, depth)
+			}
 		case dispatchMaxSize:
 			offset, err = d.decodeValueMaxSize(
 				offset,
@@ -1889,6 +1905,15 @@ func (d *ReflectionDecoder) decodeStructWithFields(
 	return offset, nil
 }
 
+func (d *ReflectionDecoder) skipStructFieldValue(offset uint) (uint, error) {
+	if d.structFieldValueIsInlineContainer(offset) {
+		return d.nextValueOffsetBudgetedSlow(offset, 1)
+	}
+	// Scalars consume work proportional to their inline encoding, and
+	// pointer tokens are skipped without expanding their targets.
+	return d.nextValueOffset(offset, 1)
+}
+
 func (d *ReflectionDecoder) skipStructFields(size, offset uint) (uint, error) {
 	for range size {
 		var err error
@@ -1896,11 +1921,7 @@ func (d *ReflectionDecoder) skipStructFields(size, offset uint) (uint, error) {
 		if err != nil {
 			return 0, err
 		}
-		if d.structFieldValueIsInlineContainer(offset) {
-			offset, err = d.nextValueOffsetBudgetedSlow(offset, 1)
-		} else {
-			offset, err = d.nextValueOffset(offset, 1)
-		}
+		offset, err = d.skipStructFieldValue(offset)
 		if err != nil {
 			return 0, err
 		}
@@ -2162,6 +2183,125 @@ func (d *ReflectionDecoder) decodePointerStructWithFields(
 	return newOffset, true, nil
 }
 
+// tryDecodeSliceWithInfo returns the input offset when ok is false so its
+// caller can retry the field with the general decoder.
+func (d *ReflectionDecoder) tryDecodeSliceWithInfo(
+	offset uint,
+	result addressableValue,
+	depth int,
+	info *fieldInfo,
+) (newOffset uint, ok bool, err error) {
+	if depth >= maximumDataStructureDepth {
+		return offset, false, nil
+	}
+	typeNum, size, dataOffset, err := d.decodeCtrlData(offset)
+	if err != nil {
+		return 0, true, err
+	}
+
+	var pointerEndOffset uint
+	decodeDepth := depth + 1
+	switch typeNum {
+	case KindSlice:
+		// Use the slice control record we already decoded.
+	case KindPointer:
+		var pointer uint
+		pointer, pointerEndOffset, err = d.decodePointer(size, dataOffset)
+		if err != nil {
+			return 0, true, err
+		}
+		typeNum, size, dataOffset, err = d.decodeCtrlData(pointer)
+		if err != nil {
+			return 0, true, err
+		}
+		if typeNum == KindPointer {
+			return 0, true, mmdberrors.NewInvalidDatabaseError(
+				"invalid pointer to pointer at offset %d",
+				pointer,
+			)
+		}
+		if typeNum != KindSlice {
+			return offset, false, nil
+		}
+		decodeDepth = depth + 2
+	default:
+		return offset, false, nil
+	}
+
+	if err := d.reserveActiveContainer(KindSlice, size); err != nil {
+		return 0, true, err
+	}
+	if (result.IsNil() || result.Cap() < int(size)) && size > 0 {
+		if err := d.validateContainerSize(KindSlice, size, dataOffset, decodeDepth); err != nil {
+			return 0, true, err
+		}
+	}
+
+	prepareSlice(result, int(size))
+
+	for i := range size {
+		elemValue := addressableValue{Value: result.Index(int(i))}
+		switch info.elemDispatch {
+		case dispatchString:
+			fastOffset, fastOK := d.tryFastDecodeString(dataOffset, elemValue, decodeDepth)
+			if fastOK {
+				dataOffset = fastOffset
+				continue
+			}
+			dataOffset, err = d.decodeValueSkipUnmarshaler(dataOffset, elemValue, decodeDepth)
+		case dispatchFast:
+			fastOffset, fastOK := d.tryFastDecodeTyped(
+				dataOffset,
+				elemValue,
+				decodeDepth,
+			)
+			if fastOK {
+				dataOffset = fastOffset
+				continue
+			}
+			dataOffset, err = d.decodeValueSkipUnmarshaler(dataOffset, elemValue, decodeDepth)
+		case dispatchStruct:
+			var fastOK bool
+			if decodeDepth < maximumDataStructureDepth {
+				dataOffset, fastOK, err = d.tryDecodeStructWithFields(
+					dataOffset,
+					elemValue,
+					decodeDepth,
+					info.structFields,
+				)
+			}
+			if !fastOK {
+				dataOffset, err = d.decodeValueSkipUnmarshaler(dataOffset, elemValue, decodeDepth)
+			}
+		case dispatchPointerStruct:
+			var fastOK bool
+			if decodeDepth < maximumDataStructureDepth {
+				dataOffset, fastOK, err = d.tryDecodePointerStructWithFields(
+					dataOffset,
+					elemValue,
+					decodeDepth,
+					info.structFields,
+				)
+			}
+			if !fastOK {
+				dataOffset, err = d.decodeValueSkipUnmarshaler(dataOffset, elemValue, decodeDepth)
+			}
+		case dispatchUnmarshaler:
+			dataOffset, err = d.decodeValue(dataOffset, elemValue, decodeDepth)
+		default:
+			dataOffset, err = d.decodeValueSkipUnmarshaler(dataOffset, elemValue, decodeDepth)
+		}
+		if err != nil {
+			return 0, true, d.wrapErrorWithSliceIndex(err, int(i))
+		}
+	}
+
+	if pointerEndOffset != 0 {
+		return pointerEndOffset, true, nil
+	}
+	return dataOffset, true, nil
+}
+
 func cleanupAllocatedPointers(
 	allocatedCount int,
 	allocated1, allocated2 reflect.Value,
@@ -2211,6 +2351,9 @@ const (
 	// dispatchPointerStruct: field is a pointer to a nested struct whose
 	// field set is precomputed and whose pointer chain may need allocation.
 	dispatchPointerStruct
+	// dispatchSlice: field is a non-[]byte slice whose element dispatch and
+	// optional struct fields are precomputed.
+	dispatchSlice
 	// dispatchMaxSize checks a field's schema limit before invoking the general
 	// decoder. It is kept out of every unconstrained dispatch path so maxsize
 	// support adds no per-field branch to existing schemas.
@@ -2231,6 +2374,7 @@ type fieldInfo struct {
 	maxSize      uint64
 	maxSizeKinds KindSet
 	dispatch     fieldDispatch
+	elemDispatch fieldDispatch
 	hasTag       bool
 	// maxSizeCustom caches whether maxsize must precede custom unmarshaler
 	// dispatch. Computing this from reflect.Type consults a sync.Map, so doing
@@ -2529,6 +2673,7 @@ func makeStructFieldsWithStack(
 			fieldType := field.Type
 			unwrappedFieldType := unwrapPtrType(fieldType)
 			var dispatch fieldDispatch
+			var elemDispatch fieldDispatch
 			var structFields *fieldsType
 			maxSizeCustom := mayImplementUnmarshaler(unwrappedFieldType)
 			maxSizeKinds, maxSizeSupported := maxSizeKindsForField(
@@ -2545,6 +2690,10 @@ func makeStructFieldsWithStack(
 				dispatch = dispatchString
 			case isFastDecodeType(fieldType):
 				dispatch = dispatchFast
+			case fieldType.Kind() == reflect.Slice && fieldType != sliceType:
+				dispatch = dispatchSlice
+				fieldType = fieldType.Elem()
+				elemDispatch, structFields = makeSliceElemInfo(fieldType, stack)
 			default:
 				dispatch = dispatchPlain
 				if unwrappedFieldType.Kind() == reflect.Struct &&
@@ -2566,6 +2715,7 @@ func makeStructFieldsWithStack(
 				fieldType:     fieldType,
 				structFields:  structFields,
 				dispatch:      dispatch,
+				elemDispatch:  elemDispatch,
 				maxSize:       tagOptions.MaxSize,
 				maxSizeKinds:  maxSizeKinds,
 				maxSizeCustom: maxSizeCustom,
@@ -2810,6 +2960,32 @@ func (d *ReflectionDecoder) decodeAny(
 	}
 	_, err = d.decodeFromType(kind, size, dataOffset, result, depth+1)
 	return err
+}
+
+func makeSliceElemInfo(
+	elemType reflect.Type,
+	stack map[reflect.Type]bool,
+) (fieldDispatch, *fieldsType) {
+	unwrappedElemType := unwrapPtrType(elemType)
+	switch {
+	case unwrappedElemType.Kind() == reflect.Interface ||
+		mayImplementUnmarshaler(unwrappedElemType):
+		return dispatchUnmarshaler, nil
+	case elemType.Kind() == reflect.String:
+		return dispatchString, nil
+	case isFastDecodeType(elemType):
+		return dispatchFast, nil
+	case unwrappedElemType.Kind() == reflect.Struct &&
+		unwrappedElemType != bigIntType &&
+		!stack[unwrappedElemType]:
+		elemStructFields := cachedFieldsForTypeWithStack(unwrappedElemType, stack)
+		if elemType.Kind() == reflect.Pointer {
+			return dispatchPointerStruct, elemStructFields
+		}
+		return dispatchStruct, elemStructFields
+	default:
+		return dispatchPlain, nil
+	}
 }
 
 // fieldByIndex efficiently accesses a field by its index path,

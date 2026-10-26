@@ -222,6 +222,34 @@ func TestFastDecodePointerFieldDoesNotAllocateOnTypeError(t *testing.T) {
 	assert.Contains(t, err.Error(), "cannot unmarshal 1 (uint64) into type string")
 }
 
+func TestStructSliceMaxDepthBoundary(t *testing.T) {
+	for _, pointer := range []bool{false, true} {
+		name := "struct"
+		elem := reflect.TypeFor[struct{}]()
+		if pointer {
+			name = "pointer_struct"
+			elem = reflect.PointerTo(elem)
+		}
+		t.Run(name, func(t *testing.T) {
+			typ := reflect.StructOf([]reflect.StructField{
+				{
+					Name: "Items",
+					Type: reflect.SliceOf(elem),
+					Tag:  `maxminddb:"items"`,
+				},
+			})
+			data := make([]byte, 0, 1030)
+			for range 510 {
+				typ = reflect.SliceOf(typ)
+				data = append(data, 0x01, 0x04)
+			}
+			data = append(data, 0xe1, 0x45, 'i', 't', 'e', 'm', 's', 0x01, 0x04, 0xe0)
+			d := New(data)
+			require.NoError(t, d.Decode(0, reflect.New(typ).Interface()))
+		})
+	}
+}
+
 func TestDecodeAllocatesTopLevelPointerTarget(t *testing.T) {
 	inputBytes, err := hex.DecodeString("43466f6f")
 	require.NoError(t, err)
