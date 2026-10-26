@@ -1,5 +1,10 @@
 # Changes
 
+## Unreleased
+
+- Improved lookup and decoding performance:
+  - Reduced IPv6 search-tree traversal overhead.
+
 ## 2.8.0 - 2026-10-11
 
 - String caching now uses buckets to improve concurrent decoding. On 64-bit
