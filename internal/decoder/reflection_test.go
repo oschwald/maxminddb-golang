@@ -822,3 +822,154 @@ func TestOversizedPointerReturnsError(t *testing.T) {
 func testFile(file string) string {
 	return filepath.Join("..", "..", "testdata", "test-data", file)
 }
+
+func TestFieldInfoMatchesKey(t *testing.T) {
+	keys := []string{
+		"",
+		"a",
+		"en",
+		"iso",
+		"city",
+		"names",
+		"postal",
+		"country",
+		"location",
+		"continent",
+		"geoname_id",
+		"subdivisions",
+		"accuracy_radius",
+		"sixteen_byte_key",
+		"seventeen_byte_ky",
+		"registered_country",
+		"represented_country",
+		"is_in_european_union",
+		"is_satellite_provider",
+		"twenty_four_byte_key_val",
+		"twenty_five_byte_key_name",
+		"very_long_struct_field_name_exceeding_twenty_four_bytes",
+	}
+
+	for _, name := range keys {
+		info := &fieldInfo{name: name}
+		info.initKeyMatcher()
+
+		require.True(t, info.matchesKey([]byte(name)), "expected match for %q", name)
+
+		// Mismatched lengths must never match.
+		require.False(t, info.matchesKey([]byte(name+"x")))
+		if name != "" {
+			require.False(t, info.matchesKey([]byte(name[:len(name)-1])))
+		}
+
+		// Any single-byte mutation at any position must not match.
+		for i := range len(name) {
+			mutated := []byte(name)
+			mutated[i] ^= 0x01
+			require.False(
+				t,
+				info.matchesKey(mutated),
+				"expected mismatch for %q mutated at index %d",
+				name,
+				i,
+			)
+		}
+	}
+}
+
+func TestStructDecodeAllKeyLengthsAndPointerSlices(t *testing.T) {
+	type item struct {
+		Name string   `maxminddb:"name"`
+		Code *uint32  `maxminddb:"code"`
+		Rate *float64 `maxminddb:"rate"`
+	}
+	type record struct {
+		K1     string  `maxminddb:"a"`
+		K2     string  `maxminddb:"en"`
+		K3     string  `maxminddb:"iso"`
+		K4     string  `maxminddb:"city"`
+		K5     string  `maxminddb:"names"`
+		K8     string  `maxminddb:"location"`
+		K16    string  `maxminddb:"sixteen_byte_key"`
+		K20    string  `maxminddb:"is_in_european_union"`
+		K24    string  `maxminddb:"twenty_four_byte_key_val"`
+		K28    string  `maxminddb:"twenty_eight_byte_field_name"`
+		Items  []item  `maxminddb:"items"`
+		PtrVal *uint16 `maxminddb:"ptr_val"`
+	}
+
+	encodeKey := func(s string) []byte {
+		n := len(s)
+		out := make([]byte, 0, 1+n)
+		out = append(out, byte(2<<5|n))
+		return append(out, s...)
+	}
+
+	buf := make([]byte, 0, 256)
+	// At offset 0: target of pointer for PtrVal (uint16 = 42) and target of pointer for Items slice.
+	ptrUint16Offset := len(buf)
+	buf = append(buf, 0xa1, 42) // uint16(42)
+
+	ptrSliceOffset := len(buf)
+	// Slice of 1 item map: {"name": "ok", "code": uint32(7), "rate": float64(1.5)}
+	buf = append(buf, 0x01, 0x04) // extended type 11 (slice), size 1
+	buf = append(buf, 0xe3)       // map of 3 entries
+	buf = append(buf, encodeKey("name")...)
+	buf = append(buf, encodeKey("ok")...)
+	buf = append(buf, encodeKey("code")...)
+	buf = append(buf, 0xc1, 7) // uint32(7)
+	buf = append(buf, encodeKey("rate")...)
+	buf = append(buf, 0x68, 0x3f, 0xf8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00) // float64(1.5)
+
+	rootOffset := uint(len(buf))
+	buf = append(buf, 0xec) // map of 12 entries
+	pairs := [][2]string{
+		{"a", "v1"},
+		{"en", "v2"},
+		{"iso", "v3"},
+		{"city", "v4"},
+		{"names", "v5"},
+		{"location", "v8"},
+		{"sixteen_byte_key", "v16"},
+		{"is_in_european_union", "v20"},
+		{"twenty_four_byte_key_val", "v24"},
+		{"twenty_eight_byte_field_name", "v28"},
+	}
+	for _, p := range pairs {
+		buf = append(buf, encodeKey(p[0])...)
+		buf = append(buf, encodeKey(p[1])...)
+	}
+	// "items" -> pointer to ptrSliceOffset
+	buf = append(buf, encodeKey("items")...)
+	buf = append(buf, 0x20, byte(ptrSliceOffset))
+	// "ptr_val" -> pointer to ptrUint16Offset
+	buf = append(buf, encodeKey("ptr_val")...)
+	buf = append(buf, 0x20, byte(ptrUint16Offset))
+
+	d := New(buf)
+	var got record
+	require.NoError(t, d.Decode(rootOffset, &got))
+	require.Equal(t, "v1", got.K1)
+	require.Equal(t, "v2", got.K2)
+	require.Equal(t, "v3", got.K3)
+	require.Equal(t, "v4", got.K4)
+	require.Equal(t, "v5", got.K5)
+	require.Equal(t, "v8", got.K8)
+	require.Equal(t, "v16", got.K16)
+	require.Equal(t, "v20", got.K20)
+	require.Equal(t, "v24", got.K24)
+	require.Equal(t, "v28", got.K28)
+	require.NotNil(t, got.PtrVal)
+	require.Equal(t, uint16(42), *got.PtrVal)
+	require.Len(t, got.Items, 1)
+	require.Equal(t, "ok", got.Items[0].Name)
+	require.NotNil(t, got.Items[0].Code)
+	require.Equal(t, uint32(7), *got.Items[0].Code)
+	require.NotNil(t, got.Items[0].Rate)
+	require.InEpsilon(t, 1.5, *got.Items[0].Rate, 1e-9)
+
+	// Re-decode into reused struct to exercise non-nil pointer & slice reuse paths.
+	require.NoError(t, d.Decode(rootOffset, &got))
+	require.Equal(t, "v28", got.K28)
+	require.Len(t, got.Items, 1)
+	require.Equal(t, "ok", got.Items[0].Name)
+}

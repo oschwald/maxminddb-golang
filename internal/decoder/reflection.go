@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math/big"
@@ -1788,7 +1789,7 @@ func (d *ReflectionDecoder) decodeStructWithFields(
 		// optimization: https://github.com/golang/go/issues/3512
 		entry := &fields.offsetFields[keyOffset&(fieldOffsetCacheSlots-1)]
 		fieldInfo := entry.Load()
-		ok := fieldInfo != nil && fieldInfo.name == string(key)
+		ok := fieldInfo != nil && fieldInfo.matchesKey(key)
 		if !ok {
 			fieldInfo, ok = fields.fieldForKey(key)
 			if ok && entry.Load() == nil {
@@ -1803,28 +1804,25 @@ func (d *ReflectionDecoder) decodeStructWithFields(
 			continue
 		}
 
-		// Defer uncommon embedded-pointer initialization until the field is
-		// actually needed. For maxsize fields, validate before that allocation.
-		fieldValue := result.fieldByIndex(fieldInfo.index0, fieldInfo.index, false)
-		if !fieldValue.IsValid() {
-			if fieldInfo.dispatch == dispatchMaxSize {
-				err = (Cursor{
-					decoder: &d.DataDecoder,
-					offset:  offset,
-				}).CheckMaxSize(fieldInfo.maxSizeKinds, fieldInfo.maxSize)
-				if err != nil {
-					return 0, d.wrapErrorWithMapKey(err, string(key))
-				}
-			}
-			fieldValue = result.fieldByIndex(fieldInfo.index0, fieldInfo.index, true)
+		fieldValue := addressableValue{
+			Value:      result.Field(fieldInfo.index0),
+			forcedAddr: result.forcedAddr,
 		}
-		if !fieldValue.IsValid() {
-			// Field access failed, skip this field
-			offset, err = d.skipStructFieldValue(offset)
+		if len(fieldInfo.index) != 0 {
+			var skip bool
+			fieldValue, offset, skip, err = d.resolveEmbeddedStructField(
+				offset,
+				result,
+				fieldValue,
+				fieldInfo,
+				key,
+			)
 			if err != nil {
 				return 0, err
 			}
-			continue
+			if skip {
+				continue
+			}
 		}
 
 		// Dispatch on the precomputed strategy. The fast-path case has a
@@ -1833,9 +1831,14 @@ func (d *ReflectionDecoder) decodeStructWithFields(
 		// which is the caller's responsibility on the slow path.
 		switch fieldInfo.dispatch {
 		case dispatchString:
-			if fastOffset, ok := d.tryFastDecodeString(offset, fieldValue, depth); ok {
-				offset = fastOffset
-				continue
+			if depth < maximumDataStructureDepth {
+				if val, cacheOffset, nextOffset, keyErr := d.decodeKeyAt(offset); keyErr == nil &&
+					uint(len(val)) <= uint(d.payloadRemaining) {
+					d.payloadRemaining -= uint32(len(val))
+					fieldValue.SetString(d.decodeStringBytes(cacheOffset, val))
+					offset = nextOffset
+					continue
+				}
 			}
 			offset, err = d.decodeValueSkipUnmarshaler(offset, fieldValue, depth)
 		case dispatchFast:
@@ -1903,6 +1906,40 @@ func (d *ReflectionDecoder) decodeStructWithFields(
 		}
 	}
 	return offset, nil
+}
+
+func (d *ReflectionDecoder) resolveEmbeddedStructField(
+	offset uint,
+	result addressableValue,
+	fieldValue addressableValue,
+	fieldInfo *fieldInfo,
+	key []byte,
+) (addressableValue, uint, bool, error) {
+	// Defer uncommon embedded-pointer initialization until the field is
+	// actually needed. For maxsize fields, validate before that allocation.
+	fieldValue = fieldValue.fieldByIndexSlow(fieldInfo.index, false)
+	if !fieldValue.IsValid() {
+		if fieldInfo.dispatch == dispatchMaxSize {
+			err := (Cursor{
+				decoder: &d.DataDecoder,
+				offset:  offset,
+			}).CheckMaxSize(fieldInfo.maxSizeKinds, fieldInfo.maxSize)
+			if err != nil {
+				return addressableValue{}, 0, false, d.wrapErrorWithMapKey(err, string(key))
+			}
+		}
+		fieldValue = result.fieldByIndex(fieldInfo.index0, fieldInfo.index, true)
+	}
+	if !fieldValue.IsValid() {
+		// Field access failed, skip this field
+		var err error
+		offset, err = d.skipStructFieldValue(offset)
+		if err != nil {
+			return addressableValue{}, 0, false, err
+		}
+		return addressableValue{}, offset, true, nil
+	}
+	return fieldValue, offset, false, nil
 }
 
 func (d *ReflectionDecoder) skipStructFieldValue(offset uint) (uint, error) {
@@ -2369,18 +2406,54 @@ type fieldInfo struct {
 	structFields *fieldsType
 	name         string
 	index        []int
+	nameFirst    uint64
+	nameLast     uint64
+	nameMid      uint64
 	index0       int
 	depth        int
 	maxSize      uint64
 	maxSizeKinds KindSet
 	dispatch     fieldDispatch
 	elemDispatch fieldDispatch
+	nameLen      int8
 	hasTag       bool
 	// maxSizeCustom caches whether maxsize must precede custom unmarshaler
 	// dispatch. Computing this from reflect.Type consults a sync.Map, so doing
 	// it while decoding every tagged field would turn a schema property into a
 	// recurring runtime cost.
 	maxSizeCustom bool
+}
+
+func (f *fieldInfo) initKeyMatcher() {
+	b := []byte(f.name)
+	n := len(b)
+	switch {
+	case n >= 8 && n <= 24:
+		f.nameLen = int8(n)
+		f.nameFirst = binary.LittleEndian.Uint64(b)
+		f.nameLast = binary.LittleEndian.Uint64(b[n-8:])
+		f.nameMid = binary.LittleEndian.Uint64(b[n>>1-4:])
+	case n >= 4 && n < 8:
+		f.nameLen = int8(n)
+		f.nameFirst = uint64(binary.LittleEndian.Uint32(b))
+		f.nameLast = uint64(binary.LittleEndian.Uint32(b[n-4:]))
+	default:
+		f.nameLen = -1
+	}
+}
+
+func (f *fieldInfo) matchesKey(key []byte) bool {
+	n := len(key)
+	if n != int(f.nameLen) {
+		return string(key) == f.name
+	}
+	if n >= 8 {
+		return binary.LittleEndian.Uint64(key) == f.nameFirst &&
+			binary.LittleEndian.Uint64(key[n-8:]) == f.nameLast &&
+			binary.LittleEndian.Uint64(key[n>>1-4:]) == f.nameMid
+	}
+	return binary.LittleEndian.Uint32(key) == uint32(f.nameFirst) &&
+		binary.LittleEndian.Uint32(key[n-4:]) == uint32(f.nameLast)
 }
 
 const fieldOffsetCacheSlots = 64
@@ -2403,7 +2476,7 @@ type fingerprintField struct {
 
 func (fs *fieldsType) fieldForKey(key []byte) (*fieldInfo, bool) {
 	field, ok := fs.fieldForFingerprint(fieldKeyFingerprint(key))
-	if ok && (field == nil || field.name != string(key)) {
+	if ok && (field == nil || !field.matchesKey(key)) {
 		field, ok = fs.namedFields[string(key)]
 	}
 	return field, ok
@@ -2817,6 +2890,7 @@ func validateRawMaxMindDBTagValue(field reflect.StructField, rawTag string) erro
 // This follows the json/v2 pattern of splitting the first index from the remainder.
 func (fs *fieldsType) reindex() {
 	for _, field := range fs.namedFields {
+		field.initKeyMatcher()
 		if len(field.index) > 0 {
 			field.index0 = field.index[0]
 			field.index = field.index[1:]
@@ -3000,15 +3074,23 @@ func (av addressableValue) fieldByIndex(
 
 	// Handle remaining indices if any
 	if len(remainingIndex) > 0 {
-		for _, i := range remainingIndex {
-			av = av.indirect(mayAlloc)
-			if !av.IsValid() {
-				return av
-			}
-			av = addressableValue{av.Field(i), av.forcedAddr}
-		}
+		return av.fieldByIndexSlow(remainingIndex, mayAlloc)
 	}
 
+	return av
+}
+
+func (av addressableValue) fieldByIndexSlow(
+	remainingIndex []int,
+	mayAlloc bool,
+) addressableValue {
+	for _, i := range remainingIndex {
+		av = av.indirect(mayAlloc)
+		if !av.IsValid() {
+			return av
+		}
+		av = addressableValue{av.Field(i), av.forcedAddr}
+	}
 	return av
 }
 
