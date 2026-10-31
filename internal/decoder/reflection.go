@@ -181,8 +181,7 @@ func (d *ReflectionDecoder) decodeRootValue(offset uint, result addressableValue
 	)
 	if result.Kind() == reflect.Struct && result.Type() != bigIntType {
 		if fields := cachedFields(result.Value); !fields.customUnmarshaler {
-			bounded := d.budgetedDecoder()
-			_, ok, err = bounded.tryDecodeStructWithFields(offset, result, 0, fields)
+			ok, err = d.tryDecodeRootStruct(offset, result, fields)
 		}
 	}
 	if !ok {
@@ -194,11 +193,18 @@ func (d *ReflectionDecoder) decodeRootValue(offset uint, result addressableValue
 	return nil
 }
 
-func (d *ReflectionDecoder) budgetedDecoder() ReflectionDecoder {
-	if d.budgetRemaining != 0 {
-		return *d
+func (d *ReflectionDecoder) tryDecodeRootStruct(
+	offset uint,
+	result addressableValue,
+	fields *fieldsType,
+) (bool, error) {
+	if d.budgetRemaining == 0 {
+		bounded := newBudgetedDecoder(d)
+		_, ok, err := bounded.tryDecodeStructWithFields(offset, result, 0, fields)
+		return ok, err
 	}
-	return newBudgetedDecoder(d)
+	_, ok, err := d.tryDecodeStructWithFields(offset, result, 0, fields)
+	return ok, err
 }
 
 func newBudgetedDecoder(d *ReflectionDecoder) ReflectionDecoder {

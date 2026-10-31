@@ -207,6 +207,24 @@ func TestNamedRootPointerCustomUnmarshaler(t *testing.T) {
 	}
 }
 
+func TestDecodeRootStructPreservesActiveBudget(t *testing.T) {
+	type record struct {
+		Name string `maxminddb:"name"`
+	}
+
+	data := []byte{0xe1, 0x44, 'n', 'a', 'm', 'e', 0x43, 'f', 'o', 'o'}
+	base := NewWithoutStringCache(data)
+	bounded := newBudgetedDecoder(&base)
+	initialBudget := bounded.budgetRemaining
+	initialPayload := bounded.payloadRemaining
+
+	var got record
+	require.NoError(t, bounded.Decode(0, &got))
+	require.Equal(t, "foo", got.Name)
+	require.Equal(t, initialBudget-2, bounded.budgetRemaining)
+	require.Equal(t, initialPayload-3, bounded.payloadRemaining)
+}
+
 func TestFastDecodePointerFieldDoesNotAllocateOnTypeError(t *testing.T) {
 	inputBytes, err := hex.DecodeString("e14173c101")
 	require.NoError(t, err)
