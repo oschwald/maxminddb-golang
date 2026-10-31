@@ -1005,6 +1005,18 @@ func testFile(file string) string {
 }
 
 func TestFieldInfoMatchesKey(t *testing.T) {
+	// A zero-value fieldInfo (without initKeyMatcher) must safely fall back to
+	// string comparison without panicking on empty or non-empty keys.
+	var zeroInfo fieldInfo
+	require.True(t, zeroInfo.matchesKey([]byte{}))
+	require.False(t, zeroInfo.matchesKey([]byte("a")))
+	require.False(t, zeroInfo.matchesKey([]byte("city")))
+
+	uninitializedNamed := fieldInfo{name: "city"}
+	require.True(t, uninitializedNamed.matchesKey([]byte("city")))
+	require.False(t, uninitializedNamed.matchesKey([]byte{}))
+	require.False(t, uninitializedNamed.matchesKey([]byte("town")))
+
 	keys := []string{
 		"",
 		"a",
@@ -1153,4 +1165,20 @@ func TestStructDecodeAllKeyLengthsAndPointerSlices(t *testing.T) {
 	require.Equal(t, "v28", got.K28)
 	require.Len(t, got.Items, 1)
 	require.Equal(t, "ok", got.Items[0].Name)
+
+	// Embedded pointer struct with dispatchFast fields (uint16 pointer and uint32).
+	type EmbeddedFast struct {
+		PtrVal *uint16 `maxminddb:"ptr_val"`
+	}
+	type recordWithEmbeddedFast struct {
+		*EmbeddedFast
+
+		K4 string `maxminddb:"city"`
+	}
+	var gotEmbedded recordWithEmbeddedFast
+	require.NoError(t, d.Decode(rootOffset, &gotEmbedded))
+	require.Equal(t, "v4", gotEmbedded.K4)
+	require.NotNil(t, gotEmbedded.EmbeddedFast)
+	require.NotNil(t, gotEmbedded.PtrVal)
+	require.Equal(t, uint16(42), *gotEmbedded.PtrVal)
 }

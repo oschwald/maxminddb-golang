@@ -1882,33 +1882,19 @@ func (d *ReflectionDecoder) decodeStructWithFields(
 			}
 		}
 
-		// Dispatch on the precomputed strategy. The fast-path case has a
-		// runtime guard for embedded fields (len(index) > 0): the
-		// fast-path decoders bypass embedded-pointer initialization,
-		// which is the caller's responsibility on the slow path.
+		// Dispatch on the precomputed strategy. Embedded fields (len(index) > 0)
+		// have already had their pointer chain resolved above.
 		switch fieldInfo.dispatch {
 		case dispatchString:
-			if depth < maximumDataStructureDepth {
-				if val, cacheOffset, nextOffset, keyErr := d.decodeKeyAt(offset); keyErr == nil &&
-					uint(len(val)) <= uint(d.payloadRemaining) {
-					d.payloadRemaining -= uint32(len(val))
-					fieldValue.SetString(d.decodeStringBytes(cacheOffset, val))
-					offset = nextOffset
-					continue
-				}
+			if fastOffset, ok := d.tryFastDecodeString(offset, fieldValue, depth); ok {
+				offset = fastOffset
+				continue
 			}
 			offset, err = d.decodeValueSkipUnmarshaler(offset, fieldValue, depth)
 		case dispatchFast:
-			if len(fieldInfo.index) == 0 {
-				fastOffset, ok := d.tryFastDecodeTyped(
-					offset,
-					fieldValue,
-					depth,
-				)
-				if ok {
-					offset = fastOffset
-					continue
-				}
+			if fastOffset, ok := d.tryFastDecodeTyped(offset, fieldValue, depth); ok {
+				offset = fastOffset
+				continue
 			}
 			offset, err = d.decodeValueSkipUnmarshaler(offset, fieldValue, depth)
 		case dispatchUnmarshaler:
@@ -2408,13 +2394,13 @@ func (f *fieldInfo) initKeyMatcher() {
 		f.nameFirst = uint64(binary.LittleEndian.Uint32(b))
 		f.nameLast = uint64(binary.LittleEndian.Uint32(b[n-4:]))
 	default:
-		f.nameLen = -1
+		f.nameLen = 0
 	}
 }
 
 func (f *fieldInfo) matchesKey(key []byte) bool {
 	n := len(key)
-	if n != int(f.nameLen) {
+	if n < 4 || n != int(f.nameLen) {
 		return string(key) == f.name
 	}
 	if n >= 8 {
