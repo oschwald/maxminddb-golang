@@ -574,14 +574,6 @@ func (r *Reader) traverseTree(ip netip.Addr, node uint, stopBit int) (uint, int,
 	}
 }
 
-//go:noinline
-func unsupportedRecordSizeError(recordSize uint) error {
-	return mmdberrors.NewInvalidDatabaseError(
-		"unsupported record size: %d",
-		recordSize,
-	)
-}
-
 func (r *Reader) traverseTree24(ip netip.Addr, node uint, stopBit int) (uint, int, error) {
 	// Verify upfront that the buffer covers every possible record offset, so
 	// the inner loops can omit per-iteration hasBufferRange calls and rely on
@@ -800,6 +792,14 @@ func (r *Reader) traverseTree32(ip netip.Addr, node uint, stopBit int) (uint, in
 	}
 
 	return node, i, nil
+}
+
+//go:noinline
+func unsupportedRecordSizeError(recordSize uint) error {
+	return mmdberrors.NewInvalidDatabaseError(
+		"unsupported record size: %d",
+		recordSize,
+	)
 }
 
 func hasBufferRange(bufferLen, offset, size uint) bool {
