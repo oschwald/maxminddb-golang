@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 2.9.0 - 2026-10-31
 
 - Improved lookup and decoding performance:
   - Reduced IPv6 search-tree traversal overhead.
