@@ -227,15 +227,6 @@ func (d *DataDecoder) decodeBytes(size, offset uint) ([]byte, uint, error) {
 	return bytes, newOffset, nil
 }
 
-//go:noinline
-func invalidScalarSizeError(typeName string, size uint) error {
-	return mmdberrors.NewInvalidDatabaseError(
-		"the MaxMind DB file's data section contains bad data (%s size of %v)",
-		typeName,
-		size,
-	)
-}
-
 // DecodeFloat64 decodes a 64-bit float from the given offset.
 func (d *DataDecoder) decodeFloat64(size, offset uint) (float64, uint, error) {
 	if size != 8 {
@@ -305,7 +296,7 @@ func (d *DataDecoder) decodePointer(
 	case 1:
 		pointer = (size&0x7)<<8 | uint(b[0])
 	case 2:
-		pointer = ((size&0x7)<<16 | uint(b[0])<<8 | uint(b[1])) + pointerBase2
+		pointer = ((size&0x7)<<16 | uint(binary.BigEndian.Uint16(b))) + pointerBase2
 	case 3:
 		pointer = ((size&0x7)<<24 | uint(b[0])<<16 | uint(b[1])<<8 | uint(b[2])) + pointerBase3
 	default:
@@ -555,6 +546,15 @@ func append64(val uint64, b byte) (uint64, byte) {
 	return (val << 8) | uint64(b), byte(val >> 56)
 }
 
+//go:noinline
+func invalidScalarSizeError(typeName string, size uint) error {
+	return mmdberrors.NewInvalidDatabaseError(
+		"the MaxMind DB file's data section contains bad data (%s size of %v)",
+		typeName,
+		size,
+	)
+}
+
 // decodeKey decodes a map key into a []byte slice. We use []byte so that we
 // can take advantage of https://github.com/golang/go/issues/3512 to avoid
 // copying the bytes when decoding a struct. Previously, we achieved this by
@@ -580,8 +580,6 @@ func (d *DataDecoder) decodeStringKey(offset uint) (string, uint, error) {
 
 // decodeKeyAt also returns the key's control-record offset for callers that
 // need to retain a safe copy through the string cache.
-//
-//nolint:nestif // Keep common compact encodings inline on this hot path.
 func (d *DataDecoder) decodeKeyAt(offset uint) ([]byte, uint, uint, error) {
 	buffer := d.buffer
 	bufferLen := uint(len(buffer))
@@ -606,46 +604,15 @@ func (d *DataDecoder) decodeKeyAt(offset uint) ([]byte, uint, uint, error) {
 			return buffer[dataOffset:newOffset], offset, newOffset, nil
 		}
 	case KindPointer:
-		if size < 8 {
-			newOffset := offset + 2
-			if newOffset <= bufferLen {
-				pointer := (size&0x7)<<8 | uint(buffer[offset+1])
-				if pointer < bufferLen {
-					pointedCtrlByte := buffer[pointer]
-					if Kind(pointedCtrlByte>>5) == KindString {
-						pointedSize := uint(pointedCtrlByte & 0x1f)
-						dataOffset := pointer + 1
-						if pointedSize < 29 && dataOffset+pointedSize <= bufferLen {
-							return buffer[dataOffset : dataOffset+pointedSize],
-								pointer, newOffset, nil
-						}
-					}
-				}
-			}
-		} else {
-			pointerSize := (size >> 3) + 1
-			newOffset := offset + 1 + pointerSize
-			if newOffset <= bufferLen {
-				b := buffer[offset+1 : newOffset]
-				var pointer uint
-				switch pointerSize {
-				case 2:
-					pointer = ((size&0x7)<<16 | uint(binary.BigEndian.Uint16(b))) + pointerBase2
-				case 3:
-					pointer = ((size&0x7)<<24 | uint(b[0])<<16 | uint(b[1])<<8 | uint(b[2])) + pointerBase3
-				default:
-					pointer = uint(binary.BigEndian.Uint32(b))
-				}
-				if pointer < bufferLen {
-					pointedCtrlByte := buffer[pointer]
-					if Kind(pointedCtrlByte>>5) == KindString {
-						pointedSize := uint(pointedCtrlByte & 0x1f)
-						dataOffset := pointer + 1
-						if pointedSize < 29 && dataOffset+pointedSize <= bufferLen {
-							return buffer[dataOffset : dataOffset+pointedSize],
-								pointer, newOffset, nil
-						}
-					}
+		pointer, newOffset, err := d.decodePointer(size, offset+1)
+		if err == nil && pointer < bufferLen {
+			pointedCtrlByte := buffer[pointer]
+			if Kind(pointedCtrlByte>>5) == KindString {
+				pointedSize := uint(pointedCtrlByte & 0x1f)
+				dataOffset := pointer + 1
+				if pointedSize < 29 && dataOffset+pointedSize <= bufferLen {
+					return buffer[dataOffset : dataOffset+pointedSize],
+						pointer, newOffset, nil
 				}
 			}
 		}
