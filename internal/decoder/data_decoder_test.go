@@ -250,14 +250,13 @@ func TestDecodeStringKeyWithoutCacheReturnsCopy(t *testing.T) {
 	require.Equal(t, "key", got, "retained map keys must not alias decoder input")
 }
 
-// TestDecodePointerKeyFastPointerSizes exercises decodePointerKeyFast for
-// pointer sizes 2 and 4. Size 1 is covered by TestDecodeKeyFollowsPointer;
-// size 3 requires a >526KB buffer (pointerBase3 offset) and is exercised
-// indirectly by the existing real-database lookup tests. A copy-paste error
-// in any pointer-size branch — wrong base added, wrong shift, or wrong
-// payload-byte count consumed — would change decoded keys or break
-// nextOffset.
-func TestDecodePointerKeyFastPointerSizes(t *testing.T) {
+// TestDecodeKeyAtPointerSizes exercises decodeKeyAt for pointer sizes 2 and 4.
+// Size 1 is covered by TestDecodeKeyFollowsPointer; size 3 requires a >526KB
+// buffer (pointerBase3 offset) and is exercised indirectly by the existing
+// real-database lookup tests. A copy-paste error in any pointer-size branch —
+// wrong base added, wrong shift, or wrong payload-byte count consumed — would
+// change decoded keys or break nextOffset.
+func TestDecodeKeyAtPointerSizes(t *testing.T) {
 	t.Run("pointer size 2", func(t *testing.T) {
 		// ctrl 0x28: KindPointer, pointerSize-1=1 (so size=2), prefix=0.
 		// payload [0x00, 0x05] -> raw=5, plus pointerBase2 (2048) -> 2053.
@@ -519,13 +518,13 @@ func TestDecodeKeyRejectsPointerToPointer(t *testing.T) {
 	require.ErrorContains(t, err, "pointer-to-pointer chain detected")
 }
 
-// TestDecodePointerKeyFastExtendedSize verifies that a pointer targeting a
+// TestDecodeKeyAtPointerExtendedSize verifies that a pointer targeting a
 // string whose size requires the extended encoding (size byte >= 29) is
 // handled correctly via the slow-path fall-through. A regression that
 // accepted the raw `pointedSize` byte as the string length would either
 // truncate the key (reading only 29 bytes instead of the full string) or
 // read past the buffer.
-func TestDecodePointerKeyFastExtendedSize(t *testing.T) {
+func TestDecodeKeyAtPointerExtendedSize(t *testing.T) {
 	// 30-byte key triggers the extended size encoding: ctrl 0x5D, extra
 	// byte (size - 29) = 0x01, then 30 payload bytes.
 	key := strings.Repeat("k", 30)
