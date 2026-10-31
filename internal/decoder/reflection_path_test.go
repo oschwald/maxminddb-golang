@@ -32,34 +32,46 @@ func TestDecodePathScalarDepthLimit(t *testing.T) {
 		{name: "any", data: []byte{0xa1, 7}, want: uint64(7)},
 	}
 	for _, test := range tests {
-		for _, depth := range []int{maximumDataStructureDepth, maximumDataStructureDepth + 1} {
-			t.Run(fmt.Sprintf("%s/%d", test.name, depth), func(t *testing.T) {
-				data := bytes.Repeat(sliceHeader(1), depth)
-				data = append(data, test.data...)
-				path := make([]any, depth)
-				for i := range path {
-					path[i] = 0
-				}
-				resultType := reflect.TypeOf(test.want)
-				if test.name == "any" {
-					resultType = reflect.TypeFor[any]()
-				}
-				result := reflect.New(resultType)
-				decoder := New(data)
-				err := decoder.DecodePath(0, path, result.Interface())
-				if depth > maximumDataStructureDepth {
-					var invalid mmdberrors.InvalidDatabaseError
-					require.ErrorAs(t, err, &invalid)
-					require.ErrorContains(t, err, "exceeded maximum data structure depth")
-					var contextual mmdberrors.ContextualError
-					require.ErrorAs(t, err, &contextual)
-					require.Equal(t, uint(depth*2), contextual.Offset)
-					require.True(t, result.Elem().IsZero(), "destination must remain unchanged")
-					return
-				}
-				require.NoError(t, err)
-				require.Equal(t, test.want, result.Elem().Interface())
-			})
+		for _, pointer := range []bool{false, true} {
+			maxDepth := maximumDataStructureDepth
+			mode := "direct"
+			if pointer {
+				maxDepth = maximumDataStructureDepth - 1
+				mode = "pointer"
+			}
+			for _, depth := range []int{maxDepth, maxDepth + 1} {
+				t.Run(fmt.Sprintf("%s/%s/%d", test.name, mode, depth), func(t *testing.T) {
+					data := bytes.Repeat(sliceHeader(1), depth)
+					if pointer {
+						targetOffset := len(data) + 2
+						data = append(data, 0x20|byte(targetOffset>>8), byte(targetOffset))
+					}
+					data = append(data, test.data...)
+					path := make([]any, depth)
+					for i := range path {
+						path[i] = 0
+					}
+					resultType := reflect.TypeOf(test.want)
+					if test.name == "any" {
+						resultType = reflect.TypeFor[any]()
+					}
+					result := reflect.New(resultType)
+					decoder := New(data)
+					err := decoder.DecodePath(0, path, result.Interface())
+					if depth > maxDepth {
+						var invalid mmdberrors.InvalidDatabaseError
+						require.ErrorAs(t, err, &invalid)
+						require.ErrorContains(t, err, "exceeded maximum data structure depth")
+						var contextual mmdberrors.ContextualError
+						require.ErrorAs(t, err, &contextual)
+						require.Equal(t, uint(depth*2), contextual.Offset)
+						require.True(t, result.Elem().IsZero(), "destination must remain unchanged")
+						return
+					}
+					require.NoError(t, err)
+					require.Equal(t, test.want, result.Elem().Interface())
+				})
+			}
 		}
 	}
 }
