@@ -2176,12 +2176,19 @@ func (d *ReflectionDecoder) tryDecodePointerStructWithFields(
 }
 
 func checkNestedDepth(depth int) error {
-	if depth < maximumDataStructureDepth {
+	if fastPathDepthOK(depth, true) {
 		return nil
 	}
 	return mmdberrors.NewInvalidDatabaseError(
 		"exceeded maximum data structure depth; database is likely corrupt",
 	)
+}
+
+func fastPathDepthOK(depth int, viaPointer bool) bool {
+	if viaPointer {
+		return depth < maximumDataStructureDepth
+	}
+	return depth <= maximumDataStructureDepth
 }
 
 func (d *ReflectionDecoder) decodePointerStructWithFields(
@@ -3124,7 +3131,7 @@ func (d *ReflectionDecoder) tryFastDecodeString(
 ) (uint, bool) {
 	// Leave the depth boundary to the general decoder. Following a database
 	// pointer adds one level, even though its target is a scalar.
-	if depth >= maximumDataStructureDepth {
+	if !fastPathDepthOK(depth, true) {
 		return 0, false
 	}
 	value, cacheOffset, nextOffset, err := d.decodeKeyAt(offset)
@@ -3144,201 +3151,36 @@ func (d *ReflectionDecoder) tryFastDecodeString(
 // String and []byte callers must have an active operation budget; standalone
 // payload entry points use their unbudgeted fast paths instead.
 //
-//nolint:gocyclo // fairly readable and this is optimized code.
+//nolint:gocyclo,maintidx // Flat type dispatch for scalar and pointer-to-scalar destinations.
 func (d *ReflectionDecoder) tryFastDecodeTyped(
 	offset uint,
 	result addressableValue,
 	depth int,
 ) (uint, bool) {
-	if depth > maximumDataStructureDepth {
+	if !fastPathDepthOK(depth, false) {
 		return 0, false
 	}
-	typeNum, size, newOffset, err := d.decodeCtrlData(offset)
-	if err != nil {
+	typeNum, size, newOffset, pointerEndOffset, err := d.resolveCtrlData(offset)
+	if err != nil || (pointerEndOffset != 0 && !fastPathDepthOK(depth, true)) {
 		return 0, false
 	}
 
-	var pointerEndOffset uint
-	if typeNum == KindPointer {
-		if depth >= maximumDataStructureDepth {
-			return 0, false
+	kind := result.Kind()
+	isNilPtr := false
+	var elemType reflect.Type
+	if kind == reflect.Pointer {
+		for result.Kind() == reflect.Pointer && !result.IsNil() {
+			result = addressableValue{Value: result.Elem()}
 		}
-		var pointer uint
-		pointer, pointerEndOffset, err = d.decodePointer(size, newOffset)
-		if err != nil {
-			return 0, false
-		}
-		typeNum, size, newOffset, err = d.decodeCtrlData(pointer)
-		if err != nil || typeNum == KindPointer {
-			return 0, false
+		kind = result.Kind()
+		if kind == reflect.Pointer {
+			isNilPtr = true
+			elemType = unwrapPtrType(result.Type())
+			kind = elemType.Kind()
 		}
 	}
 
 	var finalOffset uint
-	switch result.Kind() {
-	case reflect.Slice:
-		if result.Type() != sliceType || typeNum != KindBytes || size > uint(d.payloadRemaining) {
-			return 0, false
-		}
-		var value []byte
-		value, finalOffset, err = d.decodeBytes(size, newOffset)
-		if err != nil {
-			return 0, false
-		}
-		d.payloadRemaining -= uint32(size)
-		result.SetBytes(value)
-	case reflect.String:
-		if typeNum != KindString || size > uint(d.payloadRemaining) {
-			return 0, false
-		}
-		var value string
-		value, finalOffset, err = d.decodeString(size, newOffset)
-		if err != nil {
-			return 0, false
-		}
-		d.payloadRemaining -= uint32(size)
-		result.SetString(value)
-	case reflect.Uint:
-		var value uint64
-		switch typeNum {
-		case KindUint16:
-			var v uint16
-			v, finalOffset, err = d.decodeUint16(size, newOffset)
-			if err != nil {
-				return 0, false
-			}
-			value = uint64(v)
-		case KindUint32:
-			var v uint32
-			v, finalOffset, err = d.decodeUint32(size, newOffset)
-			if err != nil {
-				return 0, false
-			}
-			value = uint64(v)
-		case KindUint64:
-			value, finalOffset, err = d.decodeUint64(size, newOffset)
-			if err != nil || uint64(uint(value)) != value {
-				return 0, false
-			}
-		default:
-			return 0, false
-		}
-		result.SetUint(value)
-	case reflect.Uint32:
-		if typeNum != KindUint32 {
-			return 0, false
-		}
-		var value uint32
-		value, finalOffset, err = d.decodeUint32(size, newOffset)
-		if err != nil {
-			return 0, false
-		}
-		result.SetUint(uint64(value))
-	case reflect.Uint16:
-		if typeNum != KindUint16 {
-			return 0, false
-		}
-		var value uint16
-		value, finalOffset, err = d.decodeUint16(size, newOffset)
-		if err != nil {
-			return 0, false
-		}
-		result.SetUint(uint64(value))
-	case reflect.Uint64:
-		if typeNum != KindUint64 {
-			return 0, false
-		}
-		var value uint64
-		value, finalOffset, err = d.decodeUint64(size, newOffset)
-		if err != nil {
-			return 0, false
-		}
-		result.SetUint(value)
-	case reflect.Bool:
-		if typeNum != KindBool {
-			return 0, false
-		}
-		var value bool
-		value, finalOffset, err = d.decodeBool(size, newOffset)
-		if err != nil {
-			return 0, false
-		}
-		result.SetBool(value)
-	case reflect.Int32:
-		if typeNum != KindInt32 {
-			return 0, false
-		}
-		var value int32
-		value, finalOffset, err = d.decodeInt32(size, newOffset)
-		if err != nil {
-			return 0, false
-		}
-		result.SetInt(int64(value))
-	case reflect.Float32:
-		if typeNum != KindFloat32 {
-			return 0, false
-		}
-		var value float32
-		value, finalOffset, err = d.decodeFloat32(size, newOffset)
-		if err != nil {
-			return 0, false
-		}
-		result.SetFloat(float64(value))
-	case reflect.Float64:
-		if typeNum != KindFloat64 {
-			return 0, false
-		}
-		var value float64
-		value, finalOffset, err = d.decodeFloat64(size, newOffset)
-		if err != nil {
-			return 0, false
-		}
-		result.SetFloat(value)
-	case reflect.Pointer:
-		return d.tryFastDecodePointer(typeNum, size, newOffset, pointerEndOffset, result)
-	default:
-		return 0, false
-	}
-
-	if pointerEndOffset != 0 {
-		return pointerEndOffset, true
-	}
-	return finalOffset, true
-}
-
-func derefAllocPointers(result addressableValue) addressableValue {
-	for result.Kind() == reflect.Pointer {
-		if result.IsNil() {
-			result.Set(reflect.New(result.Type().Elem()))
-		}
-		result = addressableValue{Value: result.Elem()}
-	}
-	return result
-}
-
-//nolint:gocyclo,maintidx // Flat type dispatch for pointer-wrapped scalar fields.
-func (d *ReflectionDecoder) tryFastDecodePointer(
-	typeNum Kind,
-	size uint,
-	newOffset uint,
-	pointerEndOffset uint,
-	result addressableValue,
-) (uint, bool) {
-	for result.Kind() == reflect.Pointer && !result.IsNil() {
-		result = addressableValue{Value: result.Elem()}
-	}
-	kind := result.Kind()
-	isNilPtr := kind == reflect.Pointer
-	var elemType reflect.Type
-	if isNilPtr {
-		elemType = unwrapPtrType(result.Type())
-		kind = elemType.Kind()
-	}
-
-	var (
-		finalOffset uint
-		err         error
-	)
 	switch kind {
 	case reflect.Slice:
 		if isNilPtr {
@@ -3503,6 +3345,16 @@ func (d *ReflectionDecoder) tryFastDecodePointer(
 		return pointerEndOffset, true
 	}
 	return finalOffset, true
+}
+
+func derefAllocPointers(result addressableValue) addressableValue {
+	for result.Kind() == reflect.Pointer {
+		if result.IsNil() {
+			result.Set(reflect.New(result.Type().Elem()))
+		}
+		result = addressableValue{Value: result.Elem()}
+	}
+	return result
 }
 
 func (d *ReflectionDecoder) tryFastDecodeUnbudgetedString(
