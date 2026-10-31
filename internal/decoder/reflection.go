@@ -1092,13 +1092,8 @@ func (d *ReflectionDecoder) unmarshalSlice(
 		bounded := newBudgetedDecoder(d)
 		return bounded.unmarshalSlice(size, offset, result, depth)
 	}
-	if err := d.reserveActiveContainer(KindSlice, size); err != nil {
+	if err := d.reserveAndValidateSlice(size, offset, result, depth); err != nil {
 		return 0, err
-	}
-	if (result.Kind() != reflect.Slice || result.IsNil() || result.Cap() < int(size)) && size > 0 {
-		if err := d.validateContainerSize(KindSlice, size, offset, depth); err != nil {
-			return 0, err
-		}
 	}
 
 	switch result.Kind() {
@@ -1118,6 +1113,21 @@ func (d *ReflectionDecoder) unmarshalSlice(
 		// Fall through to error return
 	}
 	return 0, mmdberrors.NewUnmarshalTypeStrError("array", result.Type())
+}
+
+func (d *ReflectionDecoder) reserveAndValidateSlice(
+	size uint,
+	offset uint,
+	result addressableValue,
+	depth int,
+) error {
+	if err := d.reserveActiveContainer(KindSlice, size); err != nil {
+		return err
+	}
+	if (result.Kind() != reflect.Slice || result.IsNil() || result.Cap() < int(size)) && size > 0 {
+		return d.validateContainerSize(KindSlice, size, offset, depth)
+	}
+	return nil
 }
 
 func (d *ReflectionDecoder) validateContainerSize(
@@ -1691,6 +1701,87 @@ func (d *ReflectionDecoder) unmarshalValidatedMapKey(
 	return err
 }
 
+func (d *ReflectionDecoder) decodeSlice(
+	size uint,
+	offset uint,
+	result addressableValue,
+	depth int,
+) (uint, error) {
+	elemInfo := cachedSliceElemInfo(result.Type().Elem())
+	return d.decodeSliceElements(
+		size,
+		offset,
+		result,
+		depth,
+		elemInfo.dispatch,
+		elemInfo.structFields,
+	)
+}
+
+func (d *ReflectionDecoder) decodeSliceElements(
+	size uint,
+	dataOffset uint,
+	result addressableValue,
+	decodeDepth int,
+	elemDispatch fieldDispatch,
+	elemStructFields *fieldsType,
+) (uint, error) {
+	prepareSlice(result, int(size))
+
+	for i := range size {
+		var err error
+		elemValue := addressableValue{Value: result.Index(int(i))}
+		switch elemDispatch {
+		case dispatchString:
+			if fastOffset, ok := d.tryFastDecodeString(dataOffset, elemValue, decodeDepth); ok {
+				dataOffset = fastOffset
+				continue
+			}
+			dataOffset, err = d.decodeValueSkipUnmarshaler(dataOffset, elemValue, decodeDepth)
+		case dispatchFast:
+			if fastOffset, ok := d.tryFastDecodeTyped(dataOffset, elemValue, decodeDepth); ok {
+				dataOffset = fastOffset
+				continue
+			}
+			dataOffset, err = d.decodeValueSkipUnmarshaler(dataOffset, elemValue, decodeDepth)
+		case dispatchStruct:
+			var ok bool
+			if fastPathDepthOK(decodeDepth, true) {
+				dataOffset, ok, err = d.tryDecodeStructWithFields(
+					dataOffset,
+					elemValue,
+					decodeDepth,
+					elemStructFields,
+				)
+			}
+			if !ok {
+				dataOffset, err = d.decodeValueSkipUnmarshaler(dataOffset, elemValue, decodeDepth)
+			}
+		case dispatchPointerStruct:
+			var ok bool
+			if fastPathDepthOK(decodeDepth, true) {
+				dataOffset, ok, err = d.tryDecodePointerStructWithFields(
+					dataOffset,
+					elemValue,
+					decodeDepth,
+					elemStructFields,
+				)
+			}
+			if !ok {
+				dataOffset, err = d.decodeValueSkipUnmarshaler(dataOffset, elemValue, decodeDepth)
+			}
+		case dispatchUnmarshaler:
+			dataOffset, err = d.decodeValue(dataOffset, elemValue, decodeDepth)
+		default:
+			dataOffset, err = d.decodeValueSkipUnmarshaler(dataOffset, elemValue, decodeDepth)
+		}
+		if err != nil {
+			return 0, d.wrapErrorWithSliceIndex(err, int(i))
+		}
+	}
+	return dataOffset, nil
+}
+
 func prepareSlice(result addressableValue, sliceLen int) {
 	switch {
 	case result.IsNil() || result.Cap() < sliceLen:
@@ -1703,6 +1794,7 @@ func prepareSlice(result addressableValue, sliceLen int) {
 		}
 		result.Grow(sliceLen)
 		result.SetLen(sliceLen)
+		result.SetCap(sliceLen)
 	case result.Len() > sliceLen:
 		// Clear [0:oldLen] before shrinking so both the active prefix and the
 		// now-hidden tail (sliceLen:oldLen] are zeroed without allocating a
@@ -1713,47 +1805,6 @@ func prepareSlice(result addressableValue, sliceLen int) {
 		result.SetLen(sliceLen)
 		result.Clear()
 	}
-}
-
-func (d *ReflectionDecoder) decodeSlice(
-	size uint,
-	offset uint,
-	result addressableValue,
-	depth int,
-) (uint, error) {
-	elemType := result.Type().Elem()
-	elemMayUnmarshal := typeMayImplementUnmarshaler(elemType)
-	elemString := !elemMayUnmarshal && elemType.Kind() == reflect.String
-	elemFast := !elemMayUnmarshal && !elemString && isFastDecodeType(elemType)
-	prepareSlice(result, int(size))
-
-	for i := range size {
-		var err error
-		elemValue := addressableValue{Value: result.Index(int(i))}
-		decoded := false
-		if elemString {
-			if fastOffset, ok := d.tryFastDecodeString(offset, elemValue, depth); ok {
-				offset = fastOffset
-				decoded = true
-			}
-		} else if elemFast {
-			if fastOffset, ok := d.tryFastDecodeTyped(offset, elemValue, depth); ok {
-				offset = fastOffset
-				decoded = true
-			}
-		}
-		if !decoded {
-			if elemMayUnmarshal {
-				offset, err = d.decodeValue(offset, elemValue, depth)
-			} else {
-				offset, err = d.decodeValueSkipUnmarshaler(offset, elemValue, depth)
-			}
-			if err != nil {
-				return 0, d.wrapErrorWithSliceIndex(err, int(i))
-			}
-		}
-	}
-	return offset, nil
 }
 
 func (d *ReflectionDecoder) decodeStruct(
@@ -2067,50 +2118,22 @@ func (d *ReflectionDecoder) tryDecodeStructWithFields(
 	depth int,
 	fields *fieldsType,
 ) (newOffset uint, ok bool, err error) {
-	typeNum, size, dataOffset, err := d.decodeCtrlData(offset)
-	if err != nil {
+	size, dataOffset, pointerEndOffset, decodeDepth, ok, err := d.resolveContainerCtrlData(
+		offset,
+		depth,
+		KindMap,
+	)
+	if !ok || err != nil {
+		return offset, ok, err
+	}
+	if err := d.reserveActiveContainer(KindMap, size); err != nil {
 		return 0, true, err
 	}
-
-	switch typeNum {
-	case KindMap:
-		if err := checkNestedDepth(depth); err != nil {
-			return 0, true, err
-		}
-		if err := d.reserveActiveContainer(KindMap, size); err != nil {
-			return 0, true, err
-		}
-		newOffset, err = d.decodeStructWithFields(size, dataOffset, result, depth+1, fields)
-		return newOffset, true, err
-	case KindPointer:
-		pointer, pointerEndOffset, err := d.decodePointer(size, dataOffset)
-		if err != nil {
-			return 0, true, err
-		}
-		if err := checkNestedDepth(depth); err != nil {
-			return 0, true, err
-		}
-		typeNum, size, dataOffset, err = d.decodeCtrlData(pointer)
-		if err != nil {
-			return 0, true, err
-		}
-		if typeNum == KindPointer {
-			return 0, true, mmdberrors.NewInvalidDatabaseError(
-				"invalid pointer to pointer at offset %d",
-				pointer,
-			)
-		}
-		if typeNum != KindMap {
-			return offset, false, nil
-		}
-		if err := d.reserveActiveContainer(KindMap, size); err != nil {
-			return 0, true, err
-		}
-		_, err = d.decodeStructWithFields(size, dataOffset, result, depth+2, fields)
+	newOffset, err = d.decodeStructWithFields(size, dataOffset, result, decodeDepth, fields)
+	if pointerEndOffset != 0 {
 		return pointerEndOffset, true, err
-	default:
-		return offset, false, nil
 	}
+	return newOffset, true, err
 }
 
 // tryDecodePointerStructWithFields returns the input offset when ok is false so
@@ -2121,50 +2144,18 @@ func (d *ReflectionDecoder) tryDecodePointerStructWithFields(
 	depth int,
 	fields *fieldsType,
 ) (newOffset uint, ok bool, err error) {
-	typeNum, size, dataOffset, err := d.decodeCtrlData(offset)
-	if err != nil {
-		return 0, true, err
+	size, dataOffset, pointerEndOffset, decodeDepth, ok, err := d.resolveContainerCtrlData(
+		offset,
+		depth,
+		KindMap,
+	)
+	if !ok || err != nil {
+		return offset, ok, err
 	}
-
-	var pointerEndOffset uint
-	decodeDepth := depth + 1
-	switch typeNum {
-	case KindMap:
-		if err := checkNestedDepth(depth); err != nil {
-			return 0, true, err
-		}
-		// Use the map control record we already decoded.
-	case KindPointer:
-		var pointer uint
-		pointer, pointerEndOffset, err = d.decodePointer(size, dataOffset)
-		if err != nil {
-			return 0, true, err
-		}
-		if err := checkNestedDepth(depth); err != nil {
-			return 0, true, err
-		}
-		typeNum, size, dataOffset, err = d.decodeCtrlData(pointer)
-		if err != nil {
-			return 0, true, err
-		}
-		if typeNum == KindPointer {
-			return 0, true, mmdberrors.NewInvalidDatabaseError(
-				"invalid pointer to pointer at offset %d",
-				pointer,
-			)
-		}
-		if typeNum != KindMap {
-			return offset, false, nil
-		}
-		decodeDepth = depth + 2
-	default:
-		return offset, false, nil
-	}
-
 	if err := d.reserveActiveContainer(KindMap, size); err != nil {
 		return 0, true, err
 	}
-	newOffset, ok, err = d.decodePointerStructWithFields(
+	return d.decodePointerStructWithFields(
 		size,
 		dataOffset,
 		pointerEndOffset,
@@ -2172,23 +2163,6 @@ func (d *ReflectionDecoder) tryDecodePointerStructWithFields(
 		decodeDepth,
 		fields,
 	)
-	return newOffset, ok, err
-}
-
-func checkNestedDepth(depth int) error {
-	if fastPathDepthOK(depth, true) {
-		return nil
-	}
-	return mmdberrors.NewInvalidDatabaseError(
-		"exceeded maximum data structure depth; database is likely corrupt",
-	)
-}
-
-func fastPathDepthOK(depth int, viaPointer bool) bool {
-	if viaPointer {
-		return depth < maximumDataStructureDepth
-	}
-	return depth <= maximumDataStructureDepth
 }
 
 func (d *ReflectionDecoder) decodePointerStructWithFields(
@@ -2241,115 +2215,99 @@ func (d *ReflectionDecoder) tryDecodeSliceWithInfo(
 	depth int,
 	info *fieldInfo,
 ) (newOffset uint, ok bool, err error) {
-	if depth >= maximumDataStructureDepth {
+	if !fastPathDepthOK(depth, true) {
 		return offset, false, nil
 	}
-	typeNum, size, dataOffset, err := d.decodeCtrlData(offset)
+	if d.budgetRemaining == 0 {
+		bounded := newBudgetedDecoder(d)
+		return bounded.tryDecodeSliceWithInfo(offset, result, depth, info)
+	}
+	size, dataOffset, pointerEndOffset, decodeDepth, ok, err := d.resolveContainerCtrlData(
+		offset,
+		depth,
+		KindSlice,
+	)
+	if !ok || err != nil {
+		return offset, ok, err
+	}
+	if err := d.reserveAndValidateSlice(size, dataOffset, result, decodeDepth); err != nil {
+		return 0, true, err
+	}
+	dataOffset, err = d.decodeSliceElements(
+		size,
+		dataOffset,
+		result,
+		decodeDepth,
+		info.elemDispatch,
+		info.structFields,
+	)
 	if err != nil {
 		return 0, true, err
 	}
-
-	var pointerEndOffset uint
-	decodeDepth := depth + 1
-	switch typeNum {
-	case KindSlice:
-		// Use the slice control record we already decoded.
-	case KindPointer:
-		var pointer uint
-		pointer, pointerEndOffset, err = d.decodePointer(size, dataOffset)
-		if err != nil {
-			return 0, true, err
-		}
-		typeNum, size, dataOffset, err = d.decodeCtrlData(pointer)
-		if err != nil {
-			return 0, true, err
-		}
-		if typeNum == KindPointer {
-			return 0, true, mmdberrors.NewInvalidDatabaseError(
-				"invalid pointer to pointer at offset %d",
-				pointer,
-			)
-		}
-		if typeNum != KindSlice {
-			return offset, false, nil
-		}
-		decodeDepth = depth + 2
-	default:
-		return offset, false, nil
-	}
-
-	if err := d.reserveActiveContainer(KindSlice, size); err != nil {
-		return 0, true, err
-	}
-	if (result.IsNil() || result.Cap() < int(size)) && size > 0 {
-		if err := d.validateContainerSize(KindSlice, size, dataOffset, decodeDepth); err != nil {
-			return 0, true, err
-		}
-	}
-
-	prepareSlice(result, int(size))
-
-	for i := range size {
-		elemValue := addressableValue{Value: result.Index(int(i))}
-		switch info.elemDispatch {
-		case dispatchString:
-			fastOffset, fastOK := d.tryFastDecodeString(dataOffset, elemValue, decodeDepth)
-			if fastOK {
-				dataOffset = fastOffset
-				continue
-			}
-			dataOffset, err = d.decodeValueSkipUnmarshaler(dataOffset, elemValue, decodeDepth)
-		case dispatchFast:
-			fastOffset, fastOK := d.tryFastDecodeTyped(
-				dataOffset,
-				elemValue,
-				decodeDepth,
-			)
-			if fastOK {
-				dataOffset = fastOffset
-				continue
-			}
-			dataOffset, err = d.decodeValueSkipUnmarshaler(dataOffset, elemValue, decodeDepth)
-		case dispatchStruct:
-			var fastOK bool
-			if decodeDepth < maximumDataStructureDepth {
-				dataOffset, fastOK, err = d.tryDecodeStructWithFields(
-					dataOffset,
-					elemValue,
-					decodeDepth,
-					info.structFields,
-				)
-			}
-			if !fastOK {
-				dataOffset, err = d.decodeValueSkipUnmarshaler(dataOffset, elemValue, decodeDepth)
-			}
-		case dispatchPointerStruct:
-			var fastOK bool
-			if decodeDepth < maximumDataStructureDepth {
-				dataOffset, fastOK, err = d.tryDecodePointerStructWithFields(
-					dataOffset,
-					elemValue,
-					decodeDepth,
-					info.structFields,
-				)
-			}
-			if !fastOK {
-				dataOffset, err = d.decodeValueSkipUnmarshaler(dataOffset, elemValue, decodeDepth)
-			}
-		case dispatchUnmarshaler:
-			dataOffset, err = d.decodeValue(dataOffset, elemValue, decodeDepth)
-		default:
-			dataOffset, err = d.decodeValueSkipUnmarshaler(dataOffset, elemValue, decodeDepth)
-		}
-		if err != nil {
-			return 0, true, d.wrapErrorWithSliceIndex(err, int(i))
-		}
-	}
-
 	if pointerEndOffset != 0 {
 		return pointerEndOffset, true, nil
 	}
 	return dataOffset, true, nil
+}
+
+func (d *ReflectionDecoder) resolveContainerCtrlData(
+	offset uint,
+	depth int,
+	expectedKind Kind,
+) (size, dataOffset, pointerEndOffset uint, decodeDepth int, ok bool, err error) {
+	typeNum, size, dataOffset, err := d.decodeCtrlData(offset)
+	if err != nil {
+		return 0, 0, 0, 0, true, err
+	}
+
+	switch typeNum {
+	case expectedKind:
+		if err := checkNestedDepth(depth); err != nil {
+			return 0, 0, 0, 0, true, err
+		}
+		return size, dataOffset, 0, depth + 1, true, nil
+	case KindPointer:
+		var pointer uint
+		pointer, pointerEndOffset, err = d.decodePointer(size, dataOffset)
+		if err != nil {
+			return 0, 0, 0, 0, true, err
+		}
+		if err := checkNestedDepth(depth); err != nil {
+			return 0, 0, 0, 0, true, err
+		}
+		typeNum, size, dataOffset, err = d.decodeCtrlData(pointer)
+		if err != nil {
+			return 0, 0, 0, 0, true, err
+		}
+		if typeNum == KindPointer {
+			return 0, 0, 0, 0, true, mmdberrors.NewInvalidDatabaseError(
+				"invalid pointer to pointer at offset %d",
+				pointer,
+			)
+		}
+		if typeNum != expectedKind {
+			return 0, 0, 0, 0, false, nil
+		}
+		return size, dataOffset, pointerEndOffset, depth + 2, true, nil
+	default:
+		return 0, 0, 0, 0, false, nil
+	}
+}
+
+func checkNestedDepth(depth int) error {
+	if fastPathDepthOK(depth, true) {
+		return nil
+	}
+	return mmdberrors.NewInvalidDatabaseError(
+		"exceeded maximum data structure depth; database is likely corrupt",
+	)
+}
+
+func fastPathDepthOK(depth int, viaPointer bool) bool {
+	if viaPointer {
+		return depth < maximumDataStructureDepth
+	}
+	return depth <= maximumDataStructureDepth
 }
 
 func cleanupAllocatedPointers(
@@ -2415,7 +2373,6 @@ const (
 )
 
 type fieldInfo struct {
-	fieldType    reflect.Type
 	structFields *fieldsType
 	name         string
 	index        []int
@@ -2617,8 +2574,14 @@ func handleEmbeddedField(
 	return !hasTag
 }
 
+type sliceElemInfo struct {
+	structFields *fieldsType
+	dispatch     fieldDispatch
+}
+
 var (
 	fieldsMap        sync.Map
+	sliceElemMap     sync.Map
 	unmarshalerCache sync.Map
 )
 
@@ -2674,7 +2637,7 @@ func makeStructFields(rootType reflect.Type) *fieldsType {
 	return makeStructFieldsWithStack(rootType, map[reflect.Type]bool{rootType: true})
 }
 
-//nolint:gocyclo,maintidx // Field discovery keeps validation and precedence rules in one traversal.
+//nolint:gocyclo // Field discovery keeps validation and precedence rules in one traversal.
 func makeStructFieldsWithStack(
 	rootType reflect.Type,
 	stack map[reflect.Type]bool,
@@ -2769,36 +2732,22 @@ func makeStructFieldsWithStack(
 			switch {
 			case tagOptions.HasMaxSize && maxSizeSupported:
 				dispatch = dispatchMaxSize
-			case maxSizeCustom ||
-				unwrappedFieldType.Kind() == reflect.Interface:
-				dispatch = dispatchUnmarshaler
-			case fieldType.Kind() == reflect.String:
-				dispatch = dispatchString
-			case isFastDecodeType(fieldType):
-				dispatch = dispatchFast
-			case fieldType.Kind() == reflect.Slice && fieldType != sliceType:
+			case !maxSizeCustom && fieldType.Kind() == reflect.Slice && fieldType != sliceType:
 				dispatch = dispatchSlice
-				fieldType = fieldType.Elem()
-				elemDispatch, structFields = makeSliceElemInfo(fieldType, stack)
+				elemDispatch, structFields = classifyValueType(fieldType.Elem(), stack)
 			default:
-				dispatch = dispatchPlain
-				if unwrappedFieldType.Kind() == reflect.Struct &&
-					unwrappedFieldType != bigIntType &&
-					!stack[unwrappedFieldType] {
-					structFields = cachedFieldsForTypeWithStack(unwrappedFieldType, stack)
-					if fieldType.Kind() == reflect.Pointer {
-						dispatch = dispatchPointerStruct
-					} else {
-						dispatch = dispatchStruct
-					}
-				}
+				dispatch, structFields = classifyValueTypeWithUnwrapped(
+					fieldType,
+					unwrappedFieldType,
+					maxSizeCustom,
+					stack,
+				)
 			}
 			allFields = append(allFields, fieldInfo{
 				index:         fieldIndex, // Will be reindexed later for optimization
 				name:          fieldName,
 				hasTag:        hasTag,
 				depth:         entry.depth,
-				fieldType:     fieldType,
 				structFields:  structFields,
 				dispatch:      dispatch,
 				elemDispatch:  elemDispatch,
@@ -2876,6 +2825,58 @@ func makeStructFieldsWithStack(
 	fields.reindex()
 
 	return fields
+}
+
+func cachedSliceElemInfo(elemType reflect.Type) sliceElemInfo {
+	if info, ok := sliceElemMap.Load(elemType); ok {
+		return info.(sliceElemInfo)
+	}
+	dispatch, structFields := classifyValueType(elemType, nil)
+	info := sliceElemInfo{
+		structFields: structFields,
+		dispatch:     dispatch,
+	}
+	actual, _ := sliceElemMap.LoadOrStore(elemType, info)
+	return actual.(sliceElemInfo)
+}
+
+func classifyValueType(
+	t reflect.Type,
+	stack map[reflect.Type]bool,
+) (fieldDispatch, *fieldsType) {
+	unwrapped := unwrapPtrType(t)
+	return classifyValueTypeWithUnwrapped(
+		t,
+		unwrapped,
+		mayImplementUnmarshaler(unwrapped),
+		stack,
+	)
+}
+
+func classifyValueTypeWithUnwrapped(
+	t reflect.Type,
+	unwrapped reflect.Type,
+	mayUnmarshal bool,
+	stack map[reflect.Type]bool,
+) (fieldDispatch, *fieldsType) {
+	switch {
+	case mayUnmarshal || unwrapped.Kind() == reflect.Interface:
+		return dispatchUnmarshaler, nil
+	case t.Kind() == reflect.String:
+		return dispatchString, nil
+	case isFastDecodeType(t):
+		return dispatchFast, nil
+	case unwrapped.Kind() == reflect.Struct &&
+		unwrapped != bigIntType &&
+		!stack[unwrapped]:
+		structFields := cachedFieldsForTypeWithStack(unwrapped, stack)
+		if t.Kind() == reflect.Pointer {
+			return dispatchPointerStruct, structFields
+		}
+		return dispatchStruct, structFields
+	default:
+		return dispatchPlain, nil
+	}
 }
 
 func validateRawMaxMindDBTagValue(field reflect.StructField, rawTag string) error {
@@ -3047,32 +3048,6 @@ func (d *ReflectionDecoder) decodeAny(
 	}
 	_, err = d.decodeFromType(kind, size, dataOffset, result, depth+1)
 	return err
-}
-
-func makeSliceElemInfo(
-	elemType reflect.Type,
-	stack map[reflect.Type]bool,
-) (fieldDispatch, *fieldsType) {
-	unwrappedElemType := unwrapPtrType(elemType)
-	switch {
-	case unwrappedElemType.Kind() == reflect.Interface ||
-		mayImplementUnmarshaler(unwrappedElemType):
-		return dispatchUnmarshaler, nil
-	case elemType.Kind() == reflect.String:
-		return dispatchString, nil
-	case isFastDecodeType(elemType):
-		return dispatchFast, nil
-	case unwrappedElemType.Kind() == reflect.Struct &&
-		unwrappedElemType != bigIntType &&
-		!stack[unwrappedElemType]:
-		elemStructFields := cachedFieldsForTypeWithStack(unwrappedElemType, stack)
-		if elemType.Kind() == reflect.Pointer {
-			return dispatchPointerStruct, elemStructFields
-		}
-		return dispatchStruct, elemStructFields
-	default:
-		return dispatchPlain, nil
-	}
 }
 
 // fieldByIndex efficiently accesses a field by its index path,
