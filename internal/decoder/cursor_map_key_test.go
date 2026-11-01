@@ -124,7 +124,7 @@ func FuzzCursorReadMapKey(f *testing.F) {
 func assertMapKeyMatchesSlow(t *testing.T, cursor Cursor) {
 	t.Helper()
 	key, next, err := cursor.ReadMapKey()
-	wantKey, wantNext, wantErr := cursor.readMapKeySlow()
+	wantKey, wantNext, wantErr := readMapKeyReference(cursor)
 	if wantErr != nil {
 		require.EqualError(t, err, wantErr.Error())
 		require.Equal(t, reflect.TypeOf(wantErr), reflect.TypeOf(err))
@@ -133,27 +133,27 @@ func assertMapKeyMatchesSlow(t *testing.T, cursor Cursor) {
 	}
 	require.Equal(t, wantKey, key)
 	require.Equal(t, wantNext, next)
+	if err == nil {
+		_, cacheOffset, nextOffset, decodeErr := cursor.decoder.decodeKeyAt(cursor.offset)
+		require.NoError(t, decodeErr)
+		_, wantCacheOffset, wantNextOffset, slowErr := cursor.decoder.decodeKeyAtSlow(
+			cursor.offset, uint(len(cursor.decoder.buffer)),
+		)
+		require.NoError(t, slowErr)
+		require.Equal(t, wantCacheOffset, cacheOffset)
+		require.Equal(t, wantNextOffset, nextOffset)
+	}
 }
 
-func BenchmarkCursorReadMapKey(b *testing.B) {
-	for _, size := range []int{2, 28, 29, 284, 285} {
-		data := append([]byte{0x20, 2}, stringLeaf(size)...)
-		cursor := NewDecoder(NewDataDecoderWithoutStringCache(data), 0).Cursor()
-		for _, method := range []struct {
-			name string
-			read func() ([]byte, Cursor, error)
-		}{
-			{"fast", cursor.ReadMapKey},
-			{"general", cursor.readMapKeySlow},
-		} {
-			b.Run(fmt.Sprintf("size%d/%s", size, method.name), func(b *testing.B) {
-				b.ReportAllocs()
-				for b.Loop() {
-					if _, _, err := method.read(); err != nil {
-						b.Fatal(err)
-					}
-				}
-			})
-		}
+func readMapKeyReference(cursor Cursor) ([]byte, Cursor, error) {
+	if err := cursor.validate(); err != nil {
+		return nil, Cursor{}, err
 	}
+	key, _, next, err := cursor.decoder.decodeKeyAtSlow(
+		cursor.offset, uint(len(cursor.decoder.buffer)),
+	)
+	if err != nil {
+		return nil, Cursor{}, cursor.wrapError(err)
+	}
+	return key, Cursor{decoder: cursor.decoder, offset: next}, nil
 }

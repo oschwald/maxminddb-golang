@@ -934,47 +934,7 @@ func (m *MapCursor) End() (Cursor, error) {
 // returned key aliases the decoder input and must not be modified. Copy it
 // before retaining it. ReadMapKey supports the generated counted-map loop used
 // by maxminddb-gen.
-//
-//nolint:nestif,revive // Decode common key pointers without the general decoder call chain.
 func (c Cursor) ReadMapKey() ([]byte, Cursor, error) {
-	// Real databases reuse keys near the start of the data section. Handle
-	// one-byte pointer payloads here, including keys with a one-byte size
-	// extension such as autonomous_system_organization.
-	if c.decoder != nil {
-		buffer := c.decoder.buffer
-		bufferLen := uint(len(buffer))
-		if c.offset < bufferLen && bufferLen-c.offset >= 2 {
-			ctrl := buffer[c.offset]
-			if ctrl&0xf8 == 0x20 {
-				pointer := uint(ctrl&7)<<8 | uint(buffer[c.offset+1])
-				if pointer < bufferLen {
-					pointedCtrl := buffer[pointer]
-					size := uint(pointedCtrl & 0x1f)
-					start := pointer + 1
-					if Kind(pointedCtrl>>5) == KindString && size <= 29 {
-						if size == 29 {
-							if start >= bufferLen {
-								return c.readMapKeySlow()
-							}
-							size += uint(buffer[start])
-							start++
-						}
-						if size <= bufferLen-start {
-							return buffer[start : start+size], Cursor{
-								decoder: c.decoder,
-								offset:  c.offset + 2,
-							}, nil
-						}
-					}
-				}
-			}
-		}
-	}
-	return c.readMapKeySlow()
-}
-
-//go:noinline
-func (c Cursor) readMapKeySlow() ([]byte, Cursor, error) {
 	if err := c.validate(); err != nil {
 		return nil, Cursor{}, err
 	}

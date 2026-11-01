@@ -520,7 +520,7 @@ func TestDecodeKeyRejectsPointerToPointer(t *testing.T) {
 
 // TestDecodeKeyAtPointerExtendedSize verifies that a pointer targeting a
 // string whose size requires the extended encoding (size byte >= 29) is
-// handled correctly via the slow-path fall-through. A regression that
+// handled correctly. A regression that
 // accepted the raw `pointedSize` byte as the string length would either
 // truncate the key (reading only 29 bytes instead of the full string) or
 // read past the buffer.

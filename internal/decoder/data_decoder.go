@@ -591,19 +591,21 @@ func (d *DataDecoder) decodeKeyAt(offset uint) ([]byte, uint, uint, error) {
 
 	ctrlByte := buffer[offset]
 	size := uint(ctrlByte & 0x1f)
-	// Fast paths for the two dominant key shapes (inline short string or
-	// pointer to short string across all 4 pointer widths). Everything else —
-	// including KindString with size >= 29 (extended encoding) and any
-	// fast-path bail-out — falls through to decodeKeyAtSlow.
+	// Decode compact and one-byte-extended string sizes inline, including
+	// pointer targets across all four widths. Other encodings and malformed
+	// inputs fall through to the general decoder.
 	switch Kind(ctrlByte >> 5) {
 	case KindString:
+		dataOffset := offset + 1
 		if size < 29 {
-			dataOffset := offset + 1
 			newOffset := dataOffset + size
 			if newOffset > bufferLen {
 				return nil, 0, 0, mmdberrors.NewOffsetError()
 			}
 			return buffer[dataOffset:newOffset], offset, newOffset, nil
+		}
+		if key, end := extendedKeyBytes(buffer, dataOffset, size); key != nil {
+			return key, offset, end, nil
 		}
 	case KindPointer:
 		if size < 8 {
@@ -618,6 +620,9 @@ func (d *DataDecoder) decodeKeyAt(offset uint) ([]byte, uint, uint, error) {
 						if pointedSize < 29 && dataOffset+pointedSize <= bufferLen {
 							return buffer[dataOffset : dataOffset+pointedSize],
 								pointer, newOffset, nil
+						}
+						if key, _ := extendedKeyBytes(buffer, dataOffset, pointedSize); key != nil {
+							return key, pointer, newOffset, nil
 						}
 					}
 				}
@@ -645,6 +650,9 @@ func (d *DataDecoder) decodeKeyAt(offset uint) ([]byte, uint, uint, error) {
 							return buffer[dataOffset : dataOffset+pointedSize],
 								pointer, newOffset, nil
 						}
+						if key, _ := extendedKeyBytes(buffer, dataOffset, pointedSize); key != nil {
+							return key, pointer, newOffset, nil
+						}
 					}
 				}
 			}
@@ -653,6 +661,22 @@ func (d *DataDecoder) decodeKeyAt(offset uint) ([]byte, uint, uint, error) {
 	}
 
 	return d.decodeKeyAtSlow(offset, bufferLen)
+}
+
+// extendedKeyBytes reads a string with a one-byte size extension. A nil key
+// sends unsupported or malformed encodings to the general decoder.
+func extendedKeyBytes(buffer []byte, dataOffset, size uint) ([]byte, uint) {
+	bufferLen := uint(len(buffer))
+	if size != 29 || dataOffset >= bufferLen {
+		return nil, 0
+	}
+	size += uint(buffer[dataOffset])
+	dataOffset++
+	if size > bufferLen-dataOffset {
+		return nil, 0
+	}
+	end := dataOffset + size
+	return buffer[dataOffset:end], end
 }
 
 //go:noinline
