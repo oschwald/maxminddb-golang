@@ -776,7 +776,7 @@ func (d *ReflectionDecoder) decodeValueImpl(
 	}
 
 	if typeNum != KindPointer && result.Kind() == reflect.Uintptr {
-		result.Set(reflect.ValueOf(uintptr(offset)))
+		result.SetUint(uint64(offset))
 		return d.nextValueOffsetBudgeted(offset, 1)
 	}
 	return d.decodeFromType(typeNum, size, newOffset, result, depth+1)
