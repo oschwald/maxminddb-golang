@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fixed `Networks` and `NetworksWithin` omitting IPv6 networks that share a
+  data record with the record reached by IPv4 lookups.
 - Fixed a panic when decoding record offsets into named `uintptr` types.
   Offset decoding also avoids temporary boxing allocations.
 
