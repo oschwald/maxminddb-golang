@@ -141,22 +141,20 @@ func TestBadDataFixtures(t *testing.T) {
 				require.ErrorContains(t, reader.Verify(), tt.verifyError)
 			}
 
-			if tt.lookupIP == "" {
-				return
-			}
+			if tt.lookupIP != "" {
+				result := reader.Lookup(netip.MustParseAddr(tt.lookupIP))
+				if tt.lookupError != "" {
+					require.ErrorContains(t, result.Err(), tt.lookupError)
+				} else {
+					require.NoError(t, result.Err())
+				}
 
-			result := reader.Lookup(netip.MustParseAddr(tt.lookupIP))
-			if tt.lookupError != "" {
-				require.ErrorContains(t, result.Err(), tt.lookupError)
-			} else {
-				require.NoError(t, result.Err())
-			}
-
-			var value any
-			if tt.decodeError != "" {
-				require.ErrorContains(t, result.Decode(&value), tt.decodeError)
-			} else {
-				require.NoError(t, result.Decode(&value))
+				var value any
+				if tt.decodeError != "" {
+					require.ErrorContains(t, result.Decode(&value), tt.decodeError)
+				} else {
+					require.NoError(t, result.Decode(&value))
+				}
 			}
 
 			if tt.iterateCount == 0 {
