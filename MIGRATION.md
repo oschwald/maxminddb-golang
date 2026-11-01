@@ -59,8 +59,8 @@
 - Replace the v1 iterator pattern (`for networks.Next() { ... networks.Network(&record) }`)
   with the Go 1.23 iteration shown above. `Decode` returns any iterator or
   lookup error, so separate calls to `Result.Err()` are rarely needed.
-- Options such as `SkipAliasedNetworks` now use an options pattern. Pass them as
-  `Networks(SkipAliasedNetworks())` or `NetworksWithin(prefix, SkipEmptyValues())`.
+- Aliased IPv4 networks are skipped by default in v2. To include them, pass
+  `IncludeAliasedNetworks()` to `Networks()` or `NetworksWithin(prefix)`.
 - New helpers include `SkipEmptyValues()` to omit entries with empty maps and
   `IncludeNetworksWithoutData()` to keep networks that lack data records.
 
