@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Corrected the v1-to-v2 migration guide to use `IncludeAliasedNetworks()`;
+  aliased IPv4 networks are skipped by default.
 - Fixed a panic when decoding record offsets into named `uintptr` types.
   Offset decoding also avoids temporary boxing allocations.
 
