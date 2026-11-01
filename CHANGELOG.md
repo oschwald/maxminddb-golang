@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fixed unsigned integers overflowing signed destinations during reflection
+  decoding. Out-of-range values now return an error instead of wrapping.
 - Fixed a panic when decoding record offsets into named `uintptr` types.
   Offset decoding also avoids temporary boxing allocations.
 

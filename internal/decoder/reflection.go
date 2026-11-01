@@ -1482,10 +1482,21 @@ func (d *ReflectionDecoder) unmarshalUint(
 		return 0, err
 	}
 
-	// Fast path for exact type matches (inspired by json/v2 fast paths)
+	// Handle signed destinations and fast-path common unsigned matches.
 	switch result.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		n := int64(value)
+		if !result.OverflowInt(n) && n >= 0 {
+			result.SetInt(n)
+			return newOffset, nil
+		}
+	case reflect.Uint:
+		if !result.OverflowUint(value) {
+			result.SetUint(value)
+			return newOffset, nil
+		}
 	case reflect.Uint32:
-		if uintType == 32 && value <= 0xFFFFFFFF {
+		if value <= 0xFFFFFFFF {
 			result.SetUint(value)
 			return newOffset, nil
 		}
@@ -1509,14 +1520,7 @@ func (d *ReflectionDecoder) unmarshalUint(
 	}
 
 	switch result.Kind() {
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		n := int64(value)
-		if !result.OverflowInt(n) {
-			result.SetInt(n)
-			return newOffset, nil
-		}
-	case reflect.Uint,
-		reflect.Uint8,
+	case reflect.Uint8,
 		reflect.Uint16,
 		reflect.Uint32,
 		reflect.Uint64,
