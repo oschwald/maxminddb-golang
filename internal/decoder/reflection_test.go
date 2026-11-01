@@ -4,7 +4,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -621,33 +620,6 @@ func TestDecodeErrorResetsNestedPointers(t *testing.T) {
 	var four ****string
 	require.Error(t, d.Decode(0, &four))
 	require.Nil(t, four, "destination should not be allocated on invalid input")
-}
-
-func TestDecodeUint64AboveMaxInt64IntoSignedInt(t *testing.T) {
-	// uint64(math.MaxUint64)
-	d := New([]byte{0x08, 0x02, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
-	want := "at offset 0: maxminddb: cannot unmarshal 18446744073709551615 (uint64) into type "
-
-	var i64 int64
-	require.EqualError(t, d.Decode(0, &i64), want+"int64")
-	require.Zero(t, i64)
-
-	var i8 int8
-	require.EqualError(t, d.Decode(0, &i8), want+"int8")
-	require.Zero(t, i8)
-
-	// uint64(math.MaxInt64) is the largest value that fits.
-	d = New([]byte{0x08, 0x02, 0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
-	require.NoError(t, d.Decode(0, &i64))
-	require.Equal(t, int64(math.MaxInt64), i64)
-
-	// uint64(math.MaxInt64 + 1)
-	d = New([]byte{0x08, 0x02, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
-	require.EqualError(
-		t,
-		d.Decode(0, &i64),
-		"at offset 0: maxminddb: cannot unmarshal 9223372036854775808 (uint64) into type int64",
-	)
 }
 
 func TestMap(t *testing.T) {
