@@ -5,6 +5,9 @@
 - Reduced map-key decoding overhead for strings with a one-byte size extension
   (29–284 bytes), including inline keys and all pointer widths. Generated,
   reflection, and iterator decoders share this optimization. GitHub #267.
+- Borrowed map-key slices now have capacity equal to their length. Appending
+  allocates a new slice instead of overwriting subsequent database bytes.
+  Direct modification of borrowed keys remains unsupported. GitHub #267.
 
 ## 2.9.0 - 2026-10-31
 

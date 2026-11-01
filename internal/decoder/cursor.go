@@ -931,9 +931,9 @@ func (m *MapCursor) End() (Cursor, error) {
 }
 
 // ReadMapKey reads a map key and returns a cursor positioned at its value. The
-// returned key aliases the decoder input and must not be modified. Copy it
-// before retaining it. ReadMapKey supports the generated counted-map loop used
-// by maxminddb-gen.
+// returned key aliases the decoder input and must not be modified. Its capacity
+// equals its length. Copy it before retaining it. ReadMapKey supports the
+// generated counted-map loop used by maxminddb-gen.
 func (c Cursor) ReadMapKey() ([]byte, Cursor, error) {
 	if err := c.validate(); err != nil {
 		return nil, Cursor{}, err

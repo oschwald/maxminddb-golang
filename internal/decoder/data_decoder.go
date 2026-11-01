@@ -602,7 +602,7 @@ func (d *DataDecoder) decodeKeyAt(offset uint) ([]byte, uint, uint, error) {
 			if newOffset > bufferLen {
 				return nil, 0, 0, mmdberrors.NewOffsetError()
 			}
-			return buffer[dataOffset:newOffset], offset, newOffset, nil
+			return buffer[dataOffset:newOffset:newOffset], offset, newOffset, nil
 		}
 		if key, end := extendedKeyBytes(buffer, dataOffset, size); key != nil {
 			return key, offset, end, nil
@@ -618,7 +618,7 @@ func (d *DataDecoder) decodeKeyAt(offset uint) ([]byte, uint, uint, error) {
 						pointedSize := uint(pointedCtrlByte & 0x1f)
 						dataOffset := pointer + 1
 						if pointedSize < 29 && dataOffset+pointedSize <= bufferLen {
-							return buffer[dataOffset : dataOffset+pointedSize],
+							return buffer[dataOffset : dataOffset+pointedSize : dataOffset+pointedSize],
 								pointer, newOffset, nil
 						}
 						if key, _ := extendedKeyBytes(buffer, dataOffset, pointedSize); key != nil {
@@ -647,7 +647,7 @@ func (d *DataDecoder) decodeKeyAt(offset uint) ([]byte, uint, uint, error) {
 						pointedSize := uint(pointedCtrlByte & 0x1f)
 						dataOffset := pointer + 1
 						if pointedSize < 29 && dataOffset+pointedSize <= bufferLen {
-							return buffer[dataOffset : dataOffset+pointedSize],
+							return buffer[dataOffset : dataOffset+pointedSize : dataOffset+pointedSize],
 								pointer, newOffset, nil
 						}
 						if key, _ := extendedKeyBytes(buffer, dataOffset, pointedSize); key != nil {
@@ -676,7 +676,7 @@ func extendedKeyBytes(buffer []byte, dataOffset, size uint) ([]byte, uint) {
 		return nil, 0
 	}
 	end := dataOffset + size
-	return buffer[dataOffset:end], end
+	return buffer[dataOffset:end:end], end
 }
 
 //go:noinline
@@ -709,7 +709,7 @@ func (d *DataDecoder) decodeKeyAtSlow(offset, bufferLen uint) ([]byte, uint, uin
 	if dataOffset < headerSize {
 		return nil, 0, 0, mmdberrors.NewOffsetError()
 	}
-	return d.buffer[dataOffset:newOffset], dataOffset - headerSize, nextOffset, nil
+	return d.buffer[dataOffset:newOffset:newOffset], dataOffset - headerSize, nextOffset, nil
 }
 
 //go:noinline
