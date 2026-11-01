@@ -1,5 +1,10 @@
 # Changes
 
+## Unreleased
+
+- Fixed a panic when decoding record offsets into named `uintptr` types.
+  Offset decoding also avoids temporary boxing allocations.
+
 ## 2.9.0 - 2026-10-31
 
 - Improved lookup and decoding performance:
