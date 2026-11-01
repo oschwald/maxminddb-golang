@@ -173,9 +173,10 @@ func (r *Reader) NetworksWithin(prefix netip.Prefix, options ...NetworksOption) 
 					break
 				}
 				// This skips IPv4 aliases without hardcoding the networks that the writer
-				// currently aliases.
+				// currently aliases. A shared data record is not an aliased subtree.
 				if !n.includeAliasedNetworks && r.ipv4Start != 0 &&
-					node.pointer == r.ipv4Start && !isInIPv4Subtree(node.ip) {
+					node.pointer == r.ipv4Start && r.ipv4Start < r.Metadata.NodeCount &&
+					!isInIPv4Subtree(node.ip) {
 					break
 				}
 
