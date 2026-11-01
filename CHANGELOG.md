@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fixed generated decoders accepting finite values just outside the `float32`
+  range. Generated decoding now matches reflection's overflow checks.
 - Fixed a panic when decoding record offsets into named `uintptr` types.
   Offset decoding also avoids temporary boxing allocations.
 
