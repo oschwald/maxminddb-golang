@@ -358,7 +358,7 @@ func maxminddbGenDecodeRecord(cursor mmdbdata.Cursor, out *Record) (mmdbdata.Cur
 			value10, next, err = valueCursor.ReadFloat()
 			if err == nil {
 				converted10 := float32(value10)
-				if math.IsInf(float64(converted10), 0) && !math.IsInf(value10, 0) {
+				if math.Abs(value10) > math.MaxFloat32 && !math.IsInf(value10, 0) {
 					err = mmdbdata.NewUnmarshalTypeError[float32](value10)
 				} else {
 					out.Temperature = converted10

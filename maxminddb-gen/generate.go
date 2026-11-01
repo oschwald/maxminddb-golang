@@ -1885,10 +1885,11 @@ func (g *generator) emitBasic(
 		if basic.Kind() == types.Float32 {
 			fmt.Fprintf(
 				out,
-				"%s\tif %s.IsInf(float64(converted%d), 0) && !%s.IsInf(value%d, 0) {\n",
+				"%s\tif %s.Abs(value%d) > %s.MaxFloat32 && !%s.IsInf(value%d, 0) {\n",
 				pad,
 				g.importNames[mathPath],
 				id,
+				g.importNames[mathPath],
 				g.importNames[mathPath],
 				id,
 			)
