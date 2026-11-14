@@ -610,6 +610,18 @@ func TestDecodeRejectsOversizedContainersBeforeAllocation(t *testing.T) {
 	}
 }
 
+func TestDecodeErrorResetsNestedPointers(t *testing.T) {
+	// A string header that claims 5 bytes, with 1 byte present.
+	d := NewWithoutStringCache([]byte{0x45, 'a'})
+	var out ***string
+	require.Error(t, d.Decode(0, &out))
+	require.Nil(t, out, "destination should not be allocated on invalid input")
+
+	var four ****string
+	require.Error(t, d.Decode(0, &four))
+	require.Nil(t, four, "destination should not be allocated on invalid input")
+}
+
 func TestMap(t *testing.T) {
 	maps := map[string]any{
 		"e0":                             map[string]any{},
