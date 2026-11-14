@@ -626,37 +626,14 @@ func (d *ReflectionDecoder) decodeValueImpl(
 	result addressableValue,
 	depth int,
 	checkUnmarshaler bool,
-) (newOffset uint, retErr error) {
+) (uint, error) {
 	if depth > maximumDataStructureDepth {
 		return 0, mmdberrors.NewInvalidDatabaseError(
 			"exceeded maximum data structure depth; database is likely corrupt",
 		)
 	}
 
-	var allocated1, allocated2 reflect.Value
-	var allocatedMore []reflect.Value
-	allocatedCount := 0
-
-	defer func() {
-		if retErr == nil {
-			return
-		}
-		switch allocatedCount {
-		case 0:
-			// no-op
-		case 1:
-			allocated1.SetZero()
-		case 2:
-			allocated2.SetZero()
-			allocated1.SetZero()
-		default:
-			for _, pointer := range slices.Backward(allocatedMore) {
-				pointer.SetZero()
-			}
-			allocated2.SetZero()
-			allocated1.SetZero()
-		}
-	}()
+	var allocated allocatedPointers
 
 	// Apply the original indirect logic to handle pointers and interfaces properly
 	for {
@@ -676,15 +653,7 @@ func (d *ReflectionDecoder) decodeValueImpl(
 
 		if result.IsNil() {
 			result.Set(reflect.New(result.Type().Elem()))
-			switch allocatedCount {
-			case 0:
-				allocated1 = result.Value
-			case 1:
-				allocated2 = result.Value
-			default:
-				allocatedMore = append(allocatedMore, result.Value)
-			}
-			allocatedCount++
+			allocated.record(result.Value)
 		}
 
 		result = addressableValue{
@@ -698,20 +667,32 @@ func (d *ReflectionDecoder) decodeValueImpl(
 	// destination cannot match, avoiding reflective type assertions entirely.
 	if checkUnmarshaler && result.CanAddr() && mayImplementUnmarshaler(result.Type()) {
 		if next, handled, err := d.tryCustomUnmarshal(offset, result.Addr()); handled {
+			if err != nil {
+				allocated.rollback()
+			}
 			return next, err
 		}
 	}
 
 	typeNum, size, newOffset, err := d.decodeCtrlData(offset)
 	if err != nil {
+		allocated.rollback()
 		return 0, err
 	}
 
 	if typeNum != KindPointer && result.Kind() == reflect.Uintptr {
 		result.SetUint(uint64(offset))
-		return d.nextValueOffsetBudgeted(offset, 1)
+		next, err := d.nextValueOffsetBudgeted(offset, 1)
+		if err != nil {
+			allocated.rollback()
+		}
+		return next, err
 	}
-	return d.decodeFromType(typeNum, size, newOffset, result, depth+1)
+	next, err := d.decodeFromType(typeNum, size, newOffset, result, depth+1)
+	if err != nil {
+		allocated.rollback()
+	}
+	return next, err
 }
 
 func (d *ReflectionDecoder) tryCustomUnmarshal(
@@ -2168,32 +2149,22 @@ func (d *ReflectionDecoder) decodePointerStructWithFields(
 	decodeDepth int,
 	fields *fieldsType,
 ) (newOffset uint, ok bool, err error) {
-	var allocated1, allocated2 reflect.Value
-	var allocatedMore []reflect.Value
-	allocatedCount := 0
+	var allocated allocatedPointers
 	for result.Kind() == reflect.Pointer {
 		if result.IsNil() {
 			result.Set(reflect.New(result.Type().Elem()))
-			switch allocatedCount {
-			case 0:
-				allocated1 = result.Value
-			case 1:
-				allocated2 = result.Value
-			default:
-				allocatedMore = append(allocatedMore, result.Value)
-			}
-			allocatedCount++
+			allocated.record(result.Value)
 		}
 		result = addressableValue{Value: result.Elem()}
 	}
 
 	if result.Kind() != reflect.Struct {
-		cleanupAllocatedPointers(allocatedCount, allocated1, allocated2, allocatedMore)
+		allocated.rollback()
 		return 0, false, nil
 	}
 	newOffset, err = d.decodeStructWithFields(size, dataOffset, result, decodeDepth, fields)
 	if err != nil {
-		cleanupAllocatedPointers(allocatedCount, allocated1, allocated2, allocatedMore)
+		allocated.rollback()
 		return 0, true, err
 	}
 	if pointerEndOffset != 0 {
@@ -2287,25 +2258,40 @@ func fastPathDepthOK(depth int, viaPointer bool) bool {
 	return depth <= maximumDataStructureDepth
 }
 
-func cleanupAllocatedPointers(
-	allocatedCount int,
-	allocated1, allocated2 reflect.Value,
-	allocatedMore []reflect.Value,
-) {
-	switch allocatedCount {
+type allocatedPointers struct {
+	first  reflect.Value
+	second reflect.Value
+	more   []reflect.Value
+	count  int
+}
+
+func (a *allocatedPointers) record(v reflect.Value) {
+	switch a.count {
+	case 0:
+		a.first = v
+	case 1:
+		a.second = v
+	default:
+		a.more = append(a.more, v)
+	}
+	a.count++
+}
+
+func (a *allocatedPointers) rollback() {
+	switch a.count {
 	case 0:
 		// no-op
 	case 1:
-		allocated1.SetZero()
+		a.first.SetZero()
 	case 2:
-		allocated2.SetZero()
-		allocated1.SetZero()
+		a.second.SetZero()
+		a.first.SetZero()
 	default:
-		for _, pointer := range slices.Backward(allocatedMore) {
+		for _, pointer := range slices.Backward(a.more) {
 			pointer.SetZero()
 		}
-		allocated2.SetZero()
-		allocated1.SetZero()
+		a.second.SetZero()
+		a.first.SetZero()
 	}
 }
 
