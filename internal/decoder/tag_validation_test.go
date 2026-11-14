@@ -61,7 +61,7 @@ func TestValidateTag(t *testing.T) {
 				Type: reflect.TypeFor[string](),
 			}
 
-			err := validateTag(field, tt.tag)
+			_, err := parseFieldTag(field, tt.tag)
 
 			if tt.expectError {
 				require.Error(t, err, tt.description)

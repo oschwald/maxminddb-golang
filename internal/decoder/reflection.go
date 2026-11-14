@@ -2452,27 +2452,12 @@ type queueEntry struct {
 	depth int   // Embedding depth
 }
 
-// validateTag performs basic validation of maxminddb struct tags.
-func validateTag(field reflect.StructField, tag string) error {
-	if tag == "" || tag == "-" {
-		return nil
-	}
-
-	_, err := maxminddbtag.Parse(tag)
+func parseFieldTag(field reflect.StructField, tag string) (maxminddbtag.Options, error) {
+	options, err := maxminddbtag.Parse(tag)
 	if err != nil {
-		if !utf8.ValidString(tag) {
-			return invalidMaxMindDBTagError(field.Name)
-		}
-		return fmt.Errorf("invalid maxminddb struct tag on field %q: %w", field.Name, err)
+		return options, fmt.Errorf("invalid maxminddb struct tag on field %q: %w", field.Name, err)
 	}
-	return nil
-}
-
-func invalidMaxMindDBTagError(fieldName string) error {
-	return fmt.Errorf(
-		"invalid maxminddb struct tag on field %q: must be valid UTF-8",
-		fieldName,
-	)
+	return options, nil
 }
 
 // getEmbeddedStructType returns the struct type for embedded fields.
@@ -2613,17 +2598,10 @@ func makeStructFieldsWithStack(
 				validationErr = validateRawMaxMindDBTagValue(field, string(field.Tag))
 			}
 			if tag, ok := field.Tag.Lookup("maxminddb"); ok {
-				if validationErr == nil {
-					validationErr = validateTag(field, tag)
-				}
 				var err error
-				tagOptions, err = maxminddbtag.Parse(tag)
+				tagOptions, err = parseFieldTag(field, tag)
 				if validationErr == nil && err != nil {
-					validationErr = fmt.Errorf(
-						"invalid maxminddb struct tag on field %q: %w",
-						field.Name,
-						err,
-					)
+					validationErr = err
 				}
 
 				if tagOptions.Ignored {
@@ -2831,7 +2809,10 @@ func validateRawMaxMindDBTagValue(field reflect.StructField, rawTag string) erro
 	}
 
 	if !utf8.ValidString(rawTag[start : start+end]) {
-		return invalidMaxMindDBTagError(field.Name)
+		return fmt.Errorf(
+			"invalid maxminddb struct tag on field %q: must be valid UTF-8",
+			field.Name,
+		)
 	}
 
 	return nil
