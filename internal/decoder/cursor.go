@@ -136,8 +136,7 @@ func (c Cursor) Kind() (Kind, error) {
 	if err := c.validate(); err != nil {
 		return 0, err
 	}
-	//nolint:dogsled // Only the resolved kind is needed.
-	kind, _, _, _, err := c.decoder.resolveCtrlData(c.offset)
+	kind, err := c.decoder.resolveKind(c.offset)
 	if err != nil {
 		return 0, c.wrapError(err)
 	}

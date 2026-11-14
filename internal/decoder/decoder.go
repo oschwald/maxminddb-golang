@@ -254,7 +254,7 @@ func (d *Decoder) ReadMap() (iter.Seq2[[]byte, error], uint, error) {
 		for i := range size {
 			key, keyEndOffset, err := d.d.decodeKey(currentOffset)
 			if err != nil {
-				yield(nil, d.wrapErrorAtOffset(err, currentOffset))
+				yield(nil, wrapErrorAtOffset(err, currentOffset))
 				return
 			}
 
