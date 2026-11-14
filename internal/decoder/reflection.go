@@ -1395,32 +1395,6 @@ func (d *ReflectionDecoder) unmarshalUint(
 		return 0, err
 	}
 
-	// Fast path for exact type matches (inspired by json/v2 fast paths)
-	switch result.Kind() {
-	case reflect.Uint32:
-		if uintType == 32 && value <= 0xFFFFFFFF {
-			result.SetUint(value)
-			return newOffset, nil
-		}
-	case reflect.Uint64:
-		if uintType == 64 {
-			result.SetUint(value)
-			return newOffset, nil
-		}
-	case reflect.Uint16:
-		if uintType == 16 && value <= 0xFFFF {
-			result.SetUint(value)
-			return newOffset, nil
-		}
-	case reflect.Uint8:
-		if uintType == 16 && value <= 0xFF { // uint8 often stored as uint16 in MMDB
-			result.SetUint(value)
-			return newOffset, nil
-		}
-	default:
-		// Fall through to general unmarshaling logic
-	}
-
 	switch result.Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		n := int64(value)
