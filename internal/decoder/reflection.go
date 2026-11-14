@@ -649,25 +649,6 @@ func wrapErrorWithPath(err error, prepend func(*mmdberrors.PathBuilder)) error {
 	return mmdberrors.WrapWithContext(err, 0, pathBuilder)
 }
 
-func (d *ReflectionDecoder) decode(
-	offset uint,
-	result reflect.Value,
-) (uint, error) {
-	// Skip makeAddressable's boxing copy whenever result is already addressable.
-	// The common Decode(&v) entry passes a non-addressable pointer, but its
-	// Elem() is addressable, so we can decode through it directly. Callers that
-	// already supplied an addressable Value (e.g., a struct field) take the
-	// CanAddr branch. Only non-addressable, non-pointer values need
-	// makeAddressable, which allocates.
-	if result.Kind() == reflect.Pointer && !result.IsNil() {
-		return d.decodeValue(offset, addressableValue{Value: result.Elem()}, 0)
-	}
-	if result.CanAddr() {
-		return d.decodeValue(offset, addressableValue{Value: result}, 0)
-	}
-	return d.decodeValue(offset, makeAddressable(result), 0)
-}
-
 func (d *ReflectionDecoder) decodeValue(
 	offset uint,
 	result addressableValue,
@@ -732,7 +713,7 @@ func (d *ReflectionDecoder) decodeValueImpl(
 		if result.Kind() == reflect.Interface && !result.IsNil() {
 			e := result.Elem()
 			if e.Kind() == reflect.Pointer && !e.IsNil() {
-				result = addressableValue{e, result.forcedAddr}
+				result = addressableValue{Value: e}
 				continue
 			}
 		}
@@ -755,8 +736,7 @@ func (d *ReflectionDecoder) decodeValueImpl(
 		}
 
 		result = addressableValue{
-			result.Elem(),
-			false,
+			Value: result.Elem(),
 		} // dereferenced pointer is always addressable
 	}
 
@@ -1873,8 +1853,7 @@ func (d *ReflectionDecoder) decodeStructWithFields(
 		}
 
 		fieldValue := addressableValue{
-			Value:      result.Field(fieldInfo.index0),
-			forcedAddr: result.forcedAddr,
+			Value: result.Field(fieldInfo.index0),
 		}
 		if len(fieldInfo.index) != 0 {
 			var skip bool
@@ -2961,25 +2940,10 @@ func (fs *fieldsType) reindex() {
 	}
 }
 
-// addressableValue wraps a reflect.Value to optimize field access and
-// embedded pointer handling. Based on encoding/json/v2 patterns.
+// addressableValue wraps an addressable reflect.Value to optimize field access
+// and embedded pointer handling.
 type addressableValue struct {
 	reflect.Value
-
-	forcedAddr bool
-}
-
-// makeAddressable converts a reflect.Value to addressableValue, short-circuiting
-// the reflect.New allocation when the value is already addressable. Non-addressable
-// values are boxed via reflect.New so a pointer can be taken for downstream code
-// that requires it.
-func makeAddressable(v reflect.Value) addressableValue {
-	if v.CanAddr() {
-		return addressableValue{Value: v}
-	}
-	addressable := reflect.New(v.Type()).Elem()
-	addressable.Set(v)
-	return addressableValue{Value: addressable, forcedAddr: true}
 }
 
 // isFastDecodeType determines if a field type can use optimized decode paths.
@@ -3104,7 +3068,7 @@ func (av addressableValue) fieldByIndex(
 	mayAlloc bool,
 ) addressableValue {
 	// First field access (optimized with no bounds check)
-	av = addressableValue{av.Field(index0), av.forcedAddr}
+	av = addressableValue{Value: av.Field(index0)}
 
 	// Handle remaining indices if any
 	if len(remainingIndex) > 0 {
@@ -3123,7 +3087,7 @@ func (av addressableValue) fieldByIndexSlow(
 		if !av.IsValid() {
 			return av
 		}
-		av = addressableValue{av.Field(i), av.forcedAddr}
+		av = addressableValue{Value: av.Field(i)}
 	}
 	return av
 }
