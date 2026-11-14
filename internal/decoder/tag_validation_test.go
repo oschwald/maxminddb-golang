@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestValidateTag(t *testing.T) {
+func TestParseFieldTag(t *testing.T) {
 	tests := []struct {
 		name        string
 		fieldName   string
@@ -61,11 +61,15 @@ func TestValidateTag(t *testing.T) {
 				Type: reflect.TypeFor[string](),
 			}
 
-			err := validateTag(field, tt.tag)
+			_, err := parseFieldTag(field, tt.tag)
 
 			if tt.expectError {
 				require.Error(t, err, tt.description)
-				assert.Contains(t, err.Error(), tt.fieldName, "Error should mention field name")
+				assert.EqualError(
+					t,
+					err,
+					`invalid maxminddb struct tag on field "`+tt.fieldName+`": must be valid UTF-8`,
+				)
 			} else {
 				assert.NoError(t, err, tt.description)
 			}
