@@ -119,13 +119,6 @@ func (r *Reader) NetworksWithin(prefix netip.Prefix, options ...NetworksOption) 
 			stopBit += 96
 		}
 
-		if stopBit > 128 {
-			yield(Result{
-				err: errors.New("invalid prefix: exceeds IPv6 maximum of 128 bits"),
-			})
-			return
-		}
-
 		pointer, bit, err := r.traverseTree(ip, 0, stopBit)
 		if err != nil {
 			yield(Result{
@@ -206,13 +199,8 @@ func (r *Reader) NetworksWithin(prefix netip.Prefix, options ...NetworksOption) 
 				}
 				ipRight := node.ip.As16()
 				if len(ipRight) <= int(node.bit>>3) {
-					displayAddr := node.ip
-					if isInIPv4Subtree(node.ip) {
-						displayAddr = v6ToV4(displayAddr)
-					}
-
 					res := Result{
-						ip:        displayAddr,
+						ip:        mappedIP(node.ip),
 						prefixLen: uint8(node.bit),
 					}
 					res.err = mmdberrors.NewInvalidDatabaseError(
