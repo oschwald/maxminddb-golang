@@ -42,24 +42,27 @@ func TestWrapError_ContextWhenError(t *testing.T) {
 	require.Equal(t, originalErr, contextErr.Err)
 }
 
-func TestPathBuilder(t *testing.T) {
-	builder := mmdberrors.NewPathBuilder()
+func TestPrependPath(t *testing.T) {
+	baseErr := mmdberrors.NewInvalidDatabaseError("test error")
 
-	// Test basic path building
-	require.Equal(t, "/", builder.Build())
+	err := mmdberrors.PrependPath(baseErr, "city")
+	var contextErr mmdberrors.ContextualError
+	require.ErrorAs(t, err, &contextErr)
+	require.Equal(t, "/city", contextErr.Path)
 
-	builder.PrependMap("city")
-	require.Equal(t, "/city", builder.Build())
+	err = mmdberrors.PrependPath(err, "names")
+	require.ErrorAs(t, err, &contextErr)
+	require.Equal(t, "/names/city", contextErr.Path)
 
-	builder.PrependMap("names")
-	require.Equal(t, "/names/city", builder.Build())
+	err = mmdberrors.PrependIndex(err, 0)
+	require.ErrorAs(t, err, &contextErr)
+	require.Equal(t, "/0/names/city", contextErr.Path)
 
-	builder = mmdberrors.NewPathBuilder()
-	builder.ParseAndExtend("/city/names")
-	require.Equal(t, "/city/names", builder.Build())
-
-	builder.PrependSlice(0)
-	require.Equal(t, "/0/city/names", builder.Build())
+	// Empty keys and keys containing slashes are preserved verbatim.
+	err = mmdberrors.PrependPath(baseErr, "")
+	err = mmdberrors.PrependPath(err, "a/b")
+	require.ErrorAs(t, err, &contextErr)
+	require.Equal(t, "/a/b/", contextErr.Path)
 }
 
 // Benchmark to verify zero allocation on happy path.
@@ -98,16 +101,13 @@ func BenchmarkWrapError_ErrorPath(b *testing.B) {
 
 // Example showing the API in action.
 func ExampleContextualError() {
-	// This would be internal to the decoder, shown for illustration
-	builder := mmdberrors.NewPathBuilder()
-	builder.PrependMap("en")
-	builder.PrependMap("names")
-	builder.PrependMap("city")
-
 	// Simulate an error with context
 	originalErr := mmdberrors.NewInvalidDatabaseError("string too long")
 
-	wrappedErr := mmdberrors.WrapWithContext(originalErr, 1234, builder)
+	wrappedErr := mmdberrors.WrapWithContext(originalErr, 1234)
+	wrappedErr = mmdberrors.PrependPath(wrappedErr, "en")
+	wrappedErr = mmdberrors.PrependPath(wrappedErr, "names")
+	wrappedErr = mmdberrors.PrependPath(wrappedErr, "city")
 
 	fmt.Println(wrappedErr.Error())
 	// Output: at offset 1234, path /city/names/en: string too long
