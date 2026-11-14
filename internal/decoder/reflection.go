@@ -69,32 +69,29 @@ func NewWithoutStringCache(buffer []byte) ReflectionDecoder {
 // IsEmptyValueAt checks if the value at the given offset is an empty map or array.
 // Returns true if the value is a map or array with size 0.
 func (d *ReflectionDecoder) IsEmptyValueAt(offset uint) (bool, error) {
-	dataOffset := offset
-	followedPointers := 0
-	for {
-		kindNum, size, newOffset, err := d.decodeCtrlData(dataOffset)
+	kindNum, size, newOffset, err := d.decodeCtrlData(offset)
+	if err != nil {
+		return false, err
+	}
+
+	if kindNum == KindPointer {
+		pointer, _, err := d.decodePointer(size, newOffset)
 		if err != nil {
 			return false, err
 		}
-
-		if kindNum == KindPointer {
-			if followedPointers > 0 {
-				return false, mmdberrors.NewInvalidDatabaseError(
-					"invalid pointer to pointer at offset %d",
-					dataOffset,
-				)
-			}
-			followedPointers++
-			dataOffset, _, err = d.decodePointer(size, newOffset)
-			if err != nil {
-				return false, err
-			}
-			continue
+		kindNum, size, _, err = d.decodeCtrlData(pointer)
+		if err != nil {
+			return false, err
 		}
-
-		// Check if it's a map or array with size 0
-		return (kindNum == KindMap || kindNum == KindSlice) && size == 0, nil
+		if kindNum == KindPointer {
+			return false, mmdberrors.NewInvalidDatabaseError(
+				"invalid pointer to pointer at offset %d",
+				pointer,
+			)
+		}
 	}
+
+	return (kindNum == KindMap || kindNum == KindSlice) && size == 0, nil
 }
 
 // Decode decodes the data value at offset and stores it in the value
