@@ -468,33 +468,38 @@ PATH:
 			size    uint
 			err     error
 		)
+		valueOffset := offset
 		typeNum, size, offset, err = d.decodeCtrlData(offset)
 		if err != nil {
-			return err
+			return mmdberrors.WrapWithContext(err, valueOffset)
 		}
 
 		if typeNum == KindPointer {
 			pointer, _, err := d.decodePointer(size, offset)
 			if err != nil {
-				return err
+				return mmdberrors.WrapWithContext(err, valueOffset)
 			}
 
 			typeNum, size, offset, err = d.decodeCtrlData(pointer)
 			if err != nil {
-				return err
+				return mmdberrors.WrapWithContext(err, pointer)
 			}
 
 			// Check for pointer-to-pointer after we've already read the data
 			if typeNum == KindPointer {
-				return mmdberrors.NewInvalidDatabaseError(
-					"invalid pointer to pointer at offset %d",
-					pointer,
+				return mmdberrors.WrapWithContext(
+					mmdberrors.NewInvalidDatabaseError(
+						"invalid pointer to pointer at offset %d",
+						pointer,
+					),
+					valueOffset,
 				)
 			}
+			valueOffset = pointer
 		}
 		if typeNum.IsContainer() {
 			if err := d.reserveActiveContainer(typeNum, size); err != nil {
-				return mmdberrors.WrapWithContext(err, offset)
+				return mmdberrors.WrapWithContext(err, valueOffset)
 			}
 		}
 
@@ -502,20 +507,23 @@ PATH:
 		case string:
 			// We are expecting a map
 			if typeNum != KindMap {
-				return fmt.Errorf("expected a map for %s but found %s", v, typeNum.String())
+				return mmdberrors.WrapWithContext(
+					fmt.Errorf("expected a map for %s but found %s", v, typeNum.String()),
+					valueOffset,
+				)
 			}
 			for range size {
 				var key []byte
 				key, offset, err = d.decodePathKey(offset)
 				if err != nil {
-					return err
+					return mmdberrors.WrapWithContext(err, valueOffset)
 				}
 				if string(key) == v {
 					continue PATH
 				}
 				offset, err = d.nextValueOffsetBudgeted(offset, 1)
 				if err != nil {
-					return err
+					return mmdberrors.WrapWithContext(err, valueOffset)
 				}
 			}
 			// Not found. Maybe return a boolean?
@@ -523,7 +531,10 @@ PATH:
 		case int:
 			// We are expecting an array
 			if typeNum != KindSlice {
-				return fmt.Errorf("expected a slice for %d but found %s", v, typeNum.String())
+				return mmdberrors.WrapWithContext(
+					fmt.Errorf("expected a slice for %d but found %s", v, typeNum.String()),
+					valueOffset,
+				)
 			}
 			var i uint
 			if v < 0 {
@@ -541,7 +552,7 @@ PATH:
 			}
 			offset, err = d.nextValueOffsetBudgeted(offset, i)
 			if err != nil {
-				return err
+				return mmdberrors.WrapWithContext(err, valueOffset)
 			}
 		default:
 			return fmt.Errorf("unexpected path element at index %d (%v): %T", i, v, v)
@@ -554,7 +565,7 @@ PATH:
 		case *any:
 			err := d.decodeAnyWithBudget(offset, resultValue, len(path))
 			if err != nil {
-				return mmdberrors.WrapWithContext(err, offset)
+				return wrapRootDecodeError(err, offset)
 			}
 			return nil
 		case *string, *[]byte:
@@ -574,7 +585,7 @@ PATH:
 		len(path),
 	)
 	if err != nil {
-		return mmdberrors.WrapWithContext(err, offset)
+		return wrapRootDecodeError(err, offset)
 	}
 	return nil
 }

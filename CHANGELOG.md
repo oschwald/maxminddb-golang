@@ -13,6 +13,9 @@
 - Error paths now keep empty map keys and empty parts of a key that contains
   a slash. For example, the key `a//b` now shows as `/a//b`. Before, it
   showed as `/a/b`.
+- `DecodePath` errors now have one offset and one path. Before, an error
+  from a nested value had two offsets, and the second offset was always 0.
+  An error from the path lookup now includes an offset.
 
 ## 2.9.0 - 2026-10-31
 
