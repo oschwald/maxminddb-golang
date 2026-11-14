@@ -4,6 +4,15 @@
 
 - Fixed a panic when decoding record offsets into named `uintptr` types.
   Offset decoding also avoids temporary boxing allocations.
+- Reflection decoding now keeps an error wrapper that a nested
+  `UnmarshalMaxMindDB` or `UnmarshalMaxMindDBCursor` method returns. This
+  includes the field context that `maxminddb-gen` decoders add. Before, the
+  decoder dropped the wrapper, and `errors.Is` did not find an error in it.
+  The error text for these cases now starts with the offset of the record and
+  includes the wrapper text.
+- Error paths now keep empty map keys and empty parts of a key that contains
+  a slash. For example, the key `a//b` now shows as `/a//b`. Before, it
+  showed as `/a/b`.
 
 ## 2.9.0 - 2026-10-31
 

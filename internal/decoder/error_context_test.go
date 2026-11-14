@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 
@@ -42,24 +43,73 @@ func TestWrapError_ContextWhenError(t *testing.T) {
 	require.Equal(t, originalErr, contextErr.Err)
 }
 
-func TestPathBuilder(t *testing.T) {
-	builder := mmdberrors.NewPathBuilder()
+func TestPrependPath(t *testing.T) {
+	baseErr := mmdberrors.NewInvalidDatabaseError("test error")
 
-	// Test basic path building
-	require.Equal(t, "/", builder.Build())
+	err := mmdberrors.PrependPath(baseErr, "city")
+	var contextErr mmdberrors.ContextualError
+	require.ErrorAs(t, err, &contextErr)
+	require.Equal(t, "/city", contextErr.Path)
 
-	builder.PrependMap("city")
-	require.Equal(t, "/city", builder.Build())
+	err = mmdberrors.PrependPath(err, "names")
+	require.ErrorAs(t, err, &contextErr)
+	require.Equal(t, "/names/city", contextErr.Path)
 
-	builder.PrependMap("names")
-	require.Equal(t, "/names/city", builder.Build())
+	err = mmdberrors.PrependIndex(err, 0)
+	require.ErrorAs(t, err, &contextErr)
+	require.Equal(t, "/0/names/city", contextErr.Path)
 
-	builder = mmdberrors.NewPathBuilder()
-	builder.ParseAndExtend("/city/names")
-	require.Equal(t, "/city/names", builder.Build())
+	// Empty keys and keys containing slashes are preserved verbatim.
+	err = mmdberrors.PrependPath(baseErr, "")
+	err = mmdberrors.PrependPath(err, "a/b")
+	require.ErrorAs(t, err, &contextErr)
+	require.Equal(t, "/a/b/", contextErr.Path)
 
-	builder.PrependSlice(0)
-	require.Equal(t, "/0/city/names", builder.Build())
+	// A wrapper above a ContextualError stays in the chain.
+	sentinel := errors.New("sentinel")
+	wrapped := fmt.Errorf("%w: %w", sentinel, mmdberrors.WrapWithContext(baseErr, 3))
+	err = mmdberrors.PrependPath(wrapped, "city")
+	require.ErrorIs(t, err, sentinel)
+	require.EqualError(t, err, "at offset 0, path /city: sentinel: at offset 3: test error")
+}
+
+var errWrappedCursor = errors.New("wrapped cursor error")
+
+type wrappingCursorUnmarshaler struct{}
+
+func (*wrappingCursorUnmarshaler) UnmarshalMaxMindDBCursor(c Cursor) (Cursor, error) {
+	_, next, err := c.ReadString()
+	if err != nil {
+		return Cursor{}, fmt.Errorf("decoding name (%w): %w", errWrappedCursor, err)
+	}
+	return next, nil
+}
+
+func TestDecodeKeepsUnmarshalerErrorWrappers(t *testing.T) {
+	// map{"a": uint16(1)}. The uint16 is at offset 3.
+	d := New([]byte{0xe1, 0x41, 'a', 0xa1, 0x01})
+
+	var nested struct {
+		A wrappingCursorUnmarshaler `maxminddb:"a"`
+	}
+	err := d.Decode(0, &nested)
+	require.ErrorIs(t, err, errWrappedCursor)
+	require.EqualError(
+		t,
+		err,
+		"at offset 0, path /a: decoding name (wrapped cursor error): "+
+			"at offset 3: unexpected kind Uint16, expected String",
+	)
+
+	var root *wrappingCursorUnmarshaler
+	err = d.Decode(3, &root)
+	require.ErrorIs(t, err, errWrappedCursor)
+	require.EqualError(
+		t,
+		err,
+		"decoding name (wrapped cursor error): "+
+			"at offset 3: unexpected kind Uint16, expected String",
+	)
 }
 
 // Benchmark to verify zero allocation on happy path.
@@ -78,6 +128,9 @@ func BenchmarkWrapError_HappyPath(b *testing.B) {
 	}
 }
 
+// A real caller returns the error. The sink makes the error escape here too.
+var wrapErrorSink any
+
 // Benchmark to show allocation only occurs on error path.
 func BenchmarkWrapError_ErrorPath(b *testing.B) {
 	buffer := []byte{0x44, 't', 'e', 's', 't'} // String "test"
@@ -89,25 +142,22 @@ func BenchmarkWrapError_ErrorPath(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		err := decoder.wrapError(originalErr)
-		if err == nil {
-			b.Fatal("expected error")
-		}
+		wrapErrorSink = decoder.wrapError(originalErr)
+	}
+	if wrapErrorSink == nil {
+		b.Fatal("expected error")
 	}
 }
 
 // Example showing the API in action.
 func ExampleContextualError() {
-	// This would be internal to the decoder, shown for illustration
-	builder := mmdberrors.NewPathBuilder()
-	builder.PrependMap("en")
-	builder.PrependMap("names")
-	builder.PrependMap("city")
-
 	// Simulate an error with context
 	originalErr := mmdberrors.NewInvalidDatabaseError("string too long")
 
-	wrappedErr := mmdberrors.WrapWithContext(originalErr, 1234, builder)
+	wrappedErr := mmdberrors.WrapWithContext(originalErr, 1234)
+	wrappedErr = mmdberrors.PrependPath(wrappedErr, "en")
+	wrappedErr = mmdberrors.PrependPath(wrappedErr, "names")
+	wrappedErr = mmdberrors.PrependPath(wrappedErr, "city")
 
 	fmt.Println(wrappedErr.Error())
 	// Output: at offset 1234, path /city/names/en: string too long

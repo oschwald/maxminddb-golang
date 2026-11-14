@@ -434,19 +434,20 @@ func (d *ReflectionDecoder) nextValueOffsetBudgetedSlow(
 
 func wrapRootDecodeError(err error, offset uint) error {
 	// Check if error already has context (including path), if so just add offset if missing
-	if contextErr, ok := errors.AsType[mmdberrors.ContextualError](err); ok {
-		if contextErr.Offset != 0 || offset == 0 {
-			return err
+	//nolint:errorlint // Only a direct ContextualError is changed, to preserve wrappers.
+	if contextErr, ok := err.(mmdberrors.ContextualError); ok {
+		if contextErr.Offset == 0 && offset != 0 {
+			contextErr.Offset = offset
+			return contextErr
 		}
-		pathBuilder := mmdberrors.NewPathBuilder()
-		if contextErr.Path != "" && contextErr.Path != "/" {
-			pathBuilder.ParseAndExtend(contextErr.Path)
-		}
-		return mmdberrors.WrapWithContext(contextErr.Err, offset, pathBuilder)
+		return err
+	}
+	if _, ok := errors.AsType[mmdberrors.ContextualError](err); ok {
+		return err
 	}
 
 	// Plain error, add offset
-	return mmdberrors.WrapWithContext(err, offset, nil)
+	return mmdberrors.WrapWithContext(err, offset)
 }
 
 //nolint:gocyclo // Keep path navigation and final depth validation together.
@@ -493,7 +494,7 @@ PATH:
 		}
 		if typeNum.IsContainer() {
 			if err := d.reserveActiveContainer(typeNum, size); err != nil {
-				return d.wrapError(err, offset)
+				return mmdberrors.WrapWithContext(err, offset)
 			}
 		}
 
@@ -553,7 +554,7 @@ PATH:
 		case *any:
 			err := d.decodeAnyWithBudget(offset, resultValue, len(path))
 			if err != nil {
-				return d.wrapError(err, offset)
+				return mmdberrors.WrapWithContext(err, offset)
 			}
 			return nil
 		case *string, *[]byte:
@@ -573,7 +574,7 @@ PATH:
 		len(path),
 	)
 	if err != nil {
-		return d.wrapError(err, offset)
+		return mmdberrors.WrapWithContext(err, offset)
 	}
 	return nil
 }
@@ -602,51 +603,6 @@ func (d *ReflectionDecoder) decodePathKey(offset uint) ([]byte, uint, error) {
 		return nil, 0, err
 	}
 	return key, nextOffset, nil
-}
-
-// wrapError wraps an error with context information when an error occurs.
-// Zero allocation on happy path - only allocates when error != nil.
-func (*ReflectionDecoder) wrapError(err error, offset uint) error {
-	if err == nil {
-		return nil
-	}
-	// Only wrap with context when an error actually occurs
-	return mmdberrors.WrapWithContext(err, offset, nil)
-}
-
-// wrapErrorWithMapKey wraps an error with map key context, building path retroactively.
-// Zero allocation on happy path - only allocates when error != nil.
-func (*ReflectionDecoder) wrapErrorWithMapKey(err error, key string) error {
-	return wrapErrorWithPath(err, func(pathBuilder *mmdberrors.PathBuilder) {
-		pathBuilder.PrependMap(key)
-	})
-}
-
-// wrapErrorWithSliceIndex wraps an error with slice index context, building path retroactively.
-// Zero allocation on happy path - only allocates when error != nil.
-func (*ReflectionDecoder) wrapErrorWithSliceIndex(err error, index int) error {
-	return wrapErrorWithPath(err, func(pathBuilder *mmdberrors.PathBuilder) {
-		pathBuilder.PrependSlice(index)
-	})
-}
-
-func wrapErrorWithPath(err error, prepend func(*mmdberrors.PathBuilder)) error {
-	if err == nil {
-		return nil
-	}
-
-	if contextErr, ok := errors.AsType[mmdberrors.ContextualError](err); ok {
-		pathBuilder := mmdberrors.NewPathBuilder()
-		if contextErr.Path != "" && contextErr.Path != "/" {
-			pathBuilder.ParseAndExtend(contextErr.Path)
-		}
-		prepend(pathBuilder)
-		return mmdberrors.WrapWithContext(contextErr.Err, contextErr.Offset, pathBuilder)
-	}
-
-	pathBuilder := mmdberrors.NewPathBuilder()
-	prepend(pathBuilder)
-	return mmdberrors.WrapWithContext(err, 0, pathBuilder)
 }
 
 func (d *ReflectionDecoder) decodeValue(
@@ -1617,7 +1573,7 @@ func (d *ReflectionDecoder) decodeMap(
 				_, err = d.decodeValue(keyOffset, keyValue, depth)
 			}
 			if err != nil {
-				return 0, d.wrapErrorWithMapKey(err, string(key))
+				return 0, mmdberrors.PrependPath(err, string(key))
 			}
 		}
 
@@ -1638,7 +1594,7 @@ func (d *ReflectionDecoder) decodeMap(
 				offset, err = d.decodeValueSkipUnmarshaler(offset, elemValue, depth)
 			}
 			if err != nil {
-				return 0, d.wrapErrorWithMapKey(err, keyValue.String())
+				return 0, mmdberrors.PrependPath(err, keyValue.String())
 			}
 		}
 
@@ -1719,7 +1675,7 @@ func (d *ReflectionDecoder) decodeSliceElements(
 			var err error
 			dataOffset, err = d.decodeValueSkipUnmarshaler(dataOffset, elemValue, decodeDepth)
 			if err != nil {
-				return 0, d.wrapErrorWithSliceIndex(err, int(i))
+				return 0, mmdberrors.PrependIndex(err, int(i))
 			}
 		}
 		return dataOffset, nil
@@ -1767,7 +1723,7 @@ func (d *ReflectionDecoder) decodeSliceElements(
 			dataOffset, err = d.decodeValueSkipUnmarshaler(dataOffset, elemValue, decodeDepth)
 		}
 		if err != nil {
-			return 0, d.wrapErrorWithSliceIndex(err, int(i))
+			return 0, mmdberrors.PrependIndex(err, int(i))
 		}
 	}
 	return dataOffset, nil
@@ -1942,7 +1898,7 @@ func (d *ReflectionDecoder) decodeStructWithFields(
 			offset, err = d.decodeValueSkipUnmarshaler(offset, fieldValue, depth)
 		}
 		if err != nil {
-			return 0, d.wrapErrorWithMapKey(err, string(key))
+			return 0, mmdberrors.PrependPath(err, string(key))
 		}
 	}
 	return offset, nil
@@ -1965,7 +1921,7 @@ func (d *ReflectionDecoder) resolveEmbeddedStructField(
 				offset:  offset,
 			}).CheckMaxSize(fieldInfo.maxSizeKinds, fieldInfo.maxSize)
 			if err != nil {
-				return addressableValue{}, 0, false, d.wrapErrorWithMapKey(err, string(key))
+				return addressableValue{}, 0, false, mmdberrors.PrependPath(err, string(key))
 			}
 		}
 		fieldValue = result.fieldByIndex(fieldInfo.index0, fieldInfo.index, true)
@@ -2066,7 +2022,7 @@ func (d *ReflectionDecoder) decodeValueMaxSize(
 		return d.checkMaxSizeThenDecode(offset, result, depth, expected, maximum)
 	}
 	if expected.Contains(typeNum) && uint64(size) > maximum {
-		return 0, d.wrapError(mmdberrors.NewInvalidDatabaseError(
+		return 0, mmdberrors.WrapWithContext(mmdberrors.NewInvalidDatabaseError(
 			"%s size %d exceeds maxsize %d",
 			typeNum,
 			size,

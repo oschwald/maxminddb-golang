@@ -647,7 +647,7 @@ func (m MapReader) Size() (uint, error) {
 		m.dataOffset,
 	)
 	if err != nil {
-		return 0, wrapErrorAtOffset(err, m.valueOrigin)
+		return 0, mmdberrors.WrapWithContext(err, m.valueOrigin)
 	}
 	return m.size, nil
 }
@@ -890,7 +890,7 @@ func (m *MapCursor) Next(successor Cursor) ([]byte, Cursor, bool) {
 	}
 	key, valueOffset, err := m.decoder.decodeKey(m.offset)
 	if err != nil {
-		m.err = wrapErrorAtOffset(err, m.offset)
+		m.err = mmdberrors.WrapWithContext(err, m.offset)
 		return nil, Cursor{}, false
 	}
 	m.offset = valueOffset
@@ -967,7 +967,7 @@ func (s *SliceCursor) Size() (uint, error) {
 		s.dataOffset,
 	)
 	if err != nil {
-		s.err = wrapErrorAtOffset(err, s.valueOrigin)
+		s.err = mmdberrors.WrapWithContext(err, s.valueOrigin)
 		return 0, s.err
 	}
 	return s.size, nil
@@ -1109,7 +1109,7 @@ func (c Cursor) validate() error {
 }
 
 func (c Cursor) wrapError(err error) error {
-	return wrapErrorAtOffset(err, c.offset)
+	return mmdberrors.WrapWithContext(err, c.offset)
 }
 
 func (c Cursor) unexpectedKind(expected, actual Kind) error {
