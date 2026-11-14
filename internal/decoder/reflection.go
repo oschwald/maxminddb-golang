@@ -1508,6 +1508,7 @@ func (d *ReflectionDecoder) decodeMap(
 		// Reuse keyValue by zeroing it
 		keyValue.SetZero()
 		keyOffset := offset
+		var rawKey []byte
 		if plainStringKey {
 			var key string
 			if d.budgetRemaining == 0 {
@@ -1520,14 +1521,13 @@ func (d *ReflectionDecoder) decodeMap(
 			}
 			keyValue.SetString(key)
 		} else {
-			var key []byte
-			key, offset, err = d.decodeKey(offset)
+			rawKey, offset, err = d.decodeKey(offset)
 			if err != nil {
 				return 0, err
 			}
 			// Custom callbacks bypass reflection's payload accounting.
 			if customKey && d.budgetRemaining != 0 {
-				if err := d.reserveExactPayload(uint(len(key))); err != nil {
+				if err := d.reserveExactPayload(uint(len(rawKey))); err != nil {
 					return 0, err
 				}
 			}
@@ -1539,7 +1539,7 @@ func (d *ReflectionDecoder) decodeMap(
 				_, err = d.decodeValue(keyOffset, keyValue, depth)
 			}
 			if err != nil {
-				return 0, mmdberrors.PrependPath(err, string(key))
+				return 0, mmdberrors.PrependPath(err, string(rawKey))
 			}
 		}
 
@@ -1560,7 +1560,12 @@ func (d *ReflectionDecoder) decodeMap(
 				offset, err = d.decodeValueSkipUnmarshaler(offset, elemValue, depth)
 			}
 			if err != nil {
-				return 0, mmdberrors.PrependPath(err, keyValue.String())
+				// Report the database key. Only a plain string key is sure
+				// to hold the same text.
+				if plainStringKey {
+					return 0, mmdberrors.PrependPath(err, keyValue.String())
+				}
+				return 0, mmdberrors.PrependPath(err, string(rawKey))
 			}
 		}
 

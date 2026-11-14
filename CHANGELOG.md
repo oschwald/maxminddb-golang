@@ -16,6 +16,10 @@
 - `DecodePath` errors now have one offset and one path. Before, an error
   from a nested value had two offsets, and the second offset was always 0.
   An error from the path lookup now includes an offset.
+- The error path for a value in a map now shows the database key for every
+  key type. Before, a key type that is not a string showed a placeholder, for
+  example `<interface {} Value>` for `map[any]T`. A key type with a custom
+  unmarshaler showed the text that the unmarshaler stored.
 
 ## 2.9.0 - 2026-10-31
 

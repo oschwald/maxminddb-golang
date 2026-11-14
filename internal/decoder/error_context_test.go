@@ -112,6 +112,36 @@ func TestDecodeKeepsUnmarshalerErrorWrappers(t *testing.T) {
 	)
 }
 
+type prefixingMapKey string
+
+func (k *prefixingMapKey) UnmarshalMaxMindDBCursor(c Cursor) (Cursor, error) {
+	value, next, err := c.ReadString()
+	if err != nil {
+		return Cursor{}, err
+	}
+	*k = prefixingMapKey("prefix-" + value)
+	return next, nil
+}
+
+func TestMapErrorPathUsesKey(t *testing.T) {
+	// map{"a": uint16(1)}
+	d := New([]byte{0xe1, 0x41, 'a', 0xa1, 0x01})
+	want := "at offset 0, path /a: maxminddb: cannot unmarshal 1 (uint64) into type string"
+
+	var stringKeys map[string]string
+	require.EqualError(t, d.Decode(0, &stringKeys), want)
+
+	var anyKeys map[any]string
+	require.EqualError(t, d.Decode(0, &anyKeys), want)
+
+	var pointerKeys map[*string]string
+	require.EqualError(t, d.Decode(0, &pointerKeys), want)
+
+	// The path shows the database key, not the text that the key type stores.
+	var customKeys map[prefixingMapKey]string
+	require.EqualError(t, d.Decode(0, &customKeys), want)
+}
+
 // Benchmark to verify zero allocation on happy path.
 func BenchmarkWrapError_HappyPath(b *testing.B) {
 	buffer := []byte{0x44, 't', 'e', 's', 't'} // String "test"
