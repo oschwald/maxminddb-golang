@@ -42,7 +42,7 @@ func VerifyMetadata(buffer []byte) error {
 // VerifyDataSection verifies the data section against the provided
 // offsets from the tree. Each top-level value must be a search-tree target.
 // A target can also be the start of a field nested in a top-level value.
-func (d *ReflectionDecoder) VerifyDataSection(offsets map[uint]bool) error {
+func (d *ReflectionDecoder) VerifyDataSection(offsets map[uint]struct{}) error {
 	pointerCount := len(offsets)
 
 	var offset uint

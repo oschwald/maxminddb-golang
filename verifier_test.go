@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var verifiedOffsetsSink map[uint]bool
+var verifiedOffsetsSink map[uint]struct{}
 
 func BenchmarkVerify(b *testing.B) {
 	for _, name := range []string{"GeoIP2-City-Test.mmdb", "GeoIP2-Country-Test.mmdb"} {
@@ -75,7 +75,7 @@ func TestVerifySearchTreeBoundsDAGTraversal(t *testing.T) {
 	}}
 	offsets, stateCount, err := v.verifySearchTreeWithStateCount()
 	require.NoError(t, err)
-	assert.Equal(t, map[uint]bool{0: true}, offsets)
+	assert.Equal(t, map[uint]struct{}{0: {}}, offsets)
 	assert.Equal(t, nodeCount, stateCount)
 }
 
@@ -160,7 +160,7 @@ func TestVerifySearchTreeChecksMemoizedSubtreeHeight(t *testing.T) {
 				require.ErrorContains(t, err, "path exceeds 128 bits")
 			} else {
 				require.NoError(t, err)
-				assert.Equal(t, map[uint]bool{0: true}, offsets)
+				assert.Equal(t, map[uint]struct{}{0: {}}, offsets)
 			}
 			assert.Equal(t, test.nodeCount, stateCount)
 		})

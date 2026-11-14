@@ -15,7 +15,7 @@ type verifier struct {
 
 type searchTreeWalker struct {
 	reader     *Reader
-	offsets    map[uint]bool
+	offsets    map[uint]struct{}
 	nodeStates []uint8
 	stateCount uint
 }
@@ -86,7 +86,7 @@ func (w *searchTreeWalker) verifyPointer(pointer, bitDepth uint) (uint8, error) 
 	if err != nil {
 		return 0, err
 	}
-	w.offsets[uint(offset)] = true
+	w.offsets[uint(offset)] = struct{}{}
 	return 0, nil
 }
 
@@ -228,13 +228,13 @@ func (v *verifier) verifyDatabase() error {
 	return v.reader.decoder.VerifyDataSection(offsets)
 }
 
-func (v *verifier) verifySearchTree() (map[uint]bool, error) {
+func (v *verifier) verifySearchTree() (map[uint]struct{}, error) {
 	offsets, _, err := v.verifySearchTreeWithStateCount()
 	return offsets, err
 }
 
-func (v *verifier) verifySearchTreeWithStateCount() (map[uint]bool, uint, error) {
-	offsets := make(map[uint]bool)
+func (v *verifier) verifySearchTreeWithStateCount() (map[uint]struct{}, uint, error) {
+	offsets := make(map[uint]struct{})
 	reader := v.reader
 	nodeCount := reader.Metadata.NodeCount
 	if reader.Metadata.RecordSize != 24 &&

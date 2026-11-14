@@ -20,7 +20,7 @@ func TestVerifyDataSectionRejectsInvalidUTF8(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := New(tt.data)
-			err := d.VerifyDataSection(map[uint]bool{0: true})
+			err := d.VerifyDataSection(map[uint]struct{}{0: {}})
 			require.ErrorContains(t, err, "invalid UTF-8")
 		})
 	}
@@ -45,7 +45,7 @@ func TestVerifyOverwrittenUTF8(t *testing.T) {
 			data = append(data, 0x41, 'a', 0x41, 'x')
 			d := New(data)
 			for name, err := range map[string]error{
-				"data":           d.VerifyDataSection(map[uint]bool{0: true, 3: true}),
+				"data":           d.VerifyDataSection(map[uint]struct{}{0: {}, 3: {}}),
 				"metadata":       VerifyMetadata(data),
 				"after metadata": VerifyMetadata(append([]byte{0xe0}, data...)),
 			} {
@@ -72,9 +72,9 @@ func runVerifyDataSectionTests(t *testing.T, tests []verifyDataSectionTest) {
 	t.Helper()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			offsets := map[uint]bool{}
+			offsets := make(map[uint]struct{}, len(tt.targets))
 			for _, target := range tt.targets {
-				offsets[target] = true
+				offsets[target] = struct{}{}
 			}
 			d := New(tt.data)
 			err := d.VerifyDataSection(offsets)

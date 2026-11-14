@@ -1036,7 +1036,7 @@ func TestVerifyMetadataBudgetsUnknownFields(t *testing.T) {
 
 func TestVerifyDataSectionBudgetsEachRecord(t *testing.T) {
 	d := New(binaryFanOut())
-	err := d.VerifyDataSection(map[uint]bool{0: true})
+	err := d.VerifyDataSection(map[uint]struct{}{0: {}})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "maximum decoded record size")
 
@@ -1046,9 +1046,9 @@ func TestVerifyDataSectionBudgetsEachRecord(t *testing.T) {
 	data := append([]byte(nil), first...)
 	data = append(data, uint16Array(valuesPerRecord)...)
 	valid := New(data)
-	require.NoError(t, valid.VerifyDataSection(map[uint]bool{
-		0:            true,
-		secondOffset: true,
+	require.NoError(t, valid.VerifyDataSection(map[uint]struct{}{
+		0:            {},
+		secondOffset: {},
 	}))
 }
 
