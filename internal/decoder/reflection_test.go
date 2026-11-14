@@ -998,7 +998,7 @@ func validateDecoding(t *testing.T, tests map[string]any) {
 		d := New(inputBytes)
 
 		var result any
-		_, err = d.decode(0, reflect.ValueOf(&result))
+		err = d.Decode(0, &result)
 		require.NoError(t, err)
 
 		if !reflect.DeepEqual(result, expected) {
@@ -1024,7 +1024,7 @@ func TestPointers(t *testing.T) {
 
 	for offset, expectedValue := range expected {
 		var actual map[string]string
-		_, err := d.decode(offset, reflect.ValueOf(&actual))
+		err := d.Decode(offset, &actual)
 		require.NoError(t, err)
 		if !reflect.DeepEqual(actual, expectedValue) {
 			t.Errorf("Decode for pointer at %d failed", offset)

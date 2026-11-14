@@ -147,7 +147,7 @@ func decodeMapWithTrailingValue[K ~string](t *testing.T, data []byte) map[K]bool
 	t.Helper()
 	decoder := New(data)
 	result := make(map[K]bool)
-	next, err := decoder.decode(0, reflect.ValueOf(&result))
+	next, err := decoder.decodeValue(0, addressableValue{Value: reflect.ValueOf(&result).Elem()}, 0)
 	require.NoError(t, err)
 	value, _, err := (Cursor{decoder: &decoder.DataDecoder, offset: next}).ReadString()
 	require.NoError(t, err)
