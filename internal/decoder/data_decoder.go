@@ -361,99 +361,38 @@ func (d *DataDecoder) decodeStringBytes(controlOffset uint, value []byte) string
 
 // decodeStringValue decodes a string or one pointer to a string and returns
 // the successor in the original containing stream for the legacy decoder.
-//
-//nolint:nestif // Keep common compact encodings inline on this hot path.
 func (d *DataDecoder) decodeStringValue(offset uint) (string, uint, error) {
 	bufferLen := uint(len(d.buffer))
 	if offset < bufferLen {
 		ctrlByte := d.buffer[offset]
-		kind := Kind(ctrlByte >> 5)
-		size := uint(ctrlByte & 0x1f)
-		switch kind {
-		case KindString:
-			if size < 29 {
-				dataOffset := offset + 1
-				nextOffset := dataOffset + size
-				if nextOffset <= bufferLen {
-					return d.decodeStringBytes(
-						dataOffset-1,
-						d.buffer[dataOffset:dataOffset+size],
-					), nextOffset, nil
-				}
+		if Kind(ctrlByte>>5) == KindString {
+			size := uint(ctrlByte & 0x1f)
+			nextOffset := offset + 1 + size
+			if size < 29 && nextOffset <= bufferLen {
+				return d.decodeStringBytes(offset, d.buffer[offset+1:nextOffset]), nextOffset, nil
 			}
-		case KindPointer:
-			if size < 8 && offset+2 <= bufferLen {
-				pointer := (size&0x7)<<8 | uint(d.buffer[offset+1])
-				if pointer < bufferLen {
-					pointedCtrlByte := d.buffer[pointer]
-					if Kind(pointedCtrlByte>>5) == KindString {
-						pointedSize := uint(pointedCtrlByte & 0x1f)
-						dataOffset := pointer + 1
-						if pointedSize < 29 && dataOffset+pointedSize <= bufferLen {
-							return d.decodeStringBytes(
-								dataOffset-1,
-								d.buffer[dataOffset:dataOffset+pointedSize],
-							), offset + 2, nil
-						}
-					}
-				}
-			}
-			if size >= 8 {
-				payloadOffset := offset + 1
-				pointerSize := ((size >> 3) & 0x3) + 1
-				pointerEnd := payloadOffset + pointerSize
-				if pointerEnd <= bufferLen {
-					var pointer uint
-					switch pointerSize {
-					case 2:
-						pointer = ((size&0x7)<<16 |
-							uint(d.buffer[payloadOffset])<<8 |
-							uint(d.buffer[payloadOffset+1])) + pointerBase2
-					case 3:
-						pointer = ((size&0x7)<<24 |
-							uint(d.buffer[payloadOffset])<<16 |
-							uint(d.buffer[payloadOffset+1])<<8 |
-							uint(d.buffer[payloadOffset+2])) + pointerBase3
-					case 4:
-						pointer = uint(d.buffer[payloadOffset])<<24 |
-							uint(d.buffer[payloadOffset+1])<<16 |
-							uint(d.buffer[payloadOffset+2])<<8 |
-							uint(d.buffer[payloadOffset+3])
-					}
-					if pointer < bufferLen {
-						pointedCtrlByte := d.buffer[pointer]
-						if Kind(pointedCtrlByte>>5) == KindString {
-							pointedSize := uint(pointedCtrlByte & 0x1f)
-							dataOffset := pointer + 1
-							if pointedSize < 29 && pointedSize <= bufferLen-dataOffset {
-								return d.decodeStringBytes(
-									dataOffset-1,
-									d.buffer[dataOffset:dataOffset+pointedSize],
-								), pointerEnd, nil
-							}
-						}
-					}
-				}
-			}
-		default:
 		}
 	}
 
-	kind, size, dataOffset, nextOffset, err := d.resolveCtrlData(offset)
-	if err != nil {
-		return "", 0, err
+	value, cacheOffset, nextOffset, err := d.decodeKeyAt(offset)
+	if err == nil {
+		return d.decodeStringBytes(cacheOffset, value), nextOffset, nil
 	}
-	if nextOffset == 0 {
-		nextOffset = dataOffset + size
+
+	kind, ctrlErr := d.resolveKind(offset)
+	if ctrlErr != nil {
+		return "", 0, ctrlErr
 	}
 	if kind != KindString {
 		return "", 0, unexpectedKindErr(KindString, kind)
 	}
-	value, _, err := d.decodeString(size, dataOffset)
-	if err != nil {
-		return "", 0, err
-	}
-	return value, nextOffset, nil
+	return "", 0, err
+}
+
+func (d *DataDecoder) resolveKind(offset uint) (Kind, error) {
+	//nolint:dogsled // Only the resolved kind is needed.
+	kind, _, _, _, err := d.resolveCtrlData(offset)
+	return kind, err
 }
 
 // DecodeUint16 decodes a 16-bit unsigned integer from the given offset.
