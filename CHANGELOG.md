@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 2.9.1 - 2026-11-15
 
 - Fixed `Networks` and `NetworksWithin` omitting IPv6 networks that share a
   data record with the record reached by IPv4 lookups.
