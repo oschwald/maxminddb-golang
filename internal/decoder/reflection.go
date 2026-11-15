@@ -70,32 +70,12 @@ func NewWithoutStringCache(buffer []byte) ReflectionDecoder {
 // IsEmptyValueAt checks if the value at the given offset is an empty map or array.
 // Returns true if the value is a map or array with size 0.
 func (d *ReflectionDecoder) IsEmptyValueAt(offset uint) (bool, error) {
-	dataOffset := offset
-	followedPointers := 0
-	for {
-		kindNum, size, newOffset, err := d.decodeCtrlData(dataOffset)
-		if err != nil {
-			return false, err
-		}
-
-		if kindNum == KindPointer {
-			if followedPointers > 0 {
-				return false, mmdberrors.NewInvalidDatabaseError(
-					"invalid pointer to pointer at offset %d",
-					dataOffset,
-				)
-			}
-			followedPointers++
-			dataOffset, _, err = d.decodePointer(size, newOffset)
-			if err != nil {
-				return false, err
-			}
-			continue
-		}
-
-		// Check if it's a map or array with size 0
-		return (kindNum == KindMap || kindNum == KindSlice) && size == 0, nil
+	kindNum, size, _, _, err := d.decodeCtrlDataThroughPointer(offset)
+	if err != nil {
+		return false, err
 	}
+
+	return (kindNum == KindMap || kindNum == KindSlice) && size == 0, nil
 }
 
 // Decode decodes the data value at offset and stores it in the value
@@ -451,7 +431,6 @@ func wrapRootDecodeError(err error, offset uint) error {
 	return mmdberrors.WrapWithContext(err, offset)
 }
 
-//nolint:gocyclo // Keep path navigation and final depth validation together.
 func (d *ReflectionDecoder) decodePath(
 	offset uint,
 	path []any,
@@ -469,34 +448,10 @@ PATH:
 			size    uint
 			err     error
 		)
-		valueOffset := offset
-		typeNum, size, offset, err = d.decodeCtrlData(offset)
+		var valueOffset uint
+		typeNum, size, offset, valueOffset, err = d.decodeCtrlDataThroughPointer(offset)
 		if err != nil {
 			return mmdberrors.WrapWithContext(err, valueOffset)
-		}
-
-		if typeNum == KindPointer {
-			pointer, _, err := d.decodePointer(size, offset)
-			if err != nil {
-				return mmdberrors.WrapWithContext(err, valueOffset)
-			}
-
-			typeNum, size, offset, err = d.decodeCtrlData(pointer)
-			if err != nil {
-				return mmdberrors.WrapWithContext(err, pointer)
-			}
-
-			// Check for pointer-to-pointer after we've already read the data
-			if typeNum == KindPointer {
-				return mmdberrors.WrapWithContext(
-					mmdberrors.NewInvalidDatabaseError(
-						"invalid pointer to pointer at offset %d",
-						pointer,
-					),
-					valueOffset,
-				)
-			}
-			valueOffset = pointer
 		}
 		if typeNum.IsContainer() {
 			if err := d.reserveActiveContainer(typeNum, size); err != nil {
@@ -604,6 +559,35 @@ func (d *ReflectionDecoder) tryFastDecodePathPayload(
 	}
 	_, ok := d.tryFastDecodeTyped(offset, result, depth)
 	return ok
+}
+
+// decodeCtrlDataThroughPointer decodes the control data at offset and follows
+// at most 1 pointer. valueOffset is the offset of the value that the returned
+// control data describes. If err is not nil, valueOffset is the offset of the
+// value that caused the error.
+func (d *ReflectionDecoder) decodeCtrlDataThroughPointer(
+	offset uint,
+) (kind Kind, size, dataOffset, valueOffset uint, err error) {
+	kind, size, dataOffset, err = d.decodeCtrlData(offset)
+	if err != nil || kind != KindPointer {
+		return kind, size, dataOffset, offset, err
+	}
+
+	pointer, _, err := d.decodePointer(size, dataOffset)
+	if err != nil {
+		return 0, 0, 0, offset, err
+	}
+	kind, size, dataOffset, err = d.decodeCtrlData(pointer)
+	if err != nil {
+		return 0, 0, 0, pointer, err
+	}
+	if kind == KindPointer {
+		return 0, 0, 0, offset, mmdberrors.NewInvalidDatabaseError(
+			"invalid pointer to pointer at offset %d",
+			pointer,
+		)
+	}
+	return kind, size, dataOffset, pointer, nil
 }
 
 func (d *ReflectionDecoder) decodePathKey(offset uint) ([]byte, uint, error) {
