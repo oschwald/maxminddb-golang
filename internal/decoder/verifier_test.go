@@ -20,7 +20,7 @@ func TestVerifyDataSectionRejectsInvalidUTF8(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := New(tt.data)
-			err := d.VerifyDataSection(map[uint]bool{0: true})
+			err := d.VerifyDataSection(map[uint]struct{}{0: {}})
 			require.ErrorContains(t, err, "invalid UTF-8")
 		})
 	}
@@ -45,7 +45,7 @@ func TestVerifyOverwrittenUTF8(t *testing.T) {
 			data = append(data, 0x41, 'a', 0x41, 'x')
 			d := New(data)
 			for name, err := range map[string]error{
-				"data":           d.VerifyDataSection(map[uint]bool{0: true, 3: true}),
+				"data":           d.VerifyDataSection(map[uint]struct{}{0: {}, 3: {}}),
 				"metadata":       VerifyMetadata(data),
 				"after metadata": VerifyMetadata(append([]byte{0xe0}, data...)),
 			} {
@@ -72,9 +72,9 @@ func runVerifyDataSectionTests(t *testing.T, tests []verifyDataSectionTest) {
 	t.Helper()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			offsets := map[uint]bool{}
+			offsets := make(map[uint]struct{}, len(tt.targets))
 			for _, target := range tt.targets {
-				offsets[target] = true
+				offsets[target] = struct{}{}
 			}
 			d := New(tt.data)
 			err := d.VerifyDataSection(offsets)
@@ -293,4 +293,24 @@ func TestVerifyMetadataSharesOneBudget(t *testing.T) {
 
 	metadata = append(metadata, 0x20, 5)
 	require.ErrorContains(t, VerifyMetadata(metadata), "exceeded maximum decoded record size")
+}
+
+func TestVerifyNestedErrorHasOneOffset(t *testing.T) {
+	// "x", then map{"a": [a string that claims 5 bytes, with 1 present]}.
+	record := []byte{0xe1, 0x41, 'a', 0x01, 0x04, 0x45, 'a'}
+	data := append([]byte{0x41, 'x'}, record...)
+	d := New(data)
+	require.EqualError(
+		t,
+		d.VerifyDataSection(map[uint]struct{}{0: {}, 2: {}}),
+		"received decoding error (path /a/0: unexpected end of database) at offset of 2",
+	)
+
+	// An empty metadata map, then the same value at offset 1.
+	require.EqualError(
+		t,
+		VerifyMetadata(append([]byte{0xe0}, record...)),
+		"invalid value after the metadata map "+
+			"(path /a/0: unexpected end of database) at offset of 1",
+	)
 }

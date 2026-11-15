@@ -106,3 +106,85 @@ func BenchmarkDecodePathScalar(b *testing.B) {
 		})
 	}
 }
+
+func TestDecodePathErrorContext(t *testing.T) {
+	// map{"a": map{"b": uint16(1)}}. The inner map is at offset 3.
+	nestedMap := []byte{0xe1, 0x41, 'a', 0xe1, 0x41, 'b', 0xa1, 0x01}
+	// map{"a": uint16(1)}
+	scalar := []byte{0xe1, 0x41, 'a', 0xa1, 0x01}
+
+	tests := []struct {
+		name string
+		data []byte
+		path []any
+		want string
+	}{
+		{
+			name: "final value has the wrong type",
+			data: nestedMap,
+			path: []any{"a"},
+			want: "at offset 3, path /b: maxminddb: cannot unmarshal 1 (uint64) into type string",
+		},
+		{
+			name: "map ends after its header",
+			data: nestedMap[:4],
+			path: []any{"a", "b"},
+			want: "at offset 3: unexpected end of database",
+		},
+		{
+			name: "map behind a pointer ends after its header",
+			data: []byte{0xe1, 0x41, 'a', 0x20, 0x05, 0xe1},
+			path: []any{"a", "b"},
+			want: "at offset 5: unexpected end of database",
+		},
+		{
+			name: "pointer to a pointer",
+			data: []byte{0xe1, 0x41, 'a', 0x20, 0x05, 0x20, 0x00},
+			path: []any{"a", "b"},
+			want: "at offset 3: invalid pointer to pointer at offset 5",
+		},
+		{
+			name: "pointer with no payload byte",
+			data: []byte{0xe1, 0x41, 'a', 0x20},
+			path: []any{"a", "b"},
+			want: "at offset 3: unexpected end of database",
+		},
+		{
+			name: "pointer past the end of the data",
+			data: []byte{0xe1, 0x41, 'a', 0x20, 0x09},
+			path: []any{"a", "b"},
+			want: "at offset 9: unexpected end of database",
+		},
+		{
+			name: "map key for a scalar",
+			data: scalar,
+			path: []any{"a", "b"},
+			want: "at offset 3: expected a map for b but found Uint16",
+		},
+		{
+			name: "slice index for a scalar",
+			data: scalar,
+			path: []any{"a", 0},
+			want: "at offset 3: expected a slice for 0 but found Uint16",
+		},
+		{
+			// The map at "a" claims 65821 entries.
+			name: "map size exceeds the budget",
+			data: []byte{0xe1, 0x41, 'a', 0xff, 0x00, 0x00, 0x00},
+			path: []any{"a", "b"},
+			want: "at offset 3: " + errDecodedRecordTooLarge.Error(),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			// The struct field B is a string, so it also serves as the
+			// destination for the paths that fail before the final decode.
+			var result struct {
+				B string `maxminddb:"b"`
+			}
+			d := New(test.data)
+			require.EqualError(t, d.DecodePath(0, test.path, &result), test.want)
+		})
+	}
+}

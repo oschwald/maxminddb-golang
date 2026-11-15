@@ -4,6 +4,28 @@
 
 - Fixed a panic when decoding record offsets into named `uintptr` types.
   Offset decoding also avoids temporary boxing allocations.
+- Fixed decoding of a `uint64` value above `math.MaxInt64` into a signed
+  integer type. The decoder stored a negative number and returned no error.
+  It now returns an `UnmarshalTypeError`.
+- Reflection decoding now keeps an error wrapper that a nested
+  `UnmarshalMaxMindDB` or `UnmarshalMaxMindDBCursor` method returns. This
+  includes the field context that `maxminddb-gen` decoders add. Before, the
+  decoder dropped the wrapper, and `errors.Is` did not find an error in it.
+  The error text for these cases now starts with the offset of the record and
+  includes the wrapper text.
+- Error paths now keep empty map keys and empty parts of a key that contains
+  a slash. For example, the key `a//b` now shows as `/a//b`. Before, it
+  showed as `/a/b`.
+- `DecodePath` errors now have one offset and one path. Before, an error
+  from a nested value had two offsets, and the second offset was always 0.
+  An error from the path lookup now includes an offset.
+- `Verify` errors for a value nested in a data record, or in a value after
+  the metadata map, no longer show "at offset 0" before the path. The message
+  already states the offset of the top-level value.
+- The error path for a value in a map now shows the database key for every
+  key type. Before, a key type that is not a string showed a placeholder, for
+  example `<interface {} Value>` for `map[any]T`. A key type with a custom
+  unmarshaler showed the text that the unmarshaler stored.
 
 ## 2.9.0 - 2026-10-31
 

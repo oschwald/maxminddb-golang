@@ -29,7 +29,7 @@ func VerifyMetadata(buffer []byte) error {
 		if err != nil {
 			return mmdberrors.NewInvalidDatabaseError(
 				"invalid value after the metadata map (%v) at offset of %v",
-				err,
+				withoutUnsetOffset(err),
 				offset,
 			)
 		}
@@ -42,7 +42,7 @@ func VerifyMetadata(buffer []byte) error {
 // VerifyDataSection verifies the data section against the provided
 // offsets from the tree. Each top-level value must be a search-tree target.
 // A target can also be the start of a field nested in a top-level value.
-func (d *ReflectionDecoder) VerifyDataSection(offsets map[uint]bool) error {
+func (d *ReflectionDecoder) VerifyDataSection(offsets map[uint]struct{}) error {
 	pointerCount := len(offsets)
 
 	var offset uint
@@ -53,7 +53,7 @@ func (d *ReflectionDecoder) VerifyDataSection(offsets map[uint]bool) error {
 		bounded := newBudgetedDecoder(d)
 		newOffset, err := bounded.decodeValue(offset, rv, 0)
 		if err != nil {
-			return newDecodingErrorAt(err, offset)
+			return newDecodingErrorAt(withoutUnsetOffset(err), offset)
 		}
 		if newOffset <= offset {
 			return mmdberrors.NewInvalidDatabaseError(
@@ -230,6 +230,17 @@ func (d *DataDecoder) forEachField(
 		offset = next
 	}
 	return nil
+}
+
+// withoutUnsetOffset formats a decoding error for a message that states the
+// offset of the top-level value. An error from a nested value has a path and
+// an unset offset, which prints as "at offset 0".
+func withoutUnsetOffset(err error) error {
+	//nolint:errorlint // Only an error that reflection decoding built has an unset offset.
+	if contextErr, ok := err.(mmdberrors.ContextualError); ok && contextErr.Offset == 0 {
+		return contextErr.WithoutOffset()
+	}
+	return err
 }
 
 func newDecodingErrorAt(err error, offset uint) error {

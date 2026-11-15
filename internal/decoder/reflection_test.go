@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -610,6 +611,45 @@ func TestDecodeRejectsOversizedContainersBeforeAllocation(t *testing.T) {
 	}
 }
 
+func TestDecodeErrorResetsNestedPointers(t *testing.T) {
+	// A string header that claims 5 bytes, with 1 byte present.
+	d := NewWithoutStringCache([]byte{0x45, 'a'})
+	var out ***string
+	require.Error(t, d.Decode(0, &out))
+	require.Nil(t, out, "destination should not be allocated on invalid input")
+
+	var four ****string
+	require.Error(t, d.Decode(0, &four))
+	require.Nil(t, four, "destination should not be allocated on invalid input")
+}
+
+func TestDecodeUint64AboveMaxInt64IntoSignedInt(t *testing.T) {
+	// uint64(math.MaxUint64)
+	d := New([]byte{0x08, 0x02, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
+	want := "at offset 0: maxminddb: cannot unmarshal 18446744073709551615 (uint64) into type "
+
+	var i64 int64
+	require.EqualError(t, d.Decode(0, &i64), want+"int64")
+	require.Zero(t, i64)
+
+	var i8 int8
+	require.EqualError(t, d.Decode(0, &i8), want+"int8")
+	require.Zero(t, i8)
+
+	// uint64(math.MaxInt64) is the largest value that fits.
+	d = New([]byte{0x08, 0x02, 0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
+	require.NoError(t, d.Decode(0, &i64))
+	require.Equal(t, int64(math.MaxInt64), i64)
+
+	// uint64(math.MaxInt64 + 1)
+	d = New([]byte{0x08, 0x02, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
+	require.EqualError(
+		t,
+		d.Decode(0, &i64),
+		"at offset 0: maxminddb: cannot unmarshal 9223372036854775808 (uint64) into type int64",
+	)
+}
+
 func TestMap(t *testing.T) {
 	maps := map[string]any{
 		"e0":                             map[string]any{},
@@ -998,7 +1038,7 @@ func validateDecoding(t *testing.T, tests map[string]any) {
 		d := New(inputBytes)
 
 		var result any
-		_, err = d.decode(0, reflect.ValueOf(&result))
+		err = d.Decode(0, &result)
 		require.NoError(t, err)
 
 		if !reflect.DeepEqual(result, expected) {
@@ -1024,7 +1064,7 @@ func TestPointers(t *testing.T) {
 
 	for offset, expectedValue := range expected {
 		var actual map[string]string
-		_, err := d.decode(offset, reflect.ValueOf(&actual))
+		err := d.Decode(offset, &actual)
 		require.NoError(t, err)
 		if !reflect.DeepEqual(actual, expectedValue) {
 			t.Errorf("Decode for pointer at %d failed", offset)
