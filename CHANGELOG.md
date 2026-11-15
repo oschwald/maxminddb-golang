@@ -9,6 +9,8 @@
 - Fixed decoding of a `uint64` value above `math.MaxInt64` into a signed
   integer type. The decoder stored a negative number and returned no error.
   It now returns an `UnmarshalTypeError`.
+- Fixed generated decoders accepting finite values just outside the `float32`
+  range. Generated decoding now matches reflection's overflow checks.
 - Reflection decoding now keeps an error wrapper that a nested
   `UnmarshalMaxMindDB` or `UnmarshalMaxMindDBCursor` method returns. This
   includes the field context that `maxminddb-gen` decoders add. Before, the

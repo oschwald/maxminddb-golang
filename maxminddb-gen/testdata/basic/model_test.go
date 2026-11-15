@@ -561,34 +561,80 @@ func TestGeneratedPointerSuccessors(t *testing.T) {
 }
 
 func TestGeneratedFloat32Boundaries(t *testing.T) {
-	encode := func(value float64) []byte {
-		data := []byte{
-			0xe1,
-			0x4b, 't', 'e', 'm', 'p', 'e', 'r', 'a', 't', 'u', 'r', 'e',
-			0x68,
-		}
-		return binary.BigEndian.AppendUint64(data, math.Float64bits(value))
+	tests := []struct {
+		name     string
+		value    float64
+		overflow bool
+	}{
+		{name: "positive maximum", value: math.MaxFloat32},
+		{name: "negative maximum", value: -math.MaxFloat32},
+		{
+			name:     "just above positive maximum",
+			value:    math.Nextafter(math.MaxFloat32, math.Inf(1)),
+			overflow: true,
+		},
+		{
+			name:     "just below negative maximum",
+			value:    math.Nextafter(-math.MaxFloat32, math.Inf(-1)),
+			overflow: true,
+		},
+		{name: "positive overflow", value: 2 * math.MaxFloat32, overflow: true},
+		{name: "negative overflow", value: -2 * math.MaxFloat32, overflow: true},
+		{name: "positive infinity", value: math.Inf(1)},
+		{name: "negative infinity", value: math.Inf(-1)},
+		{name: "NaN", value: math.NaN()},
 	}
-
-	var maximum Record
-	if err := maximum.UnmarshalMaxMindDB(
-		mmdbdata.NewDecoder(encode(float64(math.MaxFloat32)), 0),
-	); err != nil {
-		t.Fatal(err)
-	}
-	if maximum.Temperature != math.MaxFloat32 {
-		t.Fatalf("decoded maximum %v, want %v", maximum.Temperature, float32(math.MaxFloat32))
-	}
-
-	overflow := Record{Temperature: 7}
-	err := overflow.UnmarshalMaxMindDB(
-		mmdbdata.NewDecoder(encode(2*float64(math.MaxFloat32)), 0),
-	)
-	if err == nil || !bytes.Contains([]byte(err.Error()), []byte("cannot unmarshal")) {
-		t.Fatalf("expected conversion error, got %v", err)
-	}
-	if overflow.Temperature != 7 {
-		t.Fatalf("overflow mutated destination to %v", overflow.Temperature)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			value := binary.BigEndian.AppendUint64([]byte{0x68}, math.Float64bits(tt.value))
+			data := singleFieldRecord("temperature", value)
+			for _, dispatch := range []string{"unmarshaler", "decoder"} {
+				t.Run(dispatch, func(t *testing.T) {
+					reflected := reflectionRecord{Temperature: 7}
+					generated := Record{Temperature: 7}
+					reflectionDecoder := decoder.New(data)
+					reflectionErr := reflectionDecoder.Decode(0, &reflected)
+					var generatedErr error
+					if dispatch == "decoder" {
+						generatedDecoder := decoder.New(data)
+						generatedErr = generatedDecoder.Decode(0, &generated)
+					} else {
+						generatedErr = generated.UnmarshalMaxMindDB(mmdbdata.NewDecoder(data, 0))
+					}
+					if tt.overflow {
+						var reflectionTypeErr, generatedTypeErr mmdberrors.UnmarshalTypeError
+						if !errors.As(reflectionErr, &reflectionTypeErr) ||
+							!errors.As(generatedErr, &generatedTypeErr) {
+							t.Fatalf("expected conversion errors: reflection=%v generated=%v",
+								reflectionErr, generatedErr)
+						}
+						if reflectionTypeErr != generatedTypeErr {
+							t.Fatalf("conversion errors differ: reflection=%v generated=%v",
+								reflectionTypeErr, generatedTypeErr)
+						}
+						if reflected.Temperature != 7 || generated.Temperature != 7 {
+							t.Fatalf("overflow mutated destination: reflection=%v generated=%v",
+								reflected.Temperature, generated.Temperature)
+						}
+						return
+					}
+					if reflectionErr != nil || generatedErr != nil {
+						t.Fatalf("unexpected errors: reflection=%v generated=%v", reflectionErr, generatedErr)
+					}
+					want := float32(tt.value)
+					if math.IsNaN(tt.value) {
+						if !math.IsNaN(float64(reflected.Temperature)) ||
+							!math.IsNaN(float64(generated.Temperature)) {
+							t.Fatalf("expected NaN: reflection=%v generated=%v",
+								reflected.Temperature, generated.Temperature)
+						}
+					} else if reflected.Temperature != want || generated.Temperature != want {
+						t.Fatalf("decoded reflection=%v generated=%v, want %v",
+							reflected.Temperature, generated.Temperature, want)
+					}
+				})
+			}
+		})
 	}
 }
 
