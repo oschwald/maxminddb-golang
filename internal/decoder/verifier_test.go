@@ -294,3 +294,23 @@ func TestVerifyMetadataSharesOneBudget(t *testing.T) {
 	metadata = append(metadata, 0x20, 5)
 	require.ErrorContains(t, VerifyMetadata(metadata), "exceeded maximum decoded record size")
 }
+
+func TestVerifyNestedErrorHasOneOffset(t *testing.T) {
+	// "x", then map{"a": [a string that claims 5 bytes, with 1 present]}.
+	record := []byte{0xe1, 0x41, 'a', 0x01, 0x04, 0x45, 'a'}
+	data := append([]byte{0x41, 'x'}, record...)
+	d := New(data)
+	require.EqualError(
+		t,
+		d.VerifyDataSection(map[uint]struct{}{0: {}, 2: {}}),
+		"received decoding error (path /a/0: unexpected end of database) at offset of 2",
+	)
+
+	// An empty metadata map, then the same value at offset 1.
+	require.EqualError(
+		t,
+		VerifyMetadata(append([]byte{0xe0}, record...)),
+		"invalid value after the metadata map "+
+			"(path /a/0: unexpected end of database) at offset of 1",
+	)
+}

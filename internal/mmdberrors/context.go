@@ -16,9 +16,18 @@ type ContextualError struct {
 
 func (e ContextualError) Error() string {
 	if e.Path != "" {
-		return fmt.Sprintf("at offset %d, path %s: %v", e.Offset, e.Path, e.Err)
+		return fmt.Sprintf("at offset %d, %v", e.Offset, e.WithoutOffset())
 	}
 	return fmt.Sprintf("at offset %d: %v", e.Offset, e.Err)
+}
+
+// WithoutOffset returns the error with its path and without its offset. Use
+// it in a message that states the offset itself.
+func (e ContextualError) WithoutOffset() error {
+	if e.Path == "" {
+		return e.Err
+	}
+	return fmt.Errorf("path %s: %w", e.Path, e.Err)
 }
 
 func (e ContextualError) Unwrap() error {

@@ -19,6 +19,9 @@
 - `DecodePath` errors now have one offset and one path. Before, an error
   from a nested value had two offsets, and the second offset was always 0.
   An error from the path lookup now includes an offset.
+- `Verify` errors for a value nested in a data record, or in a value after
+  the metadata map, no longer show "at offset 0" before the path. The message
+  already states the offset of the top-level value.
 - The error path for a value in a map now shows the database key for every
   key type. Before, a key type that is not a string showed a placeholder, for
   example `<interface {} Value>` for `map[any]T`. A key type with a custom
