@@ -4,6 +4,9 @@
 
 - Fixed a panic when decoding record offsets into named `uintptr` types.
   Offset decoding also avoids temporary boxing allocations.
+- Fixed decoding of a `uint64` value above `math.MaxInt64` into a signed
+  integer type. The decoder stored a negative number and returned no error.
+  It now returns an `UnmarshalTypeError`.
 - Reflection decoding now keeps an error wrapper that a nested
   `UnmarshalMaxMindDB` or `UnmarshalMaxMindDBCursor` method returns. This
   includes the field context that `maxminddb-gen` decoders add. Before, the

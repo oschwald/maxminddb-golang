@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"reflect"
 	"slices"
@@ -1412,8 +1413,9 @@ func (d *ReflectionDecoder) unmarshalUint(
 
 	switch result.Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		// A value above math.MaxInt64 would wrap to a negative int64.
 		n := int64(value)
-		if !result.OverflowInt(n) {
+		if value <= math.MaxInt64 && !result.OverflowInt(n) {
 			result.SetInt(n)
 			return newOffset, nil
 		}
