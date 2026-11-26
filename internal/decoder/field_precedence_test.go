@@ -260,6 +260,99 @@ func TestPointerStructFieldCachingChecksDepth(t *testing.T) {
 	}
 }
 
+type taggedEmbeddedNames struct {
+	En string `maxminddb:"en"`
+}
+
+// TestTaggedEmbeddedStructIsNamedField tests that an embedded struct with a
+// name tag is only a named field, as in encoding/json. Its fields are not
+// promoted to the parent.
+func TestTaggedEmbeddedStructIsNamedField(t *testing.T) {
+	// {"names": {"en": "X"}}
+	nested, err := hex.DecodeString("e1456e616d6573e142656e4158")
+	require.NoError(t, err)
+	// {"en": "X"}
+	flat, err := hex.DecodeString("e142656e4158")
+	require.NoError(t, err)
+
+	t.Run("struct", func(t *testing.T) {
+		type record struct {
+			taggedEmbeddedNames `maxminddb:"names"`
+		}
+
+		fields := makeStructFields(reflect.TypeFor[record]())
+		assert.Contains(t, fields.namedFields, "names")
+		assert.NotContains(t, fields.namedFields, "en")
+
+		var got record
+		d := New(nested)
+		require.NoError(t, d.Decode(0, &got))
+		assert.Equal(t, "X", got.En)
+
+		got = record{}
+		d = New(flat)
+		require.NoError(t, d.Decode(0, &got))
+		assert.Empty(t, got.En, "a parent key must not fill a field of a tagged embedded struct")
+	})
+
+	t.Run("pointer", func(t *testing.T) {
+		type Names struct {
+			En string `maxminddb:"en"`
+		}
+		type record struct {
+			*Names `maxminddb:"names"`
+		}
+
+		var got record
+		d := New(nested)
+		require.NoError(t, d.Decode(0, &got))
+		require.NotNil(t, got.Names)
+		assert.Equal(t, "X", got.En)
+
+		got = record{}
+		d = New(flat)
+		require.NoError(t, d.Decode(0, &got))
+		assert.Nil(t, got.Names)
+	})
+
+	t.Run("exported", func(t *testing.T) {
+		type Names struct {
+			En string `maxminddb:"en"`
+		}
+		type record struct {
+			Names `maxminddb:"names"`
+		}
+
+		var got record
+		d := New(flat)
+		require.NoError(t, d.Decode(0, &got))
+		assert.Empty(t, got.En)
+
+		d = New(nested)
+		require.NoError(t, d.Decode(0, &got))
+		assert.Equal(t, "X", got.En)
+	})
+
+	t.Run("same type embedded without a tag is still promoted", func(t *testing.T) {
+		type Names struct {
+			En string `maxminddb:"en"`
+		}
+		type Wrapper struct {
+			Names
+		}
+		type record struct {
+			Names `maxminddb:"names"`
+			Wrapper
+		}
+
+		var got record
+		d := New(flat)
+		require.NoError(t, d.Decode(0, &got))
+		assert.Equal(t, "X", got.Wrapper.En)
+		assert.Empty(t, got.En, "the tagged Names must not get the parent-level key")
+	})
+}
+
 type unexportedEmbeddedUnmarshalerA struct {
 	V string
 }

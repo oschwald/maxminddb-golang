@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- An embedded struct with a `maxminddb` name tag is now decoded only as a
+  named field, as in `encoding/json`. Before, its fields were also promoted to
+  the parent, so a key at the parent level could fill a field of the embedded
+  struct. For example, with ``struct{ Names `maxminddb:"names"` }``, both
+  `{"names": {"en": "X"}}` and `{"en": "X"}` set `Names.En`. Now only the
+  first does. A parent-level key can now fill another field with the same
+  name that the tagged struct used to shadow, such as a field of the same
+  struct type embedded without a tag. To decode parent-level keys into the
+  embedded struct instead, remove the name tag.
 - Fixed a panic when a named field is an unexported embedded struct whose
   type has a custom unmarshaler, and the decoder does not call that
   unmarshaler through the parent. For example, this happened when two such
