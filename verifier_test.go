@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -281,15 +282,22 @@ func TestVerifyAcceptsNestedRecordTarget(t *testing.T) {
 	require.NoError(t, reader.Verify())
 }
 
-func TestVerifyOnGoodDatabases(t *testing.T) {
-	databases := []string{
+func TestVerifyOnTestDatabases(t *testing.T) {
+	// Every database in testdata/test-data must pass Verify except the ones
+	// below, whose error must still contain the listed text. A new upstream
+	// fixture that fails must be listed here or fixed, and a listed fixture
+	// that starts to pass, returns an error without that text or disappears
+	// upstream fails the test, so the lists stay current.
+
+	// These must be present and pass Verify.
+	required := []string{
 		"GeoIP2-Anonymous-IP-Test.mmdb",
 		"GeoIP2-City-Test.mmdb",
 		"GeoIP2-Connection-Type-Test.mmdb",
 		"GeoIP2-Country-Test.mmdb",
 		"GeoIP2-Domain-Test.mmdb",
+		"GeoIP2-Enterprise-Test.mmdb",
 		"GeoIP2-ISP-Test.mmdb",
-		"GeoIP2-Precision-Enterprise-Test.mmdb",
 		"MaxMind-DB-no-ipv4-search-tree.mmdb",
 		"MaxMind-DB-string-value-entries.mmdb",
 		"MaxMind-DB-test-decoder.mmdb",
@@ -306,35 +314,79 @@ func TestVerifyOnGoodDatabases(t *testing.T) {
 		"MaxMind-DB-test-nested.mmdb",
 	}
 
-	for _, database := range databases {
+	// These fail in Open.
+	failOpen := map[string]string{
+		"GeoIP2-City-Test-Invalid-Node-Count.mmdb":    "invalid metadata",
+		"MaxMind-DB-test-metadata-payload-limit.mmdb": "maximum decoded record size",
+	}
+
+	// These open but fail Verify. The decoder limit, payload amplification
+	// and pointer DoS fixtures have an empty description map, which
+	// verifyMetadata rejects before it reaches their data.
+	const emptyDescription = "description - Expected: non-empty map"
+	failVerify := map[string]string{
+		"GeoIP2-City-Test-Broken-Double-Format.mmdb":                "(float 64 size of 5)",
+		"MaxMind-DB-test-broken-pointers-24.mmdb":                   "search tree is corrupt",
+		"MaxMind-DB-test-broken-search-tree-24.mmdb":                "cycle at node 0",
+		"MaxMind-DB-test-decode-path-shared-budget.mmdb":            emptyDescription,
+		"MaxMind-DB-test-decoder-payload-limit-over.mmdb":           emptyDescription,
+		"MaxMind-DB-test-decoder-payload-limit.mmdb":                emptyDescription,
+		"MaxMind-DB-test-decoder-value-limit-over.mmdb":             emptyDescription,
+		"MaxMind-DB-test-decoder-value-limit-pointer-heavy.mmdb":    emptyDescription,
+		"MaxMind-DB-test-decoder-value-limit.mmdb":                  emptyDescription,
+		"MaxMind-DB-test-payload-amplification-dos-string.mmdb":     emptyDescription,
+		"MaxMind-DB-test-payload-amplification-dos-worst-case.mmdb": emptyDescription,
+		"MaxMind-DB-test-payload-amplification-dos.mmdb":            emptyDescription,
+		"MaxMind-DB-test-pointer-decoder-dos-ipv6.mmdb":             emptyDescription,
+		"MaxMind-DB-test-pointer-decoder-dos.mmdb":                  emptyDescription,
+	}
+
+	for _, database := range required {
+		require.NotContains(t, failOpen, database)
+		require.NotContains(t, failVerify, database)
+	}
+	for database := range failOpen {
+		require.NotContains(t, failVerify, database)
+	}
+
+	entries, err := os.ReadDir(testFile(""))
+	require.NoError(t, err)
+
+	seen := map[string]bool{}
+	for _, entry := range entries {
+		database := entry.Name()
+		if entry.IsDir() || filepath.Ext(database) != ".mmdb" {
+			continue
+		}
+		seen[database] = true
+
 		t.Run(database, func(t *testing.T) {
 			reader, err := Open(testFile(database))
+			if want, ok := failOpen[database]; ok {
+				if err == nil {
+					_ = reader.Close()
+				}
+				require.ErrorContains(t, err, want)
+				return
+			}
 			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, reader.Close()) })
 
-			require.NoError(
-				t,
-				reader.Verify(),
-				"Received error (%v) when verifying %v",
-				err,
-				database,
-			)
+			if want, ok := failVerify[database]; ok {
+				require.ErrorContains(t, reader.Verify(), want)
+				return
+			}
+			require.NoError(t, reader.Verify())
 		})
 	}
-}
 
-func TestVerifyOnBrokenDatabases(t *testing.T) {
-	databases := []string{
-		"GeoIP2-City-Test-Broken-Double-Format.mmdb",
-		"MaxMind-DB-test-broken-pointers-24.mmdb",
-		"MaxMind-DB-test-broken-search-tree-24.mmdb",
+	for _, database := range required {
+		assert.True(t, seen[database], "%v is not in testdata/test-data", database)
 	}
-
-	for _, database := range databases {
-		reader, err := Open(testFile(database))
-		require.NoError(t, err)
-		assert.Error(t, reader.Verify(),
-			"Did not receive expected error when verifying %v", database,
-		)
+	for _, list := range []map[string]string{failOpen, failVerify} {
+		for database := range list {
+			assert.True(t, seen[database], "%v is not in testdata/test-data", database)
+		}
 	}
 }
 

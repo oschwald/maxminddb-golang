@@ -942,8 +942,9 @@ func TestLookupIPv4OnlyDB(t *testing.T) {
 // 786-790. The generic IPv6 walk has its own bounds checks elsewhere;
 // without a focused test, a regression in the IPv4 fast-path checks
 // (e.g. a `<=` flipped to `<` in hasBufferRange, or a wrong record
-// size) would not be caught by TestVerifyOnBrokenDatabases (which
-// covers only 24-record-size at the verifier level, not lookup).
+// size) would not be caught by TestVerifyOnTestDatabases (whose broken
+// search-tree fixtures cover only 24-record-size at the verifier level,
+// not lookup).
 //
 // Approach: construct a Reader with an empty buffer and a non-zero
 // NodeCount, then call each traverseTreeNN directly with an IPv4
@@ -1114,9 +1115,9 @@ func checkMetadata(t *testing.T, reader *Reader, ipVersion, recordSize uint) {
 	assert.Equal(t, []string{"en", "zh"}, metadata.Languages)
 
 	if ipVersion == 4 {
-		assert.Equal(t, uint(163), metadata.NodeCount)
+		assert.Equal(t, uint(139), metadata.NodeCount)
 	} else {
-		assert.Equal(t, uint(415), metadata.NodeCount)
+		assert.Equal(t, uint(376), metadata.NodeCount)
 	}
 
 	assert.Equal(t, recordSize, metadata.RecordSize)
