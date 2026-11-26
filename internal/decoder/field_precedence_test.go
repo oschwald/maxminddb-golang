@@ -259,3 +259,188 @@ func TestPointerStructFieldCachingChecksDepth(t *testing.T) {
 		})
 	}
 }
+
+type unexportedEmbeddedUnmarshalerA struct {
+	V string
+}
+
+func (u *unexportedEmbeddedUnmarshalerA) UnmarshalMaxMindDB(d *Decoder) error {
+	v, err := d.ReadString()
+	u.V = v
+	return err
+}
+
+type unexportedEmbeddedUnmarshalerB struct {
+	V string
+}
+
+func (u *unexportedEmbeddedUnmarshalerB) UnmarshalMaxMindDB(d *Decoder) error {
+	v, err := d.ReadString()
+	u.V = v
+	return err
+}
+
+type unexportedEmbeddedCursorUnmarshalerA struct {
+	V string
+}
+
+func (u *unexportedEmbeddedCursorUnmarshalerA) UnmarshalMaxMindDBCursor(
+	c Cursor,
+) (Cursor, error) {
+	v, next, err := c.ReadString()
+	u.V = v
+	return next, err
+}
+
+type unexportedEmbeddedCursorUnmarshalerB struct {
+	V string
+}
+
+func (u *unexportedEmbeddedCursorUnmarshalerB) UnmarshalMaxMindDBCursor(
+	c Cursor,
+) (Cursor, error) {
+	v, next, err := c.ReadString()
+	u.V = v
+	return next, err
+}
+
+// TestUnexportedTaggedEmbeddedUnmarshaler tests that decoding returns an error
+// instead of panicking when a record has the key of a named field that is an
+// unexported embedded struct with a custom unmarshaler. Each parent is a named
+// type with two such fields. The two methods conflict, so neither is promoted
+// to the parent, and reflection decodes the parent field by field.
+func TestUnexportedTaggedEmbeddedUnmarshaler(t *testing.T) {
+	// {"a": "x", "b": "z"}
+	data, err := hex.DecodeString("e2416141784162417a")
+	require.NoError(t, err)
+
+	t.Run("used", func(t *testing.T) {
+		type record struct {
+			unexportedEmbeddedUnmarshalerA `maxminddb:"a"`
+			unexportedEmbeddedUnmarshalerB `maxminddb:"b"`
+		}
+
+		var got record
+
+		d := New(data)
+		require.NotPanics(t, func() {
+			err = d.Decode(0, &got)
+		})
+		require.EqualError(
+			t,
+			err,
+			"at offset 0, path /a: cannot decode into unexported embedded field of type "+
+				"decoder.unexportedEmbeddedUnmarshalerA: its type has a custom unmarshaler",
+		)
+	})
+
+	t.Run("cursor unmarshaler", func(t *testing.T) {
+		type record struct {
+			unexportedEmbeddedCursorUnmarshalerA `maxminddb:"a"`
+			unexportedEmbeddedCursorUnmarshalerB `maxminddb:"b"`
+		}
+
+		var got record
+
+		d := New(data)
+		require.NotPanics(t, func() {
+			err = d.Decode(0, &got)
+		})
+		require.EqualError(
+			t,
+			err,
+			"at offset 0, path /a: cannot decode into unexported embedded field of type "+
+				"decoder.unexportedEmbeddedCursorUnmarshalerA: its type has a custom unmarshaler",
+		)
+	})
+
+	t.Run("slice element and map value", func(t *testing.T) {
+		type record struct {
+			unexportedEmbeddedUnmarshalerA `maxminddb:"a"`
+			unexportedEmbeddedUnmarshalerB `maxminddb:"b"`
+		}
+		const want = "cannot decode into unexported embedded field of type " +
+			"decoder.unexportedEmbeddedUnmarshalerA: its type has a custom unmarshaler"
+
+		// [{"a": "x", "b": "z"}]
+		sliceData, err := hex.DecodeString("0104e2416141784162417a")
+		require.NoError(t, err)
+		var gotSlice []record
+		d := New(sliceData)
+		require.NotPanics(t, func() {
+			err = d.Decode(0, &gotSlice)
+		})
+		require.ErrorContains(t, err, want)
+
+		// {"k": {"a": "x", "b": "z"}}
+		mapData, err := hex.DecodeString("e1416be2416141784162417a")
+		require.NoError(t, err)
+		var gotMap map[string]record
+		d = New(mapData)
+		require.NotPanics(t, func() {
+			err = d.Decode(0, &gotMap)
+		})
+		require.ErrorContains(t, err, want)
+	})
+
+	t.Run("key not in record", func(t *testing.T) {
+		// {"c": "y"}
+		other, err := hex.DecodeString("e141634179")
+		require.NoError(t, err)
+
+		type record struct {
+			unexportedEmbeddedUnmarshalerA `maxminddb:"a"`
+			unexportedEmbeddedUnmarshalerB `maxminddb:"b"`
+
+			C string `maxminddb:"c"`
+		}
+
+		var got record
+
+		d := New(other)
+		require.NoError(t, d.Decode(0, &got))
+		assert.Equal(t, "y", got.C)
+	})
+
+	t.Run("shadowed", func(t *testing.T) {
+		// The direct fields are shallower than the fields of Inner, so they
+		// win for keys "a" and "b".
+		type Inner struct {
+			unexportedEmbeddedUnmarshalerA `maxminddb:"a"`
+			unexportedEmbeddedUnmarshalerB `maxminddb:"b"`
+		}
+		type record struct {
+			Inner
+
+			A string `maxminddb:"a"`
+			B string `maxminddb:"b"`
+		}
+
+		var got record
+
+		d := New(data)
+		require.NoError(t, d.Decode(0, &got))
+		assert.Equal(t, "x", got.A)
+		assert.Equal(t, "z", got.B)
+	})
+}
+
+type unexportedEmbeddedUnmarshalerHolder struct {
+	A unexportedEmbeddedUnmarshalerA `maxminddb:"a"`
+}
+
+// TestUnexportedTaggedEmbeddedStructWithUnmarshalerField tests that an
+// unexported embedded struct with a name tag decodes when its own type has no
+// custom unmarshaler but one of its exported fields does.
+func TestUnexportedTaggedEmbeddedStructWithUnmarshalerField(t *testing.T) {
+	// {"w": {"a": "x"}}
+	data, err := hex.DecodeString("e14177e141614178")
+	require.NoError(t, err)
+
+	var got struct {
+		unexportedEmbeddedUnmarshalerHolder `maxminddb:"w"`
+	}
+	d := New(data)
+	require.NoError(t, d.Decode(0, &got))
+	assert.Equal(t, "x", got.A.V)
+}

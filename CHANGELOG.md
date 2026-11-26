@@ -1,5 +1,13 @@
 # Changes
 
+## Unreleased
+
+- Fixed a panic when a named field is an unexported embedded struct whose
+  type has a custom unmarshaler, and the decoder does not call that
+  unmarshaler through the parent. For example, this happened when two such
+  fields have conflicting methods. Decoding now returns an error when the
+  record has the key for that field.
+
 ## 2.9.1 - 2026-11-15
 
 - Fixed `Networks` and `NetworksWithin` omitting IPv6 networks that share a
