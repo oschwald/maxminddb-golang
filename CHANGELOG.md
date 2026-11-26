@@ -16,6 +16,14 @@
   unmarshaler through the parent. For example, this happened when two such
   fields have conflicting methods. Decoding now returns an error when the
   record has the key for that field.
+- `maxminddb-gen` now rejects an `-output` path that the package build would
+  not compile: a file outside the current package directory, a file without a
+  `.go` extension, a `_test.go` file, a file whose name starts with `.` or
+  `_`, or a file whose `GOOS` or `GOARCH` name suffix excludes it from the
+  current build. Before, generation wrote the file and reported success, and
+  the package silently used reflection instead of the generated decoders.
+  Input files whose names start with `.` or `_` are also rejected, because
+  the Go build ignores them.
 
 ## 2.9.1 - 2026-11-15
 

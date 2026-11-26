@@ -37,7 +37,10 @@ build suffixes remain at the end, so `models_linux.go` writes
 `models_maxminddb_linux.go`. Source build constraints are reproduced in the
 generated file. Generation loads the package using the current `GOOS`, `GOARCH`,
 and build tags, so every constrained input must be selected by that environment.
-Use `-output` to override the default. Multiple input files may be passed when
+Use `-output` to override the default. The output must be a `.go` file in the
+current package directory that the current build compiles, so it cannot end in
+`_test.go`, start with `.` or `_`, or carry a `GOOS` or `GOARCH` suffix that
+the current environment does not select. Multiple input files may be passed when
 `-output` is set; their explicit and filename constraints are combined with
 `&&` on the shared output.
 

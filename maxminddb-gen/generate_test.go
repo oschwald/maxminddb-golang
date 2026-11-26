@@ -3018,10 +3018,9 @@ func TestRunMigratesGeneratedOutputPath(t *testing.T) {
 	require.Contains(t, string(generated), "func (out *Record) UnmarshalMaxMindDB")
 	require.Contains(t, string(generated), "func (out *Record) UnmarshalMaxMindDBCursor")
 	externalOutput := filepath.Join(t.TempDir(), "record_decoders.go")
-	require.NoError(t, run([]string{"-output", externalOutput, "model.go"}))
-	externalGenerated, err := os.ReadFile(externalOutput)
-	require.NoError(t, err)
-	require.Contains(t, string(externalGenerated), "func (out *Record) UnmarshalMaxMindDB")
+	err = run([]string{"-output", externalOutput, "model.go"})
+	require.ErrorContains(t, err, "not in the current package directory")
+	require.NoFileExists(t, externalOutput)
 
 	require.NoError(t, os.Remove("model_maxminddb.go"))
 	testGeneratedPackage(t)
@@ -3111,6 +3110,8 @@ func TestRunRejectsInvalidInputs(t *testing.T) {
 		{name: "missing", want: "at least one Go source file is required"},
 		{name: "not go", args: []string{"README.md"}, want: "not a Go source file"},
 		{name: "test file", args: []string{"model_test.go"}, want: "not supported"},
+		{name: "underscore prefix", args: []string{"_model.go"}, want: "ignored by the Go build"},
+		{name: "dot prefix", args: []string{".model.go"}, want: "ignored by the Go build"},
 		{
 			name: "duplicate",
 			args: []string{"-output", "out.go", "model.go", "model.go"},
@@ -3123,6 +3124,147 @@ func TestRunRejectsInvalidInputs(t *testing.T) {
 			require.ErrorContains(t, err, tt.want)
 		})
 	}
+}
+
+func TestRunRejectsOutputsOutsideThePackageBuild(t *testing.T) {
+	dir := newTestModule(t, "package fixture\n\ntype Record struct{}\n")
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "sub"), 0o700))
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "dir.go"), 0o700))
+	t.Chdir(dir)
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+
+	tests := []struct {
+		name   string
+		output string
+		want   string
+	}{
+		{name: "parent directory", output: "../elsewhere.go", want: "not in the current package"},
+		{name: "subdirectory", output: "sub/out.go", want: "not in the current package"},
+		{
+			name:   "absolute outside",
+			output: filepath.Join(filepath.Dir(cwd), "elsewhere.go"),
+			want:   "not in the current package",
+		},
+		{name: "not go", output: "foo.txt", want: "not a Go source file"},
+		{name: "no extension", output: "foo", want: "not a Go source file"},
+		{name: "trailing separator", output: "trail.go/", want: "ends in a path separator"},
+		{name: "existing directory", output: "dir.go", want: "is a directory"},
+		{name: "upper-case extension", output: "foo.GO", want: "not a Go source file"},
+		{name: "test file", output: "foo_test.go", want: "is a test file"},
+		{name: "underscore prefix", output: "_out.go", want: "ignored by the Go build"},
+		{name: "dot prefix", output: ".out.go", want: "ignored by the Go build"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := run([]string{"-output", tt.output, "model.go"})
+			require.ErrorContains(t, err, tt.want)
+			require.NoFileExists(t, tt.output)
+		})
+	}
+	require.NoFileExists(t, filepath.Join(filepath.Dir(cwd), "elsewhere.go"))
+}
+
+func TestRunRejectsOutputExcludedByFileNameSuffix(t *testing.T) {
+	dir := newTestModule(t, "package fixture\n\ntype Record struct{ Name string }\n")
+	t.Chdir(dir)
+
+	otherOS := "windows"
+	if runtime.GOOS == otherOS {
+		otherOS = "linux"
+	}
+	otherArch := "arm64"
+	if runtime.GOARCH == otherArch {
+		otherArch = "amd64"
+	}
+	for _, output := range []string{
+		"decoders_" + otherOS + ".go",
+		"decoders_" + otherArch + ".go",
+		"decoders_" + otherOS + "_" + otherArch + ".go",
+		// The go command reads a build suffix only up to the first dot.
+		"decoders_" + otherOS + ".x.go",
+	} {
+		t.Run(output, func(t *testing.T) {
+			err := run([]string{"-output", output, "model.go"})
+			require.ErrorContains(t, err, "excluded from the package build")
+			require.NoFileExists(t, output)
+		})
+	}
+
+	// Other package code that needs the generated methods should not hide
+	// the exclusion behind the type errors it causes.
+	require.NoError(t, run([]string{"model.go"}))
+	require.NoError(t, os.WriteFile(
+		"assert.go",
+		[]byte("package fixture\n\n"+
+			"import \"github.com/oschwald/maxminddb-golang/v2/mmdbdata\"\n\n"+
+			"var _ mmdbdata.Unmarshaler = (*Record)(nil)\n"),
+		0o600,
+	))
+	excluded := "decoders_" + otherOS + ".go"
+	err := run([]string{"-output", excluded, "model.go"})
+	require.ErrorContains(t, err, "excluded from the package build")
+	require.NoFileExists(t, excluded)
+	require.NoError(t, os.Remove("assert.go"))
+	require.NoError(t, os.Remove("model_maxminddb.go"))
+
+	const matching = "decoders_" + runtime.GOOS + ".go"
+	require.NoError(t, run([]string{"-output", matching, "model.go"}))
+	require.FileExists(t, matching)
+	testGeneratedPackage(t)
+}
+
+func TestRunAcceptsEquivalentOutputPaths(t *testing.T) {
+	dir := newTestModule(t, "package fixture\n\ntype Record struct{ Name string }\n")
+	t.Chdir(dir)
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+
+	require.NoError(t, run([]string{"-output", "./relative_maxminddb.go", "model.go"}))
+	require.FileExists(t, "relative_maxminddb.go")
+	require.NoError(t, os.Remove("relative_maxminddb.go"))
+
+	absolute := filepath.Join(cwd, "absolute_maxminddb.go")
+	require.NoError(t, run([]string{"-output", absolute, "model.go"}))
+	require.FileExists(t, absolute)
+	testGeneratedPackage(t)
+}
+
+func TestRunAcceptsOutputThroughSymlinkedPackageDirectory(t *testing.T) {
+	dir := newTestModule(t, "package fixture\n\ntype Record struct{ Name string }\n")
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(dir, link); err != nil {
+		t.Skipf("creating symlink: %v", err)
+	}
+	t.Chdir(link)
+
+	output := filepath.Join(dir, "record_maxminddb.go")
+	require.NoError(t, run([]string{"-output", output, "model.go"}))
+	require.FileExists(t, output)
+	require.NoError(t, os.Remove(output))
+
+	// On Unix, link/.. resolves to the parent of the symlink target, not to
+	// the package directory, even though cleaning the path would suggest so.
+	// Windows collapses ".." before following links, so there the path does
+	// name the package directory.
+	if runtime.GOOS != "windows" {
+		deep := filepath.Join(t.TempDir(), "deep")
+		require.NoError(t, os.Mkdir(deep, 0o700))
+		require.NoError(t, os.Symlink(deep, filepath.Join(dir, "away")))
+		// Build the path by hand: filepath.Join would clean the ".." away.
+		escaping := "away/../escaped_maxminddb.go"
+		err := run([]string{"-output", escaping, "model.go"})
+		require.ErrorContains(t, err, "not in the current package directory")
+		require.NoFileExists(t, filepath.Join(dir, "escaped_maxminddb.go"))
+		require.NoFileExists(t, filepath.Join(filepath.Dir(deep), "escaped_maxminddb.go"))
+	}
+
+	// A suffixed output takes the slower validation path that checks the go
+	// command's file list.
+	suffixed := filepath.Join(dir, "record_maxminddb_"+runtime.GOOS+".go")
+	require.NoError(t, run([]string{"-output", suffixed, "model.go"}))
+	require.FileExists(t, suffixed)
+	testGeneratedPackage(t)
 }
 
 func newTestModule(t *testing.T, model string) string {
