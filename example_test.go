@@ -51,7 +51,7 @@ func ExampleReader_Lookup_interface() {
 	}
 	fmt.Printf("%v", record)
 	// Output:
-	// map[city:map[geoname_id:2643743 names:map[de:London en:London es:Londres fr:Londres ja:ロンドン pt-BR:Londres ru:Лондон]] continent:map[code:EU geoname_id:6255148 names:map[de:Europa en:Europe es:Europa fr:Europe ja:ヨーロッパ pt-BR:Europa ru:Европа zh-CN:欧洲]] country:map[geoname_id:2635167 iso_code:GB names:map[de:Vereinigtes Königreich en:United Kingdom es:Reino Unido fr:Royaume-Uni ja:イギリス pt-BR:Reino Unido ru:Великобритания zh-CN:英国]] location:map[accuracy_radius:10 latitude:51.5142 longitude:-0.0931 time_zone:Europe/London] registered_country:map[geoname_id:6252001 iso_code:US names:map[de:USA en:United States es:Estados Unidos fr:États-Unis ja:アメリカ合衆国 pt-BR:Estados Unidos ru:США zh-CN:美国]] subdivisions:[map[geoname_id:6269131 iso_code:ENG names:map[en:England es:Inglaterra fr:Angleterre pt-BR:Inglaterra]]]]
+	// map[city:map[geoname_id:2643743 names:map[de:London en:London es:Londres fr:Londres ja:ロンドン pt-BR:Londres ru:Лондон zh-CN:伦敦]] continent:map[code:EU geoname_id:6255148 names:map[de:Europa en:Europe es:Europa fr:Europe ja:ヨーロッパ pt-BR:Europa ru:Европа zh-CN:欧洲]] country:map[geoname_id:2635167 iso_code:GB names:map[de:Vereinigtes Königreich en:United Kingdom es:Reino Unido fr:Royaume-Uni ja:イギリス pt-BR:Reino Unido ru:Великобритания zh-CN:英国]] location:map[accuracy_radius:10 latitude:51.5142 longitude:-0.0931 time_zone:Europe/London] registered_country:map[geoname_id:6252001 iso_code:US names:map[de:USA en:United States es:Estados Unidos fr:États-Unis ja:アメリカ pt-BR:EUA ru:США zh-CN:美国]] subdivisions:[map[geoname_id:6269131 iso_code:ENG names:map[de:England en:England es:Inglaterra fr:Angleterre ja:イングランド pt-BR:Inglaterra ru:Англия zh-CN:英格兰]]]]
 }
 
 // This example demonstrates how to iterate over all networks in the
@@ -129,7 +129,7 @@ func ExampleReader_Verify() {
 
 	// Output:
 	// Database type: GeoIP2-City
-	// Build time: 2026-02-04 22:49:29
+	// Build time: 2026-10-22 18:52:57
 	// IP version: IPv6
 	// Languages: [en zh]
 	// Description: GeoIP2 City Test Database (fake GeoIP2 data, for example purposes only)
