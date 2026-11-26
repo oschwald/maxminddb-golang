@@ -2697,6 +2697,71 @@ func TestDecode(t *testing.T) {
 	require.Equal(t, generated, readTestFile(t, "model_maxminddb.go"))
 }
 
+func TestGenerateReportsShadowedBuiltins(t *testing.T) {
+	tests := []struct {
+		name   string
+		model  string
+		errMsg string
+	}{
+		{
+			name:   "clear with slice field",
+			model:  "package fixture\n\nfunc clear() {}\n\ntype Record struct {\n\tValues []string\n}\n",
+			errMsg: "declaration of clear shadows the Go builtin that generated code uses",
+		},
+		{
+			name:   "error type",
+			model:  "package fixture\n\ntype error struct{}\n\ntype Record struct {\n\tName string\n}\n",
+			errMsg: "declaration of error shadows the Go builtin that generated code uses",
+		},
+		{
+			name: "len that still compiles",
+			model: "package fixture\n\nfunc len(v any) int { return 0 }\n\n" +
+				"type Record struct {\n\tValues []string\n}\n",
+			errMsg: "declaration of len shadows the Go builtin that generated code uses",
+		},
+		{
+			name: "builtin-named field type",
+			model: "package fixture\n\ntype uint16 int\n\n" +
+				"type Record struct {\n\tCount uint16\n\tNames map[string]uint16\n}\n",
+		},
+		{
+			name: "alias of the builtin type",
+			model: "package fixture\n\ntype byte = uint8\n\n" +
+				"type Record struct {\n\tData []byte\n\tValues []string\n}\n",
+		},
+		{
+			name:  "clear without slice field",
+			model: "package fixture\n\nfunc clear() {}\n\ntype Record struct {\n\tName string\n}\n",
+		},
+		{
+			name: "builtin-named field in a type argument",
+			model: "package fixture\n\n" +
+				"import \"github.com/oschwald/maxminddb-golang/v2/mmdbdata\"\n\n" +
+				"func len(v any) int { return 0 }\n\n" +
+				"type Box[T any] struct{ V T }\n\n" +
+				"func (b *Box[T]) UnmarshalMaxMindDBCursor(c mmdbdata.Cursor) (mmdbdata.Cursor, error) {\n" +
+				"\treturn c.Skip()\n}\n\n" +
+				"type Record struct {\n\tB *Box[struct{ len int }]\n}\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := newTestModule(t, tt.model)
+			t.Chdir(dir)
+			err := run([]string{"model.go"})
+			if tt.errMsg == "" {
+				require.NoError(t, err)
+				testGeneratedPackage(t)
+				return
+			}
+			require.ErrorContains(t, err, tt.errMsg)
+			require.ErrorContains(t, err, "model.go:3:")
+			require.Equal(t, 1, strings.Count(err.Error(), "shadows the Go builtin"))
+			require.NoFileExists(t, "model_maxminddb.go")
+		})
+	}
+}
+
 func TestRunHonorsOutputOverride(t *testing.T) {
 	dir := newTestModule(t, "package fixture\n\ntype Record struct{}\n")
 	t.Chdir(dir)

@@ -48,11 +48,14 @@ type generator struct {
 	localNames      map[string]string
 	helperNamespace string
 	seenFieldsName  string
-	targets         []*types.Named
-	nextID          int
-	usesErrors      bool
-	usesFmt         bool
-	usesMath        bool
+	// localTypeQualifier, when set, qualifies the target package's types in
+	// rendered output. Only checkShadowedBuiltins sets it.
+	localTypeQualifier string
+	targets            []*types.Named
+	nextID             int
+	usesErrors         bool
+	usesFmt            bool
+	usesMath           bool
 }
 
 type structInfo struct {
@@ -211,6 +214,9 @@ func generatePackage(
 	}
 	g.prepareImports()
 	g.prepareLocalNames()
+	if err := g.checkShadowedBuiltins(); err != nil {
+		return err
+	}
 	source, err := g.render(buildConstraint)
 	if err != nil {
 		return err
@@ -1467,6 +1473,16 @@ func (g *generator) bytesHelperName() string {
 }
 
 func (g *generator) render(buildConstraint string) ([]byte, error) {
+	source := g.renderSource(buildConstraint)
+	formatted, err := format.Source([]byte(source))
+	if err != nil {
+		return nil, fmt.Errorf("formatting generated source: %w\n%s", err, source)
+	}
+	return formatted, nil
+}
+
+// renderSource returns the generated file before formatting.
+func (g *generator) renderSource(buildConstraint string) string {
 	var body strings.Builder
 	mmdbdata := g.importNames[mmdbdataPath]
 	infos := make([]structInfo, 0, len(g.structs))
@@ -1495,7 +1511,7 @@ func (g *generator) render(buildConstraint string) ([]byte, error) {
 			&body,
 			"func (%s *%s) UnmarshalMaxMindDBCursor(%s %s.Cursor) (%s.Cursor, error) {\n",
 			receiverName,
-			target.Obj().Name(),
+			g.typeString(target),
 			cursorName,
 			mmdbdata,
 			mmdbdata,
@@ -1507,7 +1523,7 @@ func (g *generator) render(buildConstraint string) ([]byte, error) {
 			&body,
 			"func (%s *%s) UnmarshalMaxMindDB(%s *%s.Decoder) error {\n",
 			receiverName,
-			target.Obj().Name(),
+			g.typeString(target),
 			decoderName,
 			mmdbdata,
 		)
@@ -1537,11 +1553,7 @@ func (g *generator) render(buildConstraint string) ([]byte, error) {
 	fmt.Fprintf(&source, "package %s\n\n", g.pkg.Name)
 	g.emitImports(&source)
 	source.WriteString(body.String())
-	formatted, err := format.Source([]byte(source.String()))
-	if err != nil {
-		return nil, fmt.Errorf("formatting generated source: %w\n%s", err, source.String())
-	}
-	return formatted, nil
+	return source.String()
 }
 
 func (g *generator) emitStruct(out *strings.Builder, info structInfo) {
@@ -1561,7 +1573,7 @@ func (g *generator) emitStruct(out *strings.Builder, info structInfo) {
 		cursor,
 		mmdbdata,
 		receiver,
-		info.named.Obj().Name(),
+		g.typeString(info.named),
 		mmdbdata,
 	)
 	fmt.Fprintf(out, "\t%s, %s := %s.MapReader()\n", entries, errName, cursor)
@@ -1571,7 +1583,7 @@ func (g *generator) emitStruct(out *strings.Builder, info structInfo) {
 		errName,
 		mmdbdata,
 		mmdbdata,
-		info.named.Obj().Name(),
+		g.typeString(info.named),
 		errName,
 	)
 	fmt.Fprintf(out, "\t%s := %s.First()\n", next, entries)
@@ -2619,6 +2631,89 @@ func (g *generator) localID(stem string, id int) string {
 	return g.local(stem + strconv.Itoa(id))
 }
 
+// checkShadowedBuiltins rejects a package-level declaration that shadows a Go
+// builtin that generated code relies on, such as a function named clear. Go
+// cannot refer to a shadowed builtin, and the output might still compile and
+// call the package's declaration instead. The check renders the output once
+// with package types qualified by a marker, so every bare identifier left is
+// one the generator wrote itself rather than a user type it meant to name.
+func (g *generator) checkShadowedBuiltins() error {
+	g.localTypeQualifier = "maxminddbGenLocal"
+	source := g.renderSource("")
+	g.localTypeQualifier = ""
+	g.nextID = 0
+	file, err := parser.ParseFile(token.NewFileSet(), "", source, parser.SkipObjectResolution)
+	if err != nil {
+		// The real render reports the problem with the package's own names.
+		return nil //nolint:nilerr // Reported by render.
+	}
+	scope := g.pkg.Types.Scope()
+	shadowed := make(map[string]types.Object)
+	// Skip the package clause, which names the package rather than a builtin.
+	for _, declaration := range file.Decls {
+		ast.Inspect(declaration, func(node ast.Node) bool {
+			return inspectBuiltinUse(node, scope, shadowed)
+		})
+	}
+	if len(shadowed) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(shadowed))
+	for name := range shadowed {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	errs := make([]error, 0, len(names))
+	for _, name := range names {
+		errs = append(errs, g.positionError(
+			shadowed[name].Pos(),
+			"declaration of %s shadows the Go builtin that generated code uses; rename it",
+			name,
+		))
+	}
+	return errors.Join(errs...)
+}
+
+func inspectBuiltinUse(node ast.Node, scope *types.Scope, shadowed map[string]types.Object) bool {
+	switch node := node.(type) {
+	case *ast.SelectorExpr:
+		// Only the operand can name a builtin; the selector names a member.
+		ast.Inspect(node.X, func(child ast.Node) bool {
+			return inspectBuiltinUse(child, scope, shadowed)
+		})
+		return false
+	case *ast.Field:
+		// Only the type can name a builtin; the names declare parameters,
+		// struct fields, or methods, such as a field in a type argument.
+		if node.Type != nil {
+			ast.Inspect(node.Type, func(child ast.Node) bool {
+				return inspectBuiltinUse(child, scope, shadowed)
+			})
+		}
+		return false
+	case *ast.Ident:
+		builtin := types.Universe.Lookup(node.Name)
+		if builtin == nil {
+			return false
+		}
+		object := scope.Lookup(node.Name)
+		if object == nil {
+			return false
+		}
+		// An alias such as `type byte = uint8` names the builtin's own type.
+		if _, ok := object.(*types.TypeName); ok {
+			if _, ok := builtin.(*types.TypeName); ok &&
+				types.Identical(object.Type(), builtin.Type()) {
+				return false
+			}
+		}
+		shadowed[node.Name] = object
+		return false
+	default:
+		return true
+	}
+}
+
 func (g *generator) id() int {
 	g.nextID++
 	return g.nextID
@@ -2627,7 +2722,7 @@ func (g *generator) id() int {
 func (g *generator) typeString(t types.Type) string {
 	return types.TypeString(t, func(pkg *types.Package) string {
 		if pkg == g.pkg.Types {
-			return ""
+			return g.localTypeQualifier
 		}
 		name, ok := g.importNames[pkg.Path()]
 		if !ok {
