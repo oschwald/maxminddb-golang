@@ -177,9 +177,13 @@ func (g *generator) emitInferredDecoder(out *strings.Builder, helper *inferredDe
 	for _, parameter := range helper.params {
 		fmt.Fprintf(out, "%s %s,", parameter.Obj().Name(), g.typeString(parameter.Constraint()))
 	}
-	fmt.Fprintf(out, "](cursor %s.Cursor, out *%s) (%s.Cursor, error) {\n",
-		mmdbdata, g.typeString(helper.plan.typ), mmdbdata)
-	fmt.Fprintf(out, "\tvar next %s.Cursor\n\tvar err error\n", mmdbdata)
-	g.emitDecode(out, helper.plan, "cursor", "(*out)", "next", "err", 1)
-	fmt.Fprintf(out, "\treturn next, %s\n}\n\n", g.errorExpression(helper.plan, "err"))
+	cursor := g.local("cursor")
+	receiver := g.local("out")
+	next := g.local("next")
+	errName := g.local("err")
+	fmt.Fprintf(out, "](%s %s.Cursor, %s *%s) (%s.Cursor, error) {\n",
+		cursor, mmdbdata, receiver, g.typeString(helper.plan.typ), mmdbdata)
+	fmt.Fprintf(out, "\tvar %s %s.Cursor\n\tvar %s error\n", next, mmdbdata, errName)
+	g.emitDecode(out, helper.plan, cursor, "(*"+receiver+")", next, errName, 1)
+	fmt.Fprintf(out, "\treturn %s, %s\n}\n\n", next, g.errorExpression(helper.plan, errName))
 }

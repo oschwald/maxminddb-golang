@@ -44,7 +44,10 @@ type generator struct {
 	cursorDecoder   *types.Interface
 	byteSlicePlan   *decodePlan
 	inferred        []*inferredDecoder
+	reservedNames   map[string]bool
+	localNames      map[string]string
 	helperNamespace string
+	seenFieldsName  string
 	targets         []*types.Named
 	nextID          int
 	usesErrors      bool
@@ -207,6 +210,7 @@ func generatePackage(
 		return err
 	}
 	g.prepareImports()
+	g.prepareLocalNames()
 	source, err := g.render(buildConstraint)
 	if err != nil {
 		return err
@@ -1481,26 +1485,43 @@ func (g *generator) render(buildConstraint string) ([]byte, error) {
 	if g.byteSlicePlan != nil {
 		g.emitByteSliceHelper(&body)
 	}
+	receiverName := g.local("out")
+	cursorName := g.local("cursor")
+	decoderName := g.local("decoder")
+	nextName := g.local("next")
+	errName := g.local("err")
 	for _, target := range g.targets {
 		fmt.Fprintf(
 			&body,
-			"func (out *%s) UnmarshalMaxMindDBCursor(cursor %s.Cursor) (%s.Cursor, error) {\n",
+			"func (%s *%s) UnmarshalMaxMindDBCursor(%s %s.Cursor) (%s.Cursor, error) {\n",
+			receiverName,
 			target.Obj().Name(),
+			cursorName,
 			mmdbdata,
 			mmdbdata,
 		)
-		fmt.Fprintf(&body, "\treturn %s(cursor, out)\n", g.helperName(target))
+		fmt.Fprintf(&body, "\treturn %s(%s, %s)\n", g.helperName(target), cursorName, receiverName)
 		body.WriteString("}\n\n")
 
 		fmt.Fprintf(
 			&body,
-			"func (out *%s) UnmarshalMaxMindDB(decoder *%s.Decoder) error {\n",
+			"func (%s *%s) UnmarshalMaxMindDB(%s *%s.Decoder) error {\n",
+			receiverName,
 			target.Obj().Name(),
+			decoderName,
 			mmdbdata,
 		)
-		fmt.Fprintf(&body, "\tnext, err := %s(decoder.Cursor(), out)\n", g.helperName(target))
-		body.WriteString("\tif err != nil {\n\t\treturn err\n\t}\n")
-		body.WriteString("\treturn decoder.Advance(next)\n}\n\n")
+		fmt.Fprintf(
+			&body,
+			"\t%s, %s := %s(%s.Cursor(), %s)\n",
+			nextName,
+			errName,
+			g.helperName(target),
+			decoderName,
+			receiverName,
+		)
+		fmt.Fprintf(&body, "\tif %s != nil {\n\t\treturn %s\n\t}\n", errName, errName)
+		fmt.Fprintf(&body, "\treturn %s.Advance(%s)\n}\n\n", decoderName, nextName)
 	}
 
 	var source strings.Builder
@@ -1525,27 +1546,36 @@ func (g *generator) render(buildConstraint string) ([]byte, error) {
 
 func (g *generator) emitStruct(out *strings.Builder, info structInfo) {
 	mmdbdata := g.importNames[mmdbdataPath]
+	cursor := g.local("cursor")
+	receiver := g.local("out")
+	entries := g.local("entries")
+	errName := g.local("err")
+	next := g.local("next")
+	key := g.local("key")
+	valueCursor := g.local("valueCursor")
+	keyErr := g.local("keyErr")
 	fmt.Fprintf(
 		out,
-		"func %s(cursor %s.Cursor, out *%s) (%s.Cursor, error) {\n",
+		"func %s(%s %s.Cursor, %s *%s) (%s.Cursor, error) {\n",
 		g.helperName(info.named),
+		cursor,
 		mmdbdata,
+		receiver,
 		info.named.Obj().Name(),
 		mmdbdata,
 	)
-	out.WriteString("\tentries, err := cursor.MapReader()\n")
+	fmt.Fprintf(out, "\t%s, %s := %s.MapReader()\n", entries, errName, cursor)
 	fmt.Fprintf(
 		out,
-		"\tif err != nil {\n\t\treturn %s.Cursor{}, %s.NormalizeUnmarshalError[%s](err)\n\t}\n",
+		"\tif %s != nil {\n\t\treturn %s.Cursor{}, %s.NormalizeUnmarshalError[%s](%s)\n\t}\n",
+		errName,
 		mmdbdata,
 		mmdbdata,
 		info.named.Obj().Name(),
+		errName,
 	)
-	out.WriteString("\tnext := entries.First()\n")
-	seenFields := "seenFields"
-	for suffix := 1; g.pkg.Types.Scope().Lookup(seenFields) != nil; suffix++ {
-		seenFields = "seenFields" + strconv.Itoa(suffix)
-	}
+	fmt.Fprintf(out, "\t%s := %s.First()\n", next, entries)
+	seenFields := g.seenFieldsName
 	if len(info.fields) != 0 {
 		if len(info.fields) <= 64 {
 			fmt.Fprintf(out, "\tvar %s uint64\n", seenFields)
@@ -1553,14 +1583,16 @@ func (g *generator) emitStruct(out *strings.Builder, info structInfo) {
 			fmt.Fprintf(out, "\tvar %s [%d]uint64\n", seenFields, (len(info.fields)+63)/64)
 		}
 	}
-	out.WriteString("\tfor range entries.Len() {\n")
-	out.WriteString("\t\tkey, valueCursor, keyErr := next.ReadMapKey()\n")
+	fmt.Fprintf(out, "\tfor range %s.Len() {\n", entries)
+	fmt.Fprintf(out, "\t\t%s, %s, %s := %s.ReadMapKey()\n", key, valueCursor, keyErr, next)
 	fmt.Fprintf(
 		out,
-		"\t\tif keyErr != nil {\n\t\t\treturn %s.Cursor{}, keyErr\n\t\t}\n",
+		"\t\tif %s != nil {\n\t\t\treturn %s.Cursor{}, %s\n\t\t}\n",
+		keyErr,
 		mmdbdata,
+		keyErr,
 	)
-	out.WriteString("\t\tswitch string(key) {\n")
+	fmt.Fprintf(out, "\t\tswitch string(%s) {\n", key)
 	for fieldIndex, field := range info.fields {
 		fmt.Fprintf(out, "\t\tcase %s:\n", strconv.Quote(field.name))
 		seenField := seenFields
@@ -1571,53 +1603,67 @@ func (g *generator) emitStruct(out *strings.Builder, info structInfo) {
 		fmt.Fprintf(out, "\t\t\tif %s&%d != 0 {\n", seenField, fieldBit)
 		fmt.Fprintf(
 			out,
-			"\t\t\t\treturn %s.Cursor{}, %s.NewInvalidDatabaseError(\"duplicate map key %%q\", key)\n",
+			"\t\t\t\treturn %s.Cursor{}, %s.NewInvalidDatabaseError(\"duplicate map key %%q\", %s)\n",
 			mmdbdata,
 			mmdbdata,
+			key,
 		)
 		out.WriteString("\t\t\t}\n")
 		fmt.Fprintf(out, "\t\t\t%s |= %d\n", seenField, fieldBit)
+		target := receiver + "." + field.goID
 		if field.hasMaxSize {
 			if !g.emitMaxSizeDecode(
 				out,
 				field.plan,
-				"valueCursor",
-				"out."+field.goID,
-				"next",
-				"err",
+				valueCursor,
+				target,
+				next,
+				errName,
 				3,
 				field.maxSize,
 			) {
 				fmt.Fprintf(
 					out,
-					"\t\t\tif err = valueCursor.CheckMaxSize(%s, %d); err == nil {\n",
+					"\t\t\tif %s = %s.CheckMaxSize(%s, %d); %s == nil {\n",
+					errName,
+					valueCursor,
 					g.maxSizeKindExpression(field.plan, field.maxSizeKind),
 					field.maxSize,
+					errName,
 				)
-				g.emitDecode(out, field.plan, "valueCursor", "out."+field.goID, "next", "err", 4)
+				g.emitDecode(out, field.plan, valueCursor, target, next, errName, 4)
 				out.WriteString("\t\t\t}\n")
 			}
 		} else {
-			g.emitDecode(out, field.plan, "valueCursor", "out."+field.goID, "next", "err", 3)
+			g.emitDecode(out, field.plan, valueCursor, target, next, errName, 3)
 		}
 		errorFormat := "decoding field " + strings.ReplaceAll(field.name, "%", "%%") + ": %w"
 		fmt.Fprintf(
 			out,
-			"\t\t\tif err != nil {\n\t\t\t\treturn %s.Cursor{}, %s.Errorf(%s, %s)\n\t\t\t}\n",
+			"\t\t\tif %s != nil {\n\t\t\t\treturn %s.Cursor{}, %s.Errorf(%s, %s)\n\t\t\t}\n",
+			errName,
 			mmdbdata,
 			g.importNames[fmtPath],
 			strconv.Quote(errorFormat),
-			g.errorExpression(field.plan, "err"),
+			g.errorExpression(field.plan, errName),
 		)
 	}
-	out.WriteString("\t\tdefault:\n\t\t\tnext, err = valueCursor.Skip()\n\t\t}\n")
 	fmt.Fprintf(
 		out,
-		"\t\tif err != nil {\n\t\t\treturn %s.Cursor{}, err\n\t\t}\n",
+		"\t\tdefault:\n\t\t\t%s, %s = %s.Skip()\n\t\t}\n",
+		next,
+		errName,
+		valueCursor,
+	)
+	fmt.Fprintf(
+		out,
+		"\t\tif %s != nil {\n\t\t\treturn %s.Cursor{}, %s\n\t\t}\n",
+		errName,
 		mmdbdata,
+		errName,
 	)
 	out.WriteString("\t}\n")
-	out.WriteString("\treturn entries.End(next)\n}\n\n")
+	fmt.Fprintf(out, "\treturn %s.End(%s)\n}\n\n", entries, next)
 }
 
 func (g *generator) emitMaxSizeDecode(
@@ -1633,14 +1679,14 @@ func (g *generator) emitMaxSizeDecode(
 	switch {
 	case plan.kind == decodeBasic && plan.basic.Kind() == types.String:
 		pad := strings.Repeat("\t", indent)
-		id := g.id()
+		value := g.localID("value", g.id())
 		fmt.Fprintf(
 			out,
-			"%svar value%d string\n%svalue%d, %s, %s = %s.ReadStringMaxSize(%d)\n",
+			"%svar %s string\n%s%s, %s, %s = %s.ReadStringMaxSize(%d)\n",
 			pad,
-			id,
+			value,
 			pad,
-			id,
+			value,
 			next,
 			errName,
 			cursor,
@@ -1648,13 +1694,13 @@ func (g *generator) emitMaxSizeDecode(
 		)
 		fmt.Fprintf(
 			out,
-			"%sif %s == nil {\n%s\t%s = %s(value%d)\n%s}\n",
+			"%sif %s == nil {\n%s\t%s = %s(%s)\n%s}\n",
 			pad,
 			errName,
 			pad,
 			target,
 			g.typeString(plan.typ),
-			id,
+			value,
 			pad,
 		)
 		return true
@@ -1714,26 +1760,18 @@ func (g *generator) emitDecode(
 	}
 	switch plan.kind {
 	case decodePointer:
-		id := g.id()
+		decoded := g.localID("decoded", g.id())
 		fmt.Fprintf(out, "%sif %s == nil {\n", pad, target)
-		fmt.Fprintf(out, "%s\tvar decoded%d %s\n", pad, id, g.typeString(plan.elem.typ))
-		g.emitDecode(
-			out,
-			plan.elem,
-			cursor,
-			fmt.Sprintf("decoded%d", id),
-			next,
-			errName,
-			indent+1,
-		)
+		fmt.Fprintf(out, "%s\tvar %s %s\n", pad, decoded, g.typeString(plan.elem.typ))
+		g.emitDecode(out, plan.elem, cursor, decoded, next, errName, indent+1)
 		fmt.Fprintf(
 			out,
-			"%s\tif %s == nil {\n%s\t\t%s = &decoded%d\n%s\t}\n",
+			"%s\tif %s == nil {\n%s\t\t%s = &%s\n%s\t}\n",
 			pad,
 			errName,
 			pad,
 			target,
-			id,
+			decoded,
 			pad,
 		)
 		fmt.Fprintf(out, "%s} else {\n", pad)
@@ -1812,43 +1850,66 @@ func (g *generator) emitBytes(
 
 func (g *generator) emitByteSliceHelper(out *strings.Builder) {
 	mmdbdata := g.importNames[mmdbdataPath]
+	cursor := g.local("cursor")
+	target := g.local("target")
+	decoded := g.local("decoded")
+	next := g.local("next")
+	errName := g.local("err")
+	readErr := g.local("readErr")
+	mismatch := g.local("mismatch")
 	fmt.Fprintf(
 		out,
-		"func %s(cursor %s.Cursor, target []byte) ([]byte, %s.Cursor, error) {\n",
+		"func %s(%s %s.Cursor, %s []byte) ([]byte, %s.Cursor, error) {\n",
 		g.bytesHelperName(),
+		cursor,
 		mmdbdata,
+		target,
 		mmdbdata,
 	)
-	out.WriteString("\tdecoded, next, err := cursor.ReadBytes()\n")
+	fmt.Fprintf(out, "\t%s, %s, %s := %s.ReadBytes()\n", decoded, next, errName, cursor)
 	fmt.Fprintf(
 		out,
-		"\tif err != nil {\n\t\treturn %s(cursor, target, err)\n\t}\n",
+		"\tif %s != nil {\n\t\treturn %s(%s, %s, %s)\n\t}\n",
+		errName,
 		g.byteSliceHelperName(),
+		cursor,
+		target,
+		errName,
 	)
-	out.WriteString(
-		"\tif len(decoded) == 0 && target == nil {\n\t\treturn []byte{}, next, nil\n\t}\n",
-	)
-	out.WriteString("\treturn append(target[:0], decoded...), next, nil\n}\n\n")
 	fmt.Fprintf(
 		out,
-		"func %s(cursor %s.Cursor, target []byte, readErr error) ([]byte, %s.Cursor, error) {\n",
+		"\tif len(%s) == 0 && %s == nil {\n\t\treturn []byte{}, %s, nil\n\t}\n",
+		decoded,
+		target,
+		next,
+	)
+	fmt.Fprintf(out, "\treturn append(%s[:0], %s...), %s, nil\n}\n\n", target, decoded, next)
+	fmt.Fprintf(
+		out,
+		"func %s(%s %s.Cursor, %s []byte, %s error) ([]byte, %s.Cursor, error) {\n",
 		g.byteSliceHelperName(),
+		cursor,
 		mmdbdata,
+		target,
+		readErr,
 		mmdbdata,
 	)
-	fmt.Fprintf(out, "\tvar mismatch %s.UnexpectedKindError\n", mmdbdata)
+	fmt.Fprintf(out, "\tvar %s %s.UnexpectedKindError\n", mismatch, mmdbdata)
 	fmt.Fprintf(
 		out,
-		"\tif !%s.As(readErr, &mismatch) || mismatch.Actual != %s.KindSlice {\n",
+		"\tif !%s.As(%s, &%s) || %s.Actual != %s.KindSlice {\n",
 		g.importNames[errorsPath],
+		readErr,
+		mismatch,
+		mismatch,
 		mmdbdata,
 	)
-	fmt.Fprintf(out, "\t\treturn target, %s.Cursor{}, readErr\n\t}\n", mmdbdata)
-	fmt.Fprintf(out, "\tvar next %s.Cursor\n\tvar err error\n", mmdbdata)
+	fmt.Fprintf(out, "\t\treturn %s, %s.Cursor{}, %s\n\t}\n", target, mmdbdata, readErr)
+	fmt.Fprintf(out, "\tvar %s %s.Cursor\n\tvar %s error\n", next, mmdbdata, errName)
 	slicePlan := *g.byteSlicePlan
 	slicePlan.kind = decodeSlice
-	g.emitSlice(out, &slicePlan, "cursor", "target", "next", "err", 1)
-	out.WriteString("\treturn target, next, err\n}\n\n")
+	g.emitSlice(out, &slicePlan, cursor, target, next, errName, 1)
+	fmt.Fprintf(out, "\treturn %s, %s, %s\n}\n\n", target, next, errName)
 }
 
 func (g *generator) emitBasic(
@@ -1863,6 +1924,7 @@ func (g *generator) emitBasic(
 	id := g.id()
 	switch basic.Kind() {
 	case types.String, types.Bool:
+		value := g.localID("value", id)
 		valueType := "string"
 		readMethod := "ReadString"
 		if basic.Kind() == types.Bool {
@@ -1871,12 +1933,12 @@ func (g *generator) emitBasic(
 		}
 		fmt.Fprintf(
 			out,
-			"%svar value%d %s\n%svalue%d, %s, %s = %s.%s()\n",
+			"%svar %s %s\n%s%s, %s, %s = %s.%s()\n",
 			pad,
-			id,
+			value,
 			valueType,
 			pad,
-			id,
+			value,
 			next,
 			errName,
 			cursor,
@@ -1884,64 +1946,66 @@ func (g *generator) emitBasic(
 		)
 		fmt.Fprintf(
 			out,
-			"%sif %s == nil {\n%s\t%s = %s(value%d)\n%s}\n",
+			"%sif %s == nil {\n%s\t%s = %s(%s)\n%s}\n",
 			pad,
 			errName,
 			pad,
 			target,
 			typeName,
-			id,
+			value,
 			pad,
 		)
 	case types.Float32, types.Float64:
+		value := g.localID("value", id)
+		converted := g.localID("converted", id)
 		fmt.Fprintf(
 			out,
-			"%svar value%d float64\n%svalue%d, %s, %s = %s.ReadFloat()\n",
+			"%svar %s float64\n%s%s, %s, %s = %s.ReadFloat()\n",
 			pad,
-			id,
+			value,
 			pad,
-			id,
+			value,
 			next,
 			errName,
 			cursor,
 		)
 		fmt.Fprintf(
 			out,
-			"%sif %s == nil {\n%s\tconverted%d := %s(value%d)\n",
+			"%sif %s == nil {\n%s\t%s := %s(%s)\n",
 			pad,
 			errName,
 			pad,
-			id,
+			converted,
 			typeName,
-			id,
+			value,
 		)
 		if basic.Kind() == types.Float32 {
 			fmt.Fprintf(
 				out,
-				"%s\tif %s.Abs(value%d) > %s.MaxFloat32 && !%s.IsInf(value%d, 0) {\n",
+				"%s\tif %s.Abs(%s) > %s.MaxFloat32 && !%s.IsInf(%s, 0) {\n",
 				pad,
 				g.importNames[mathPath],
-				id,
+				value,
 				g.importNames[mathPath],
 				g.importNames[mathPath],
-				id,
+				value,
 			)
 			fmt.Fprintf(
 				out,
-				"%s\t\t%s = %s.NewUnmarshalTypeError[%s](value%d)\n%s\t} else {\n%s\t\t%s = converted%d\n%s\t}\n",
+				"%s\t\t%s = %s.NewUnmarshalTypeError[%s](%s)\n%s\t} else {\n%s\t\t%s = %s\n%s\t}\n",
 				pad,
 				errName,
 				g.importNames[mmdbdataPath],
 				typeName,
-				id,
+				value,
 				pad,
 				pad,
 				target,
-				id,
+				converted,
 				pad,
 			)
 		} else {
-			fmt.Fprintf(out, "%s\t%s = converted%d\n", pad, target, id)
+			fmt.Fprintf(out, "%s\t%s = %s\n", pad, target, converted)
 		}
 		fmt.Fprintf(out, "%s}\n", pad)
 	case types.Int, types.Int8, types.Int16, types.Int32, types.Int64,
@@ -1962,86 +2026,91 @@ func (g *generator) emitInteger(
 	pad := strings.Repeat("\t", indent)
 	typeName := g.typeString(original)
 	signed := basic.Info()&types.IsInteger != 0 && basic.Info()&types.IsUnsigned == 0
-	fmt.Fprintf(out, "%svar integerValue%d uint64\n", pad, id)
-	fmt.Fprintf(out, "%svar integerSigned%d bool\n", pad, id)
+	integerValue := g.localID("integerValue", id)
+	integerSigned := g.localID("integerSigned", id)
+	signedValue := g.localID("signedValue", id)
+	unsignedValue := g.localID("unsignedValue", id)
+	converted := g.localID("converted", id)
+	fmt.Fprintf(out, "%svar %s uint64\n", pad, integerValue)
+	fmt.Fprintf(out, "%svar %s bool\n", pad, integerSigned)
 	fmt.Fprintf(
 		out,
-		"%sintegerValue%d, integerSigned%d, %s, %s = %s.ReadInteger()\n",
+		"%s%s, %s, %s, %s = %s.ReadInteger()\n",
 		pad,
-		id,
-		id,
+		integerValue,
+		integerSigned,
 		next,
 		errName,
 		cursor,
 	)
 	fmt.Fprintf(
 		out,
-		"%sif %s == nil && integerSigned%d {\n%s\tsignedValue%d := int64(integerValue%d)\n%s\tconverted%d := %s(signedValue%d)\n",
+		"%sif %s == nil && %s {\n%s\t%s := int64(%s)\n%s\t%s := %s(%s)\n",
 		pad,
 		errName,
-		id,
+		integerSigned,
 		pad,
-		id,
-		id,
+		signedValue,
+		integerValue,
 		pad,
-		id,
+		converted,
 		typeName,
-		id,
+		signedValue,
 	)
 	if signed {
-		fmt.Fprintf(out, "%s\tif int64(converted%d) != signedValue%d {\n", pad, id, id)
+		fmt.Fprintf(out, "%s\tif int64(%s) != %s {\n", pad, converted, signedValue)
 	} else {
 		fmt.Fprintf(
 			out,
-			"%s\tif signedValue%d < 0 || uint64(converted%d) != uint64(signedValue%d) {\n",
+			"%s\tif %s < 0 || uint64(%s) != uint64(%s) {\n",
 			pad,
-			id,
-			id,
-			id,
+			signedValue,
+			converted,
+			signedValue,
 		)
 	}
 	fmt.Fprintf(
 		out,
-		"%s\t\t%s = %s.NewUnmarshalTypeError[%s](signedValue%d)\n%s\t} else {\n%s\t\t%s = converted%d\n%s\t}\n%s} else if %s == nil {\n",
+		"%s\t\t%s = %s.NewUnmarshalTypeError[%s](%s)\n%s\t} else {\n%s\t\t%s = %s\n%s\t}\n%s} else if %s == nil {\n",
 		pad,
 		errName,
 		g.importNames[mmdbdataPath],
 		typeName,
-		id,
+		signedValue,
 		pad,
 		pad,
 		target,
-		id,
+		converted,
 		pad,
 		pad,
 		errName,
 	)
-	fmt.Fprintf(out, "%s\tunsignedValue%d := integerValue%d\n", pad, id, id)
-	fmt.Fprintf(out, "%s\tconverted%d := %s(unsignedValue%d)\n", pad, id, typeName, id)
+	fmt.Fprintf(out, "%s\t%s := %s\n", pad, unsignedValue, integerValue)
+	fmt.Fprintf(out, "%s\t%s := %s(%s)\n", pad, converted, typeName, unsignedValue)
 	if signed {
 		fmt.Fprintf(
 			out,
-			"%s\tif converted%d < 0 || uint64(converted%d) != unsignedValue%d {\n",
+			"%s\tif %s < 0 || uint64(%s) != %s {\n",
 			pad,
-			id,
-			id,
-			id,
+			converted,
+			converted,
+			unsignedValue,
 		)
 	} else {
-		fmt.Fprintf(out, "%s\tif uint64(converted%d) != unsignedValue%d {\n", pad, id, id)
+		fmt.Fprintf(out, "%s\tif uint64(%s) != %s {\n", pad, converted, unsignedValue)
 	}
 	fmt.Fprintf(
 		out,
-		"%s\t\t%s = %s.NewUnmarshalTypeError[%s](unsignedValue%d)\n%s\t} else {\n%s\t\t%s = converted%d\n%s\t}\n%s}\n",
+		"%s\t\t%s = %s.NewUnmarshalTypeError[%s](%s)\n%s\t} else {\n%s\t\t%s = %s\n%s\t}\n%s}\n",
 		pad,
 		errName,
 		g.importNames[mmdbdataPath],
 		typeName,
-		id,
+		unsignedValue,
 		pad,
 		pad,
 		target,
-		id,
+		converted,
 		pad,
 		pad,
 	)
@@ -2085,132 +2154,144 @@ func (g *generator) emitSliceOpen(
 	pad := strings.Repeat("\t", indent)
 	mmdbdata := g.importNames[mmdbdataPath]
 	id := g.id()
-	fmt.Fprintf(out, "%svalues%d, openErr%d := %s.%s\n", pad, id, id, cursor, openMethod)
+	values := g.localID("values", id)
+	openErr := g.localID("openErr", id)
+	sizeValue := g.localID("sizeValue", id)
+	sizeReady := g.localID("sizeReady", id)
+	size := g.localID("size", id)
+	oldLen := g.localID("oldLen", id)
+	elementNext := g.localID("elementNext", id)
+	indexValue := g.localID("indexValue", id)
+	elementCursor := g.localID("elementCursor", id)
+	ok := g.localID("ok", id)
+	index := g.localID("index", id)
+	elementErr := g.localID("elementErr", id)
+	fmt.Fprintf(out, "%s%s, %s := %s.%s\n", pad, values, openErr, cursor, openMethod)
 	fmt.Fprintf(
 		out,
-		"%sif openErr%d != nil {\n%s\t%s = %s.NormalizeUnmarshalError[%s](openErr%d)\n%s} else {\n",
+		"%sif %s != nil {\n%s\t%s = %s.NormalizeUnmarshalError[%s](%s)\n%s} else {\n",
 		pad,
-		id,
+		openErr,
 		pad,
 		errName,
 		mmdbdata,
 		g.typeString(plan.typ),
-		id,
+		openErr,
 		pad,
 	)
 	fmt.Fprintf(
 		out,
-		"%s\tsizeValue%d, sizeReady%d := values%d.SizeForCapacity(cap(%s))\n%s\tif !sizeReady%d {\n%s\t\tsizeValue%d, %s = values%d.Size()\n%s\t}\n%s\tif %s == nil {\n%s\t\tsize%d := int(sizeValue%d)\n%s\t\toldLen%d := len(%s)\n",
+		"%s\t%s, %s := %s.SizeForCapacity(cap(%s))\n%s\tif !%s {\n%s\t\t%s, %s = %s.Size()\n%s\t}\n%s\tif %s == nil {\n%s\t\t%s := int(%s)\n%s\t\t%s := len(%s)\n",
 		pad,
-		id,
-		id,
-		id,
+		sizeValue,
+		sizeReady,
+		values,
 		target,
 		pad,
-		id,
+		sizeReady,
 		pad,
-		id,
+		sizeValue,
 		errName,
-		id,
+		values,
 		pad,
 		pad,
 		errName,
 		pad,
-		id,
-		id,
+		size,
+		sizeValue,
 		pad,
-		id,
+		oldLen,
 		target,
 	)
 	fmt.Fprintf(
 		out,
-		"%s\tif %s == nil || cap(%s) < size%d {\n%s\t\t%s = make(%s, size%d)\n%s\t} else {\n",
+		"%s\tif %s == nil || cap(%s) < %s {\n%s\t\t%s = make(%s, %s)\n%s\t} else {\n",
 		pad,
 		target,
 		target,
-		id,
+		size,
 		pad,
 		target,
 		g.typeString(plan.typ),
-		id,
+		size,
 		pad,
 	)
 	fmt.Fprintf(
 		out,
-		"%s\t\t%s = %s[:size%d]\n%s\t\tclear(%s)\n",
+		"%s\t\t%s = %s[:%s]\n%s\t\tclear(%s)\n",
 		pad,
 		target,
 		target,
-		id,
+		size,
 		pad,
 		target,
 	)
 	fmt.Fprintf(
 		out,
-		"%s\t\tif oldLen%d > size%d {\n%s\t\t\tclear(%s[size%d:oldLen%d])\n%s\t\t}\n%s\t}\n",
+		"%s\t\tif %s > %s {\n%s\t\t\tclear(%s[%s:%s])\n%s\t\t}\n%s\t}\n",
 		pad,
-		id,
-		id,
+		oldLen,
+		size,
 		pad,
 		target,
-		id,
-		id,
+		size,
+		oldLen,
 		pad,
 		pad,
 	)
-	fmt.Fprintf(out, "%s\tvar elementNext%d %s.Cursor\n", pad, id, mmdbdata)
+	fmt.Fprintf(out, "%s\tvar %s %s.Cursor\n", pad, elementNext, mmdbdata)
 	fmt.Fprintf(
 		out,
-		"%s\tfor {\n%s\t\tindexValue%d, elementCursor%d, ok%d := values%d.Next(elementNext%d)\n%s\t\tif !ok%d {\n%s\t\t\tbreak\n%s\t\t}\n%s\t\tindex%d := int(indexValue%d)\n%s\t\tvar elementErr%d error\n",
+		"%s\tfor {\n%s\t\t%s, %s, %s := %s.Next(%s)\n%s\t\tif !%s {\n%s\t\t\tbreak\n%s\t\t}\n%s\t\t%s := int(%s)\n%s\t\tvar %s error\n",
 		pad,
 		pad,
-		id,
-		id,
-		id,
-		id,
-		id,
+		indexValue,
+		elementCursor,
+		ok,
+		values,
+		elementNext,
 		pad,
-		id,
+		ok,
 		pad,
 		pad,
 		pad,
-		id,
-		id,
+		index,
+		indexValue,
 		pad,
-		id,
+		elementErr,
 	)
 	g.emitDecode(
 		out,
 		plan.elem,
-		fmt.Sprintf("elementCursor%d", id),
-		fmt.Sprintf("%s[index%d]", target, id),
-		fmt.Sprintf("elementNext%d", id),
-		fmt.Sprintf("elementErr%d", id),
+		elementCursor,
+		fmt.Sprintf("%s[%s]", target, index),
+		elementNext,
+		elementErr,
 		indent+2,
 	)
 	fmt.Fprintf(
 		out,
-		"%s\t\tif elementErr%d != nil {\n%s\t\t\t%s = %s.Errorf(\"decoding index %%d: %%w\", index%d, %s)\n%s\t\t\tbreak\n%s\t\t}\n",
+		"%s\t\tif %s != nil {\n%s\t\t\t%s = %s.Errorf(\"decoding index %%d: %%w\", %s, %s)\n%s\t\t\tbreak\n%s\t\t}\n",
 		pad,
-		id,
+		elementErr,
 		pad,
 		errName,
 		g.importNames[fmtPath],
-		id,
-		g.errorExpression(plan.elem, fmt.Sprintf("elementErr%d", id)),
+		index,
+		g.errorExpression(plan.elem, elementErr),
 		pad,
 		pad,
 	)
 	fmt.Fprintf(out, "%s\t}\n", pad)
 	fmt.Fprintf(
 		out,
-		"%s\tif %s == nil {\n%s\t\t%s, %s = values%d.End()\n%s\t}\n%s\t}\n%s}\n",
+		"%s\tif %s == nil {\n%s\t\t%s, %s = %s.End()\n%s\t}\n%s\t}\n%s}\n",
 		pad,
 		errName,
 		pad,
 		next,
 		errName,
-		id,
+		values,
 		pad,
 		pad,
 		pad,
@@ -2231,91 +2312,93 @@ func (g *generator) emitMap(
 	pad := strings.Repeat("\t", indent)
 	mmdbdata := g.importNames[mmdbdataPath]
 	id := g.id()
-	fmt.Fprintf(out, "%sentries%d, openErr%d := %s.Map()\n", pad, id, id, cursor)
+	entries := g.localID("entries", id)
+	openErr := g.localID("openErr", id)
+	size := g.localID("size", id)
+	valueNext := g.localID("valueNext", id)
+	rawKey := g.localID("rawKey", id)
+	valueCursor := g.localID("valueCursor", id)
+	ok := g.localID("ok", id)
+	key := g.localID("key", id)
+	decoded := g.localID("decoded", id)
+	valueErr := g.localID("valueErr", id)
+	fmt.Fprintf(out, "%s%s, %s := %s.Map()\n", pad, entries, openErr, cursor)
 	fmt.Fprintf(
 		out,
-		"%sif openErr%d != nil {\n%s\t%s = %s.NormalizeUnmarshalError[%s](openErr%d)\n%s} else {\n",
+		"%sif %s != nil {\n%s\t%s = %s.NormalizeUnmarshalError[%s](%s)\n%s} else {\n",
 		pad,
-		id,
+		openErr,
 		pad,
 		errName,
 		mmdbdata,
 		g.typeString(plan.typ),
-		id,
+		openErr,
 		pad,
 	)
 	fmt.Fprintf(
 		out,
-		"%s\tsize%d := entries%d.Size()\n%s\tif %s == nil {\n%s\t\t%s = make(%s, int(size%d))\n%s\t}\n",
+		"%s\t%s := %s.Size()\n%s\tif %s == nil {\n%s\t\t%s = make(%s, int(%s))\n%s\t}\n",
 		pad,
-		id,
-		id,
+		size,
+		entries,
 		pad,
 		target,
 		pad,
 		target,
 		g.typeString(plan.typ),
-		id,
+		size,
 		pad,
 	)
-	fmt.Fprintf(out, "%s\tvar valueNext%d %s.Cursor\n", pad, id, mmdbdata)
+	fmt.Fprintf(out, "%s\tvar %s %s.Cursor\n", pad, valueNext, mmdbdata)
 	fmt.Fprintf(
 		out,
-		"%s\tfor {\n%s\t\trawKey%d, valueCursor%d, ok%d := entries%d.Next(valueNext%d)\n%s\t\tif !ok%d {\n%s\t\t\tbreak\n%s\t\t}\n%s\t\tkey%d := %s(string(rawKey%d))\n%s\t\tvar decoded%d %s\n%s\t\tvar valueErr%d error\n",
+		"%s\tfor {\n%s\t\t%s, %s, %s := %s.Next(%s)\n%s\t\tif !%s {\n%s\t\t\tbreak\n%s\t\t}\n%s\t\t%s := %s(string(%s))\n%s\t\tvar %s %s\n%s\t\tvar %s error\n",
 		pad,
 		pad,
-		id,
-		id,
-		id,
-		id,
-		id,
+		rawKey,
+		valueCursor,
+		ok,
+		entries,
+		valueNext,
 		pad,
-		id,
+		ok,
 		pad,
 		pad,
 		pad,
-		id,
+		key,
 		g.typeString(plan.key),
-		id,
+		rawKey,
 		pad,
-		id,
+		decoded,
 		g.typeString(plan.elem.typ),
 		pad,
-		id,
+		valueErr,
 	)
-	g.emitDecode(
-		out,
-		plan.elem,
-		fmt.Sprintf("valueCursor%d", id),
-		fmt.Sprintf("decoded%d", id),
-		fmt.Sprintf("valueNext%d", id),
-		fmt.Sprintf("valueErr%d", id),
-		indent+2,
-	)
+	g.emitDecode(out, plan.elem, valueCursor, decoded, valueNext, valueErr, indent+2)
 	fmt.Fprintf(
 		out,
-		"%s\t\tif valueErr%d != nil {\n%s\t\t\t%s = %s.Errorf(\"decoding map key %%q: %%w\", key%d, %s)\n%s\t\t\tbreak\n%s\t\t}\n",
+		"%s\t\tif %s != nil {\n%s\t\t\t%s = %s.Errorf(\"decoding map key %%q: %%w\", %s, %s)\n%s\t\t\tbreak\n%s\t\t}\n",
 		pad,
-		id,
+		valueErr,
 		pad,
 		errName,
 		g.importNames[fmtPath],
-		id,
-		g.errorExpression(plan.elem, fmt.Sprintf("valueErr%d", id)),
+		key,
+		g.errorExpression(plan.elem, valueErr),
 		pad,
 		pad,
 	)
-	fmt.Fprintf(out, "%s\t\t%s[key%d] = decoded%d\n", pad, target, id, id)
+	fmt.Fprintf(out, "%s\t\t%s[%s] = %s\n", pad, target, key, decoded)
 	fmt.Fprintf(out, "%s\t}\n", pad)
 	fmt.Fprintf(
 		out,
-		"%s\tif %s == nil {\n%s\t\t%s, %s = entries%d.End()\n%s\t}\n%s}\n",
+		"%s\tif %s == nil {\n%s\t\t%s, %s = %s.End()\n%s\t}\n%s}\n",
 		pad,
 		errName,
 		pad,
 		next,
 		errName,
-		id,
+		entries,
 		pad,
 		pad,
 	)
@@ -2330,136 +2413,131 @@ func (g *generator) emitCustomKeyMap(
 	pad := strings.Repeat("\t", indent)
 	mmdbdata := g.importNames[mmdbdataPath]
 	id := g.id()
-	fmt.Fprintf(out, "%sentries%d, openErr%d := %s.MapReader()\n", pad, id, id, cursor)
+	entries := g.localID("entries", id)
+	openErr := g.localID("openErr", id)
+	size := g.localID("size", id)
+	sizeReady := g.localID("sizeReady", id)
+	keyCursor := g.localID("keyCursor", id)
+	rawKey := g.localID("rawKey", id)
+	valueCursor := g.localID("valueCursor", id)
+	keyErr := g.localID("keyErr", id)
+	key := g.localID("key", id)
+	decoded := g.localID("decoded", id)
+	valueErr := g.localID("valueErr", id)
+	fmt.Fprintf(out, "%s%s, %s := %s.MapReader()\n", pad, entries, openErr, cursor)
 	fmt.Fprintf(
 		out,
-		"%sif openErr%d != nil {\n%s\t%s = %s.NormalizeUnmarshalError[%s](openErr%d)\n%s} else {\n",
+		"%sif %s != nil {\n%s\t%s = %s.NormalizeUnmarshalError[%s](%s)\n%s} else {\n",
 		pad,
-		id,
+		openErr,
 		pad,
 		errName,
 		mmdbdata,
 		g.typeString(plan.typ),
-		id,
+		openErr,
 		pad,
 	)
-	fmt.Fprintf(out, "%s\tsize%d := entries%d.Len()\n", pad, id, id)
+	fmt.Fprintf(out, "%s\t%s := %s.Len()\n", pad, size, entries)
 	fmt.Fprintf(out, "%s\tif %s == nil {\n", pad, target)
-	fmt.Fprintf(out, "%s\t\tvar sizeReady%d bool\n", pad, id)
+	fmt.Fprintf(out, "%s\t\tvar %s bool\n", pad, sizeReady)
 	fmt.Fprintf(
 		out,
-		"%s\t\tsize%d, sizeReady%d = entries%d.SizeForAllocation()\n",
+		"%s\t\t%s, %s = %s.SizeForAllocation()\n",
 		pad,
-		id,
-		id,
-		id,
+		size,
+		sizeReady,
+		entries,
 	)
 	fmt.Fprintf(
 		out,
-		"%s\t\tif !sizeReady%d {\n%s\t\t\tsize%d, %s = entries%d.Size()\n%s\t\t}\n",
+		"%s\t\tif !%s {\n%s\t\t\t%s, %s = %s.Size()\n%s\t\t}\n",
 		pad,
-		id,
+		sizeReady,
 		pad,
-		id,
+		size,
 		errName,
-		id,
+		entries,
 		pad,
 	)
 	fmt.Fprintf(
 		out,
-		"%s\t\tif %s == nil {\n%s\t\t\t%s = make(%s, int(size%d))\n%s\t\t}\n%s\t}\n",
+		"%s\t\tif %s == nil {\n%s\t\t\t%s = make(%s, int(%s))\n%s\t\t}\n%s\t}\n",
 		pad,
 		errName,
 		pad,
 		target,
 		g.typeString(plan.typ),
-		id,
+		size,
 		pad,
 		pad,
 	)
-	fmt.Fprintf(out, "%s\tkeyCursor%d := entries%d.First()\n", pad, id, id)
+	fmt.Fprintf(out, "%s\t%s := %s.First()\n", pad, keyCursor, entries)
 	fmt.Fprintf(
 		out,
-		"%s\tfor range size%d {\n%s\t\trawKey%d, valueCursor%d, keyErr%d := keyCursor%d.ReadMapKey()\n%s\t\tif keyErr%d != nil {\n%s\t\t\t%s = keyErr%d\n%s\t\t\tbreak\n%s\t\t}\n%s\t\tvar key%d %s\n",
+		"%s\tfor range %s {\n%s\t\t%s, %s, %s := %s.ReadMapKey()\n%s\t\tif %s != nil {\n%s\t\t\t%s = %s\n%s\t\t\tbreak\n%s\t\t}\n%s\t\tvar %s %s\n",
 		pad,
-		id,
+		size,
 		pad,
-		id,
-		id,
-		id,
-		id,
+		rawKey,
+		valueCursor,
+		keyErr,
+		keyCursor,
 		pad,
-		id,
+		keyErr,
 		pad,
 		errName,
-		id,
+		keyErr,
 		pad,
 		pad,
 		pad,
-		id,
+		key,
 		g.typeString(plan.key),
 	)
-	g.emitDecode(
-		out,
-		plan.keyPlan,
-		fmt.Sprintf("keyCursor%d", id),
-		fmt.Sprintf("key%d", id),
-		"_",
-		fmt.Sprintf("keyErr%d", id),
-		indent+2,
-	)
+	g.emitDecode(out, plan.keyPlan, keyCursor, key, "_", keyErr, indent+2)
 	fmt.Fprintf(
 		out,
-		"%s\t\tif keyErr%d != nil {\n%s\t\t\t%s = %s.Errorf(\"decoding map key %%q: %%w\", string(rawKey%d), keyErr%d)\n%s\t\t\tbreak\n%s\t\t}\n%s\t\tvar decoded%d %s\n%s\t\tvar valueErr%d error\n",
+		"%s\t\tif %s != nil {\n%s\t\t\t%s = %s.Errorf(\"decoding map key %%q: %%w\", string(%s), %s)\n%s\t\t\tbreak\n%s\t\t}\n%s\t\tvar %s %s\n%s\t\tvar %s error\n",
 		pad,
-		id,
+		keyErr,
 		pad,
 		errName,
 		g.importNames[fmtPath],
-		id,
-		id,
+		rawKey,
+		keyErr,
 		pad,
 		pad,
 		pad,
-		id,
+		decoded,
 		g.typeString(plan.elem.typ),
 		pad,
-		id,
+		valueErr,
 	)
-	g.emitDecode(
-		out,
-		plan.elem,
-		fmt.Sprintf("valueCursor%d", id),
-		fmt.Sprintf("decoded%d", id),
-		fmt.Sprintf("keyCursor%d", id),
-		fmt.Sprintf("valueErr%d", id),
-		indent+2,
-	)
+	g.emitDecode(out, plan.elem, valueCursor, decoded, keyCursor, valueErr, indent+2)
 	fmt.Fprintf(
 		out,
-		"%s\t\tif valueErr%d != nil {\n%s\t\t\t%s = %s.Errorf(\"decoding map key %%q: %%w\", string(rawKey%d), %s)\n%s\t\t\tbreak\n%s\t\t}\n",
+		"%s\t\tif %s != nil {\n%s\t\t\t%s = %s.Errorf(\"decoding map key %%q: %%w\", string(%s), %s)\n%s\t\t\tbreak\n%s\t\t}\n",
 		pad,
-		id,
+		valueErr,
 		pad,
 		errName,
 		g.importNames[fmtPath],
-		id,
-		g.errorExpression(plan.elem, fmt.Sprintf("valueErr%d", id)),
+		rawKey,
+		g.errorExpression(plan.elem, valueErr),
 		pad,
 		pad,
 	)
-	fmt.Fprintf(out, "%s\t\t%s[key%d] = decoded%d\n", pad, target, id, id)
+	fmt.Fprintf(out, "%s\t\t%s[%s] = %s\n", pad, target, key, decoded)
 	fmt.Fprintf(out, "%s\t}\n", pad)
 	fmt.Fprintf(
 		out,
-		"%s\tif %s == nil {\n%s\t\t%s, %s = entries%d.End(keyCursor%d)\n%s\t}\n%s}\n",
+		"%s\tif %s == nil {\n%s\t\t%s, %s = %s.End(%s)\n%s\t}\n%s}\n",
 		pad,
 		errName,
 		pad,
 		next,
 		errName,
-		id,
-		id,
+		entries,
+		keyCursor,
 		pad,
 		pad,
 	)
@@ -2481,6 +2559,64 @@ func (g *generator) errorExpression(plan *decodePlan, name string) string {
 		)
 	}
 	return name
+}
+
+// prepareLocalNames records every package-level name that generated code may
+// refer to: the package's own declarations, the generated imports, and the
+// generated helpers. Locals and parameters must not shadow any of them, or a
+// field type with the same name would resolve to the local instead.
+func (g *generator) prepareLocalNames() {
+	scope := g.pkg.Types.Scope()
+	g.reservedNames = make(map[string]bool, scope.Len()+len(g.importNames)+len(g.structs)+2)
+	for _, name := range scope.Names() {
+		g.reservedNames[name] = true
+	}
+	for _, name := range g.importNames {
+		g.reservedNames[name] = true
+	}
+	for named := range g.structs {
+		g.reservedNames[g.helperName(named)] = true
+	}
+	for _, helper := range g.inferred {
+		g.reservedNames[helper.name] = true
+		for _, parameter := range helper.params {
+			g.reservedNames[parameter.Obj().Name()] = true
+		}
+	}
+	if g.byteSlicePlan != nil {
+		g.reservedNames[g.bytesHelperName()] = true
+		g.reservedNames[g.byteSliceHelperName()] = true
+	}
+	g.localNames = make(map[string]string)
+	g.seenFieldsName = "seenFields"
+	for suffix := 1; g.reservedNames[g.seenFieldsName]; suffix++ {
+		g.seenFieldsName = "seenFields" + strconv.Itoa(suffix)
+	}
+}
+
+// local returns the name to use for a generated local or parameter. A name
+// that is reserved gets trailing underscores until it is free. No requested
+// name ends in an underscore, fixed names never end in a digit, and numbered
+// names are unique per stem and id, so a renamed name cannot equal another
+// generated name.
+func (g *generator) local(name string) string {
+	if renamed, ok := g.localNames[name]; ok {
+		return renamed
+	}
+	if g.localNames == nil {
+		g.localNames = make(map[string]string)
+	}
+	renamed := name
+	for g.reservedNames[renamed] {
+		renamed += "_"
+	}
+	g.localNames[name] = renamed
+	return renamed
+}
+
+// localID returns the collision-free name for a numbered local such as value3.
+func (g *generator) localID(stem string, id int) string {
+	return g.local(stem + strconv.Itoa(id))
 }
 
 func (g *generator) id() int {

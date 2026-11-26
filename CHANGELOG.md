@@ -24,6 +24,10 @@
   the package silently used reflection instead of the generated decoders.
   Input files whose names start with `.` or `_` are also rejected, because
   the Go build ignores them.
+- Fixed `maxminddb-gen` failing on packages that declare a name used by a
+  generated local variable or parameter, such as `key`, `next`, `err` or
+  `cursor`, when a field type needs that name. Generated locals now avoid
+  every package-level name.
 
 ## 2.9.1 - 2026-11-15
 
