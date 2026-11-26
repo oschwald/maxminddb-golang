@@ -242,6 +242,7 @@ func DisableStringCache() ReaderOption {
 // Do not rewrite or truncate the opened file in place while the Reader is in
 // use; memory-mapped changes may become visible to it. Open a new Reader for an
 // updated database.
+// Open rejects invalid metadata in the same way as OpenBytes.
 // Use the Close method on the Reader object to return the resources to the system.
 func Open(file string, options ...ReaderOption) (*Reader, error) {
 	mapFile, err := os.Open(file) // #nosec G703 -- The caller chooses the database file to open.
@@ -337,6 +338,9 @@ func (r *Reader) Close() error {
 // options. It returns a Reader structure or an error. The Reader retains the
 // provided slice; callers must not modify it while the Reader is in use. Copy
 // the slice before calling OpenBytes if another component may modify it.
+// OpenBytes returns an InvalidDatabaseError if the metadata has an unsupported
+// binary format major version, IP version or record size, or a node count too
+// large for the buffer.
 func OpenBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
 	var opts readerOptions
 	for _, option := range options {
@@ -360,23 +364,24 @@ func OpenBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
 		return nil, err
 	}
 
-	// Check for integer overflow in search tree size calculation
-	if reader.Metadata.NodeCount > 0 && reader.Metadata.RecordSize > 0 {
-		recordSizeQuarter := reader.Metadata.RecordSize / 4
-		if recordSizeQuarter > 0 {
-			maxNodes := ^uint(0) / recordSizeQuarter
-			if reader.Metadata.NodeCount > maxNodes {
-				return nil, mmdberrors.NewInvalidDatabaseError("database tree size would overflow")
-			}
-		}
+	err = validateMetadata(&reader.Metadata)
+	if err != nil {
+		return nil, err
+	}
+
+	// The search tree and the data section separator must fit before the
+	// metadata marker. Compare by division so a large node_count cannot wrap
+	// the offset arithmetic below. validateMetadata ensures nodeOffsetMult is
+	// 6, 7 or 8.
+	dataSectionEnd := uint(metadataStart - len(metadataStartMarker))
+	nodeOffsetMult := reader.Metadata.RecordSize / 4
+	if dataSectionEnd < dataSectionSeparatorSize ||
+		reader.Metadata.NodeCount > (dataSectionEnd-dataSectionSeparatorSize)/nodeOffsetMult {
+		return nil, mmdberrors.NewInvalidDatabaseError("the MaxMind DB contains invalid metadata")
 	}
 
 	searchTreeSize := searchTreeSizeBytes(reader.Metadata.NodeCount, reader.Metadata.RecordSize)
 	dataSectionStart := searchTreeSize + dataSectionSeparatorSize
-	dataSectionEnd := uint(metadataStart - len(metadataStartMarker))
-	if dataSectionStart > dataSectionEnd {
-		return nil, mmdberrors.NewInvalidDatabaseError("the MaxMind DB contains invalid metadata")
-	}
 	dataSection := buffer[dataSectionStart:dataSectionEnd]
 	var d decoder.ReflectionDecoder
 	if opts.disableStringCache {
@@ -389,7 +394,7 @@ func OpenBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
 	reader.dataSectionSize = dataSectionEnd - dataSectionStart
 	reader.decoder = d
 	reader.decoder.PrepareForConcurrentUse()
-	reader.nodeOffsetMult = reader.Metadata.RecordSize / 4
+	reader.nodeOffsetMult = nodeOffsetMult
 	reader.hasMappedFile = &atomic.Bool{}
 
 	err = reader.setIPv4Start()
@@ -398,6 +403,29 @@ func OpenBytes(buffer []byte, options ...ReaderOption) (*Reader, error) {
 	}
 
 	return reader, nil
+}
+
+// validateMetadata rejects metadata that this reader cannot use to read the
+// database.
+func validateMetadata(metadata *Metadata) error {
+	if metadata.BinaryFormatMajorVersion != 2 {
+		return mmdberrors.NewInvalidDatabaseError(
+			"unsupported binary format major version: %d",
+			metadata.BinaryFormatMajorVersion,
+		)
+	}
+	if metadata.IPVersion != 4 && metadata.IPVersion != 6 {
+		return mmdberrors.NewInvalidDatabaseError(
+			"unsupported IP version: %d",
+			metadata.IPVersion,
+		)
+	}
+	switch metadata.RecordSize {
+	case 24, 28, 32:
+	default:
+		return unsupportedRecordSizeError(metadata.RecordSize)
+	}
+	return nil
 }
 
 func searchTreeSizeBytes(nodeCount, recordSize uint) uint {

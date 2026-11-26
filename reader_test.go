@@ -1,6 +1,7 @@
 package maxminddb
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -54,9 +55,9 @@ func TestReaderBytes(t *testing.T) {
 				ipVersion,
 				recordSize,
 			)
-			bytes, err := os.ReadFile(fileName)
+			data, err := os.ReadFile(fileName)
 			require.NoError(t, err)
-			reader, err := OpenBytes(bytes)
+			reader, err := OpenBytes(data)
 			require.NoError(t, err, "unexpected error while opening bytes: %v", err)
 
 			checkMetadata(t, reader, ipVersion, recordSize)
@@ -1847,21 +1848,151 @@ func TestMetadataBuildTime(t *testing.T) {
 	assert.True(t, buildTime.Before(time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)))
 }
 
-func TestOpenBytesRejectsSearchTreeSizeOverflow(t *testing.T) {
-	overflowNodeCount := ^uint(0)/8 + 1
+func TestOpenBytesRejectsUnsupportedMetadata(t *testing.T) {
+	tests := []struct {
+		name    string
+		key     string
+		value   []byte
+		wantErr string
+	}{
+		{
+			name:    "major version 3",
+			key:     "binary_format_major_version",
+			value:   []byte{0xa1, 3},
+			wantErr: "unsupported binary format major version: 3",
+		},
+		{
+			name:    "major version 1",
+			key:     "binary_format_major_version",
+			value:   []byte{0xa1, 1},
+			wantErr: "unsupported binary format major version: 1",
+		},
+		{
+			name:    "ip version 0",
+			key:     "ip_version",
+			value:   []byte{0xa0},
+			wantErr: "unsupported IP version: 0",
+		},
+		{
+			name:    "ip version 5",
+			key:     "ip_version",
+			value:   []byte{0xa1, 5},
+			wantErr: "unsupported IP version: 5",
+		},
+		{
+			name:    "record size 20",
+			key:     "record_size",
+			value:   []byte{0xa1, 20},
+			wantErr: "unsupported record size: 20",
+		},
+		{
+			name:    "record size 0",
+			key:     "record_size",
+			value:   []byte{0xa0},
+			wantErr: "unsupported record size: 0",
+		},
+		{
+			name:    "node count larger than file",
+			key:     "node_count",
+			value:   []byte{0xc3, 0x10, 0x00, 0x00},
+			wantErr: "the MaxMind DB contains invalid metadata",
+		},
+	}
 
-	data := append([]byte{}, metadataStartMarker...)
-	data = append(data, 0xe2, 0x4a)
-	data = append(data, "node_count"...)
-	data = append(data, 0x08, 0x02)
-	data = binary.BigEndian.AppendUint64(data, uint64(overflowNodeCount))
-	data = append(data, 0x4b)
-	data = append(data, "record_size"...)
-	data = append(data, 0xa1, 0x20)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := replaceMetadataValue(t, "MaxMind-DB-test-ipv4-24.mmdb", tt.key, tt.value)
+
+			reader, err := OpenBytes(data)
+			require.Nil(t, reader)
+			var invalidErr InvalidDatabaseError
+			require.ErrorAs(t, err, &invalidErr)
+			require.EqualError(t, err, tt.wantErr)
+		})
+	}
+}
+
+func TestOpenBytesRejectsNodeCountOverflowForEachRecordSize(t *testing.T) {
+	for _, recordSize := range []uint{24, 28, 32} {
+		nodeSize := recordSize / 4
+		file := fmt.Sprintf("MaxMind-DB-test-ipv4-%d.mmdb", recordSize)
+		for _, tt := range []struct {
+			name      string
+			nodeCount uint
+		}{
+			// The search tree size fits in a uint, but adding the separator
+			// wraps.
+			{name: "data section start wraps", nodeCount: ^uint(0) / nodeSize},
+			{name: "search tree size overflows", nodeCount: ^uint(0)/nodeSize + 1},
+		} {
+			t.Run(fmt.Sprintf("%d/%s", recordSize, tt.name), func(t *testing.T) {
+				value := binary.BigEndian.AppendUint64([]byte{0x08, 0x02}, uint64(tt.nodeCount))
+				data := replaceMetadataValue(t, file, "node_count", value)
+
+				reader, err := OpenBytes(data)
+				require.Nil(t, reader)
+				var invalidErr InvalidDatabaseError
+				require.ErrorAs(t, err, &invalidErr)
+				require.EqualError(t, err, "the MaxMind DB contains invalid metadata")
+			})
+		}
+	}
+}
+
+func TestOpenBytesRejectsFileTooSmallForSeparator(t *testing.T) {
+	data, err := os.ReadFile(testFile("MaxMind-DB-test-ipv4-24.mmdb"))
+	require.NoError(t, err)
+	markerOffset := bytes.LastIndex(data, metadataStartMarker)
+	require.NotEqual(t, -1, markerOffset)
+
+	// Keep valid metadata but drop the search tree and data section, so fewer
+	// than 16 bytes come before the metadata marker.
+	data = append(data[markerOffset-dataSectionSeparatorSize+1:markerOffset:markerOffset],
+		data[markerOffset:]...)
 
 	reader, err := OpenBytes(data)
 	require.Nil(t, reader)
-	require.EqualError(t, err, "database tree size would overflow")
+	var invalidErr InvalidDatabaseError
+	require.ErrorAs(t, err, &invalidErr)
+	require.EqualError(t, err, "the MaxMind DB contains invalid metadata")
+}
+
+// replaceMetadataValue returns a copy of the named test database with the
+// value of the metadata key replaced by value. The key must be stored as a
+// plain string followed by a value with no pointers into it.
+func replaceMetadataValue(t *testing.T, file, key string, value []byte) []byte {
+	t.Helper()
+
+	data, err := os.ReadFile(testFile(file))
+	require.NoError(t, err)
+
+	markerOffset := bytes.LastIndex(data, metadataStartMarker)
+	require.NotEqual(t, -1, markerOffset)
+	metadataOffset := markerOffset + len(metadataStartMarker)
+
+	require.Less(t, len(key), 29)
+	encodedKey := append([]byte{0x40 | byte(len(key))}, key...)
+	metadata := data[metadataOffset:]
+	require.Equal(t, 1, bytes.Count(metadata, encodedKey), "metadata key %s", key)
+	keyIndex := bytes.Index(metadata, encodedKey)
+	valueStart := metadataOffset + keyIndex + len(encodedKey)
+
+	require.Less(t, valueStart, len(data), "metadata key %s", key)
+	// The test databases store each of these keys as a small unsigned
+	// integer: a one-byte type and size, then up to four payload bytes.
+	typeSize := data[valueStart]
+	require.True(
+		t,
+		typeSize>>5 == 5 || typeSize>>5 == 6,
+		"metadata key %s is not a uint16 or uint32",
+		key,
+	)
+	payloadSize := int(typeSize & 0x1f)
+	require.LessOrEqual(t, payloadSize, 4, "metadata key %s", key)
+	valueEnd := valueStart + 1 + payloadSize
+	require.LessOrEqual(t, valueEnd, len(data), "metadata key %s", key)
+
+	return slices.Concat(data[:valueStart], value, data[valueEnd:])
 }
 
 func TestNetworksWithinInvalidPrefix(t *testing.T) {
