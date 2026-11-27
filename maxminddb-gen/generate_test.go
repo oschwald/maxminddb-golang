@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -2570,6 +2571,197 @@ func TestGeneratedSeenFieldsDoesNotShadowTypes(t *testing.T) {
 	}
 }
 
+func TestGeneratedLocalsDoNotShadowPackageNames(t *testing.T) {
+	fixedNames := []string{
+		"cursor", "decoded", "decoder", "entries", "err", "key", "keyErr",
+		"mismatch", "next", "out", "readErr", "target", "valueCursor",
+	}
+	numberedStems := []string{
+		"converted", "decoded", "elementCursor", "elementErr", "elementNext",
+		"entries", "index", "indexValue", "integerSigned", "integerValue", "key",
+		"keyCursor", "keyErr", "ok", "oldLen", "openErr", "rawKey", "signedValue",
+		"size", "sizeReady", "sizeValue", "unsignedValue", "value", "valueCursor",
+		"valueErr", "valueNext", "values",
+	}
+	packageNames := map[string]bool{"Record": true}
+	for _, name := range fixedNames {
+		packageNames[name] = true
+	}
+	var model strings.Builder
+	model.WriteString(`package fixture
+
+import (
+	"example.com/generatortest/custom"
+	"github.com/oschwald/maxminddb-golang/v2/mmdbdata"
+)
+
+type key string
+type next string
+type err string
+type entries string
+type cursor struct {
+	Target target ` + "`maxminddb:\"target\"`" + `
+}
+type out struct {
+	Decoder []decoder ` + "`maxminddb:\"decoder\"`" + `
+}
+type decoder string
+type target string
+type readErr string
+type mismatch string
+type decoded string
+type valueCursor uint16
+type keyErr string
+
+func (k *keyErr) UnmarshalMaxMindDBCursor(c mmdbdata.Cursor) (mmdbdata.Cursor, error) {
+	s, n, e := c.ReadString()
+	if e == nil {
+		*k = keyErr(s)
+	}
+	return n, e
+}
+
+type Record struct {
+	Key      map[key]next           ` + "`maxminddb:\"key\"`" + `
+	Next     next                   ` + "`maxminddb:\"next\"`" + `
+	Err      *err                   ` + "`maxminddb:\"err\"`" + `
+	Entries  []entries              ` + "`maxminddb:\"entries\"`" + `
+	Cursor   cursor                 ` + "`maxminddb:\"cursor\"`" + `
+	Out      *out                   ` + "`maxminddb:\"out\"`" + `
+	Nested   map[string][]*decoded  ` + "`maxminddb:\"nested\"`" + `
+	Custom   map[keyErr]valueCursor ` + "`maxminddb:\"custom\"`" + `
+	Bytes    []byte                 ` + "`maxminddb:\"bytes\"`" + `
+	Ratio    float32                ` + "`maxminddb:\"ratio\"`" + `
+	Limited  []readErr              ` + "`maxminddb:\"limited,maxsize:4\"`" + `
+	Text     target                 ` + "`maxminddb:\"text,maxsize:4\"`" + `
+	Mismatch mismatch               ` + "`maxminddb:\"mismatch\"`" + `
+	Texts    custom.Texts           ` + "`maxminddb:\"texts\"`" + `
+}
+
+// Numbered names match the locals that generated decoders declare.
+type (
+`)
+	for _, stem := range numberedStems {
+		for i := 1; i <= 200; i++ {
+			name := stem + strconv.Itoa(i)
+			packageNames[name] = true
+			fmt.Fprintf(&model, "\t%s string\n", name)
+		}
+	}
+	model.WriteString(")\n")
+	dir := newTestModule(t, model.String())
+	writeTestPackage(t, dir, "custom", "package custom\n\ntype text string\ntype Texts = []text\n")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "record_test.go"), []byte(`package fixture
+
+import (
+	"reflect"
+	"testing"
+
+	"github.com/oschwald/maxminddb-golang/v2/mmdbdata"
+)
+
+func TestDecode(t *testing.T) {
+	data := []byte{0xe3}
+	data = append(data, 0x43, 'k', 'e', 'y', 0xe1, 0x41, 'a', 0x41, 'b')
+	data = append(data, 0x44, 'n', 'e', 'x', 't', 0x41, 'n')
+	data = append(data, 0x46, 'c', 'u', 's', 't', 'o', 'm', 0xe1, 0x41, 'k', 0xa1, 0x05)
+	var record Record
+	if _, err := record.UnmarshalMaxMindDBCursor(mmdbdata.NewDecoder(data, 0).Cursor()); err != nil {
+		t.Fatal(err)
+	}
+	want := Record{
+		Key:    map[key]next{"a": "b"},
+		Next:   "n",
+		Custom: map[keyErr]valueCursor{"k": 5},
+	}
+	if !reflect.DeepEqual(record, want) {
+		t.Fatalf("got %#v, want %#v", record, want)
+	}
+}
+`), 0o600))
+
+	t.Chdir(dir)
+	require.NoError(t, run([]string{"model.go"}))
+	generated := readTestFile(t, "model_maxminddb.go")
+	testGeneratedPackage(t)
+
+	locals := generatedLocalNames(t, generated)
+	for _, name := range fixedNames {
+		require.Contains(t, locals, name+"_")
+	}
+	for name := range locals {
+		require.False(t, packageNames[name], "generated local %s shadows a package name", name)
+	}
+
+	require.NoError(t, run([]string{"model.go"}))
+	require.Equal(t, generated, readTestFile(t, "model_maxminddb.go"))
+}
+
+func TestGenerateReportsShadowedBuiltins(t *testing.T) {
+	tests := []struct {
+		name   string
+		model  string
+		errMsg string
+	}{
+		{
+			name:   "clear with slice field",
+			model:  "package fixture\n\nfunc clear() {}\n\ntype Record struct {\n\tValues []string\n}\n",
+			errMsg: "declaration of clear shadows the Go builtin that generated code uses",
+		},
+		{
+			name:   "error type",
+			model:  "package fixture\n\ntype error struct{}\n\ntype Record struct {\n\tName string\n}\n",
+			errMsg: "declaration of error shadows the Go builtin that generated code uses",
+		},
+		{
+			name: "len that still compiles",
+			model: "package fixture\n\nfunc len(v any) int { return 0 }\n\n" +
+				"type Record struct {\n\tValues []string\n}\n",
+			errMsg: "declaration of len shadows the Go builtin that generated code uses",
+		},
+		{
+			name: "builtin-named field type",
+			model: "package fixture\n\ntype uint16 int\n\n" +
+				"type Record struct {\n\tCount uint16\n\tNames map[string]uint16\n}\n",
+		},
+		{
+			name: "alias of the builtin type",
+			model: "package fixture\n\ntype byte = uint8\n\n" +
+				"type Record struct {\n\tData []byte\n\tValues []string\n}\n",
+		},
+		{
+			name:  "clear without slice field",
+			model: "package fixture\n\nfunc clear() {}\n\ntype Record struct {\n\tName string\n}\n",
+		},
+		{
+			name: "builtin-named field in a type argument",
+			model: "package fixture\n\n" +
+				"import \"github.com/oschwald/maxminddb-golang/v2/mmdbdata\"\n\n" +
+				"func len(v any) int { return 0 }\n\n" +
+				"type Box[T any] struct{ V T }\n\n" +
+				"func (b *Box[T]) UnmarshalMaxMindDBCursor(c mmdbdata.Cursor) (mmdbdata.Cursor, error) {\n" +
+				"\treturn c.Skip()\n}\n\n" +
+				"type Record struct {\n\tB *Box[struct{ len int }]\n}\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := newTestModule(t, tt.model)
+			t.Chdir(dir)
+			err := run([]string{"model.go"})
+			if tt.errMsg == "" {
+				require.NoError(t, err)
+				testGeneratedPackage(t)
+				return
+			}
+			require.ErrorContains(t, err, tt.errMsg)
+			require.ErrorContains(t, err, "model.go:3:")
+			require.Equal(t, 1, strings.Count(err.Error(), "shadows the Go builtin"))
+			require.NoFileExists(t, "model_maxminddb.go")
+		})
+	}
+}
+
 func TestRunHonorsOutputOverride(t *testing.T) {
 	dir := newTestModule(t, "package fixture\n\ntype Record struct{}\n")
 	t.Chdir(dir)
@@ -3321,6 +3513,63 @@ func generatedPointerParameterHelper(t *testing.T, source []byte, parameterType 
 	}
 	t.Fatalf("generated helper with *%s parameter not found", parameterType)
 	return ""
+}
+
+// generatedLocalNames returns the names that generated functions declare as
+// parameters, results, type parameters, or locals.
+func generatedLocalNames(t *testing.T, source []byte) map[string]bool {
+	t.Helper()
+	file, err := parser.ParseFile(token.NewFileSet(), "generated.go", source, 0)
+	require.NoError(t, err)
+	names := make(map[string]bool)
+	addFields := func(fields *ast.FieldList) {
+		if fields == nil {
+			return
+		}
+		for _, field := range fields.List {
+			for _, name := range field.Names {
+				names[name.Name] = true
+			}
+		}
+	}
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if !ok {
+			continue
+		}
+		addFields(function.Recv)
+		addFields(function.Type.TypeParams)
+		addFields(function.Type.Params)
+		addFields(function.Type.Results)
+		ast.Inspect(function.Body, func(node ast.Node) bool {
+			switch node := node.(type) {
+			case *ast.AssignStmt:
+				if node.Tok == token.DEFINE {
+					for _, expression := range node.Lhs {
+						if name, ok := expression.(*ast.Ident); ok {
+							names[name.Name] = true
+						}
+					}
+				}
+			case *ast.ValueSpec:
+				for _, name := range node.Names {
+					names[name.Name] = true
+				}
+			case *ast.RangeStmt:
+				if node.Tok == token.DEFINE {
+					for _, expression := range []ast.Expr{node.Key, node.Value} {
+						if name, ok := expression.(*ast.Ident); ok {
+							names[name.Name] = true
+						}
+					}
+				}
+			default:
+			}
+			return true
+		})
+	}
+	delete(names, "_")
+	return names
 }
 
 func testGeneratedPackage(t *testing.T) {
