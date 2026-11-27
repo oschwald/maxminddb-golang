@@ -839,10 +839,43 @@ func (g *generator) validateGeneratedPackage(
 	if err != nil {
 		return err
 	}
+	// An excluded output also leaves the package without its decoders, so
+	// report the exclusion instead of the type errors that follow from it.
+	if len(pkgs) == 1 && len(pkgs[0].CompiledGoFiles) > 0 &&
+		!containsFile(pkgs[0].CompiledGoFiles, path) {
+		return excludedOutputError(path)
+	}
 	if writePackageErrors(diagnostics, pkgs) != 0 || len(pkgs) != 1 {
 		return errors.New("validating generated package")
 	}
+	if !containsFile(pkgs[0].CompiledGoFiles, path) {
+		return excludedOutputError(path)
+	}
 	return nil
+}
+
+func excludedOutputError(path string) error {
+	return fmt.Errorf(
+		"output %q is excluded from the package build by its file name or build constraints",
+		filepath.Base(path),
+	)
+}
+
+// containsFile reports whether files names path, allowing for the go command
+// spelling the package directory differently.
+func containsFile(files []string, path string) bool {
+	path = filepath.Clean(path)
+	for _, file := range files {
+		file = filepath.Clean(file)
+		if file == path {
+			return true
+		}
+		if filepath.Base(file) == filepath.Base(path) &&
+			sameDirectory(filepath.Dir(file), filepath.Dir(path)) {
+			return true
+		}
+	}
+	return false
 }
 
 func writePackageErrors(diagnostics io.Writer, pkgs []*packages.Package) int {

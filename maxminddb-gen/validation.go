@@ -81,8 +81,16 @@ func validateLoadedPackage(
 	if err != nil {
 		return true, err
 	}
+	// Report an excluded output before the type errors that follow from it.
+	if len(validated) == 1 && len(validated[0].CompiledGoFiles) > 0 &&
+		!containsFile(validated[0].CompiledGoFiles, path) {
+		return true, excludedOutputError(path)
+	}
 	if writePackageErrors(diagnostics, validated) != 0 || len(validated) != 1 {
 		return true, errors.New("validating generated package")
+	}
+	if !containsFile(validated[0].CompiledGoFiles, path) {
+		return true, excludedOutputError(path)
 	}
 	imports := &loadedPackageImporter{
 		packages: make(map[string]*packages.Package),
