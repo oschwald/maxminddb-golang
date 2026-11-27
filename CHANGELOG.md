@@ -16,6 +16,15 @@
   unmarshaler through the parent. For example, this happened when two such
   fields have conflicting methods. Decoding now returns an error when the
   record has the key for that field.
+- `Open` and `OpenBytes` now return an `InvalidDatabaseError` for a database
+  whose metadata has a `binary_format_major_version` other than 2, an
+  `ip_version` other than 4 or 6, or a `record_size` other than 24, 28 or 32.
+  Before, such a database opened, and lookups returned wrong results or
+  failed. A `node_count` too large for the file is now always rejected on
+  open, including values where the search tree offset arithmetic wrapped.
+  The error for a `node_count` that overflows the search tree size is now
+  "the MaxMind DB contains invalid metadata" instead of "database tree size
+  would overflow".
 - `maxminddb-gen` now rejects an `-output` path that the package build would
   not compile: a file outside the current package directory, a file without a
   `.go` extension, a `_test.go` file, a file whose name starts with `.` or
