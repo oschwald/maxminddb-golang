@@ -174,11 +174,71 @@ func discoverTargets(paths []string, output string) (generationRequest, error) {
 		stem, suffix, _ := splitBuildSuffix(filepath.Base(paths[0]))
 		output = stem + "_maxminddb" + suffix + ".go"
 	}
+	output, err = validateOutputPath(cwd, output)
+	if err != nil {
+		return generationRequest{}, err
+	}
 	return generationRequest{
 		targets:         targets,
 		output:          output,
 		buildConstraint: combineBuildConstraints(buildConstraints),
 	}, nil
+}
+
+// validateOutputPath rejects output paths that the package build would not
+// compile. Such a file would be written successfully, but the package would
+// silently fall back to reflection-based decoding. The returned path names the
+// same file through cwd, so later package loads see the spelling that the go
+// command uses for the package directory.
+func validateOutputPath(cwd, output string) (string, error) {
+	if output != "" && os.IsPathSeparator(output[len(output)-1]) {
+		return "", fmt.Errorf("output %q ends in a path separator, not a Go file name", output)
+	}
+	name := filepath.Base(output)
+	if filepath.Ext(name) != goFileExtension {
+		return "", fmt.Errorf("output %q is not a Go source file", output)
+	}
+	if strings.HasSuffix(name, "_test.go") {
+		return "", fmt.Errorf(
+			"output %q is a test file and is not part of the package build",
+			output,
+		)
+	}
+	if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
+		return "", fmt.Errorf(
+			"output %q starts with %q and is ignored by the Go build",
+			output,
+			name[:1],
+		)
+	}
+	// Resolve the directory as written. Cleaning it first would treat
+	// link/.. as the current directory even when link is a symlink.
+	dir := output[:len(output)-len(name)]
+	if dir == "" {
+		dir = "."
+	}
+	if !sameDirectory(dir, cwd) {
+		return "", fmt.Errorf("output %q is not in the current package directory", output)
+	}
+	path := filepath.Join(cwd, name)
+	if info, err := os.Stat(path); err == nil && info.IsDir() {
+		return "", fmt.Errorf("output %q is a directory, not a Go source file", output)
+	}
+	return path, nil
+}
+
+// sameDirectory reports whether two paths name the same existing directory,
+// including when one of them reaches it through a symlink.
+func sameDirectory(a, b string) bool {
+	aInfo, err := os.Stat(a)
+	if err != nil {
+		return false
+	}
+	bInfo, err := os.Stat(b)
+	if err != nil {
+		return false
+	}
+	return os.SameFile(aInfo, bInfo)
 }
 
 func loadInputFile(
@@ -198,6 +258,13 @@ func loadInputFile(
 	}
 	if filepath.Dir(absolute) != cwd {
 		return nil, nil, fmt.Errorf("input %q is not in the current package directory", path)
+	}
+	if base := filepath.Base(path); strings.HasPrefix(base, ".") || strings.HasPrefix(base, "_") {
+		return nil, nil, fmt.Errorf(
+			"input %q starts with %q and is ignored by the Go build",
+			path,
+			base[:1],
+		)
 	}
 	if seenPaths[absolute] {
 		return nil, nil, fmt.Errorf("duplicate input file %q", path)
