@@ -666,6 +666,16 @@ func (d *ReflectionDecoder) decodeValueImpl(
 	// checkUnmarshaler=false when the per-field precomputation established the
 	// destination cannot match, avoiding reflective type assertions entirely.
 	if checkUnmarshaler && result.CanAddr() && mayImplementUnmarshaler(result.Type()) {
+		// A named field from an unexported embedded struct can be set
+		// through its exported fields, but a pointer to it cannot be
+		// converted to an interface, so its unmarshaler cannot be called.
+		if !result.CanInterface() {
+			allocated.rollback()
+			return 0, fmt.Errorf(
+				"cannot decode into unexported embedded field of type %s: its type has a custom unmarshaler",
+				result.Type(),
+			)
+		}
 		if next, handled, err := d.tryCustomUnmarshal(offset, result.Addr()); handled {
 			if err != nil {
 				allocated.rollback()
@@ -2478,7 +2488,12 @@ func getEmbeddedStructType(fieldType reflect.Type) reflect.Type {
 	return nil
 }
 
-// handleEmbeddedField processes an embedded struct field and returns true if the field should be skipped.
+// handleEmbeddedField processes an embedded field and returns true if the
+// field should not also be added as a named field.
+//
+// An untagged embedded struct, or pointer to a struct, is queued so that its
+// fields are promoted. As in encoding/json, an embedded field with a name tag
+// is only a named field. Its fields are not promoted.
 func handleEmbeddedField(
 	field reflect.StructField,
 	hasTag bool,
@@ -2487,19 +2502,21 @@ func handleEmbeddedField(
 	fieldIndex []int,
 	depth int,
 ) bool {
+	if hasTag {
+		return false
+	}
+
 	embeddedType := getEmbeddedStructType(field.Type)
 	if embeddedType == nil {
 		return false
 	}
 
-	// For embedded structs (and pointer to structs), add to queue for further traversal
 	if !(*seen)[embeddedType] {
 		*queue = append(*queue, queueEntry{embeddedType, fieldIndex, depth + 1})
 		(*seen)[embeddedType] = true
 	}
 
-	// If embedded struct has no explicit tag, don't add it as a named field
-	return !hasTag
+	return true
 }
 
 type sliceElemInfo struct {
