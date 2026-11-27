@@ -69,3 +69,45 @@ jobs:
           CGO_ENABLED: 0
           GOARCH: "386"
         run: go test -count=1 -v ./...
+
+  # The jobs above never compile mmap_stub.go (js, wasip1, plan9) or the
+  # Windows 386 build. Build every package and vet it with its tests,
+  # with and without the cachemetrics tag, for each of those targets, so
+  # a break there fails CI.
+  cross-compile:
+    name: Cross-compile (Go 1.26, ${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: js
+            goarch: wasm
+          - goos: wasip1
+            goarch: wasm
+          - goos: plan9
+            goarch: amd64
+          - goos: windows
+            goarch: "386"
+    steps:
+      - name: Set up Go 1.26
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.26"
+          # The cache key ignores GOOS and GOARCH, so these short jobs
+          # would save their cache under the key the linux/amd64 jobs use.
+          cache: false
+
+      - name: Check out code into the Go module directory
+        uses: actions/checkout@v7
+
+      - name: Build and vet
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          go build ./...
+          go vet ./...
+          go build -tags cachemetrics ./...
+          go vet -tags cachemetrics ./...
